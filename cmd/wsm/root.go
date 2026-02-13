@@ -189,9 +189,10 @@ func newCreateCmd(opts *globalOptions) *cobra.Command {
 	var description string
 	var tags []string
 	cmd := &cobra.Command{
-		Use:   "create <name>",
-		Short: "Create a workspace",
-		Args:  cobra.ExactArgs(1),
+		Use:     "create <name>",
+		Aliases: []string{"new", "c", "+"},
+		Short:   "Create a workspace",
+		Args:    cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
 				ws, err := app.manager.Create(ctx, args[0], workspace.CreateOptions{Description: description, Tags: tags})
@@ -221,8 +222,9 @@ func newCreateCmd(opts *globalOptions) *cobra.Command {
 func newListCmd(opts *globalOptions) *cobra.Command {
 	var status, sortBy string
 	cmd := &cobra.Command{
-		Use:   "list",
-		Short: "List workspaces",
+		Use:     "list",
+		Aliases: []string{"ls", "all"},
+		Short:   "List workspaces",
 		RunE: func(_ *cobra.Command, _ []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
 				sortDir := "desc"
@@ -288,9 +290,10 @@ func newInspectCmd(opts *globalOptions) *cobra.Command {
 	var showEventsAll bool
 	var showDevices bool
 	cmd := &cobra.Command{
-		Use:   "inspect <workspace>",
-		Short: "Inspect a workspace",
-		Args:  cobra.ExactArgs(1),
+		Use:     "inspect <workspace>",
+		Aliases: []string{"info", "i"},
+		Short:   "Inspect a workspace",
+		Args:    cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
 				ws, err := app.manager.ResolveWorkspaceRef(ctx, args[0])
@@ -638,9 +641,10 @@ func manualAppendableEventTypes() []string {
 
 func newSnapshotCmd(opts *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "snapshot [workspace]",
-		Short: "Generate and persist a workspace snapshot",
-		Args:  cobra.MaximumNArgs(1),
+		Use:     "snapshot [workspace]",
+		Aliases: []string{"snap"},
+		Short:   "Generate and persist a workspace snapshot",
+		Args:    cobra.MaximumNArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
 				var ws workspace.Workspace
@@ -688,9 +692,10 @@ func newSnapshotCmd(opts *globalOptions) *cobra.Command {
 
 func newArchiveCmd(opts *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "archive <workspace>",
-		Short: "Archive a workspace",
-		Args:  cobra.ExactArgs(1),
+		Use:     "archive <workspace>",
+		Aliases: []string{"arch"},
+		Short:   "Archive a workspace",
+		Args:    cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
 				ws, err := app.manager.ResolveWorkspaceRef(ctx, args[0])
@@ -716,9 +721,10 @@ func newArchiveCmd(opts *globalOptions) *cobra.Command {
 
 func newUnarchiveCmd(opts *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "unarchive <workspace>",
-		Short: "Unarchive a workspace",
-		Args:  cobra.ExactArgs(1),
+		Use:     "unarchive <workspace>",
+		Aliases: []string{"unarch"},
+		Short:   "Unarchive a workspace",
+		Args:    cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
 				ws, err := app.manager.ResolveWorkspaceRef(ctx, args[0])
@@ -745,9 +751,10 @@ func newUnarchiveCmd(opts *globalOptions) *cobra.Command {
 func newDeleteCmd(opts *globalOptions) *cobra.Command {
 	var force, dryRun bool
 	cmd := &cobra.Command{
-		Use:   "delete <workspace>",
-		Short: "Delete a workspace",
-		Args:  cobra.ExactArgs(1),
+		Use:     "delete <workspace>",
+		Aliases: []string{"rm", "del"},
+		Short:   "Delete a workspace",
+		Args:    cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
 				preview, err := app.manager.DeletePreview(ctx, args[0])
@@ -859,8 +866,9 @@ func newCompletionCmd(root *cobra.Command, _ *globalOptions) *cobra.Command {
 
 func newTUICmd(opts *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "tui",
-		Short: "Launch terminal UI",
+		Use:     "tui",
+		Aliases: []string{"ui"},
+		Short:   "Launch terminal UI",
 		RunE: func(_ *cobra.Command, _ []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
 				return runTUI(ctx, app, *opts)
