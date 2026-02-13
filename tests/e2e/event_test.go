@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 
 	"hop.top/wsm/pkg/workspace"
@@ -20,7 +21,7 @@ func TestEventRecording(t *testing.T) {
 		t.Fatalf("create workspace: %v", err)
 	}
 
-	addMessage := r.run("event", "add", ws.ID, "message.added", "--content=hello", "--json")
+	addMessage := r.run("events", "add", ws.ID, "message.added", "--content=hello", "--json")
 	requireExitCode(t, addMessage, 0)
 	var messageEvent workspace.Event
 	mustUnmarshalJSON(t, addMessage.Stdout, &messageEvent)
@@ -29,7 +30,7 @@ func TestEventRecording(t *testing.T) {
 	}
 
 	addTool := r.run(
-		"event", "add", ws.ID, "tool_call.started",
+		"events", "add", ws.ID, "tool_call.started",
 		"--tool-name=grep",
 		"--input={\"pattern\":\"foo\"}",
 		"--json",
@@ -42,7 +43,7 @@ func TestEventRecording(t *testing.T) {
 	}
 
 	addFile := r.run(
-		"event", "add", ws.ID, "file.changed",
+		"events", "add", ws.ID, "file.changed",
 		"--path=README.md",
 		"--operation=modify",
 		"--json",
@@ -54,7 +55,7 @@ func TestEventRecording(t *testing.T) {
 		t.Fatalf("expected increasing seq_num for file event, got tool=%d file=%d", toolEvent.SeqNum, fileEvent.SeqNum)
 	}
 
-	res := r.run("events", ws.ID, "--json")
+	res := r.run("events", "list", ws.ID, "--json")
 	requireExitCode(t, res, 0)
 	events := mustUnmarshalJSONArray[workspace.Event](t, res.Stdout)
 	if len(events) < 2 {
@@ -69,7 +70,7 @@ func TestEventRecording(t *testing.T) {
 	if err := mgr.Archive(ctx, ws.ID); err != nil {
 		t.Fatalf("archive workspace: %v", err)
 	}
-	blocked := r.run("event", "add", ws.ID, "message.added", "--content=blocked")
+	blocked := r.run("events", "add", ws.ID, "message.added", "--content=blocked")
 	requireExitCode(t, blocked, 4)
 }
 
@@ -93,7 +94,7 @@ func TestEventListing(t *testing.T) {
 		t.Fatalf("record second message event: %v", err)
 	}
 
-	allRes := r.run("events", ws.ID, "--json")
+	allRes := r.run("events", "list", ws.ID, "--json")
 	requireExitCode(t, allRes, 0)
 	all := mustUnmarshalJSONArray[workspace.Event](t, allRes.Stdout)
 	if len(all) < 4 {
@@ -105,7 +106,7 @@ func TestEventListing(t *testing.T) {
 		}
 	}
 
-	filteredRes := r.run("events", ws.ID, "--type=message.added", "--json")
+	filteredRes := r.run("events", "list", ws.ID, "--type=message.added", "--json")
 	requireExitCode(t, filteredRes, 0)
 	filtered := mustUnmarshalJSONArray[workspace.Event](t, filteredRes.Stdout)
 	if len(filtered) != 2 {
@@ -141,7 +142,7 @@ func TestEventFilteringCLI(t *testing.T) {
 	}
 
 	res := r.run(
-		"events", ws.ID,
+		"events", "list", ws.ID,
 		"--type=message.added",
 		"--after-seq=20",
 		"--before-seq=40",
@@ -167,10 +168,10 @@ func TestEventFilteringCLI(t *testing.T) {
 		prev = ev.SeqNum
 	}
 
-	badType := r.run("events", ws.ID, "--type=not.a.real.type")
+	badType := r.run("events", "list", ws.ID, "--type=not.a.real.type")
 	requireExitCode(t, badType, 2)
 
-	badRange := r.run("events", ws.ID, "--after-seq=40", "--before-seq=20")
+	badRange := r.run("events", "list", ws.ID, "--after-seq=40", "--before-seq=20")
 	requireExitCode(t, badRange, 2)
 }
 
@@ -190,7 +191,7 @@ func TestEventIntegrity_LargeVolume(t *testing.T) {
 		}
 	}
 
-	res := r.run("events", ws.ID, "--type=message.added", "--json")
+	res := r.run("events", "list", ws.ID, "--type=message.added", "--json")
 	requireExitCode(t, res, 0)
 	events := mustUnmarshalJSONArray[workspace.Event](t, res.Stdout)
 	if len(events) != 1000 {
@@ -216,7 +217,7 @@ func TestEventRecording_SessionAgentID(t *testing.T) {
 	wsID := r.mustCreateWorkspace("session-agent-e2e")
 
 	addRes := r.run(
-		"event", "add", wsID, "message.added",
+		"events", "add", wsID, "message.added",
 		"--content=hello-session",
 		"--session-id=e2e-sess-1",
 		"--agent-id=e2e-agent-1",
@@ -234,7 +235,7 @@ func TestEventRecording_SessionAgentID(t *testing.T) {
 	}
 
 	// Verify persistence through listing
-	listRes := r.run("events", wsID, "--json")
+	listRes := r.run("events", "list", wsID, "--json")
 	requireExitCode(t, listRes, 0)
 	events := mustUnmarshalJSONArray[workspace.Event](t, listRes.Stdout)
 
@@ -247,5 +248,47 @@ func TestEventRecording_SessionAgentID(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("expected to find event with session_id=e2e-sess-1 agent_id=e2e-agent-1 in listed events")
+	}
+}
+
+func TestEventShow(t *testing.T) {
+	r := newRunner(t)
+	wsID := r.mustCreateWorkspace("event-show-e2e")
+
+	// Add an event
+	addRes := r.run("events", "add", wsID, "message.added", "--content=show-me", "--json")
+	requireExitCode(t, addRes, 0)
+	var added workspace.Event
+	mustUnmarshalJSON(t, addRes.Stdout, &added)
+
+	// Show by seq_num
+	bySeq := r.run("events", "show", wsID, fmt.Sprintf("%d", added.SeqNum), "--json")
+	requireExitCode(t, bySeq, 0)
+	var showedBySeq workspace.Event
+	mustUnmarshalJSON(t, bySeq.Stdout, &showedBySeq)
+	if showedBySeq.ID != added.ID {
+		t.Fatalf("expected event id %s from show by seq, got %s", added.ID, showedBySeq.ID)
+	}
+
+	// Show by ULID
+	byID := r.run("events", "show", wsID, added.ID, "--json")
+	requireExitCode(t, byID, 0)
+	var showedByID workspace.Event
+	mustUnmarshalJSON(t, byID.Stdout, &showedByID)
+	if showedByID.SeqNum != added.SeqNum {
+		t.Fatalf("expected seq_num %d from show by ULID, got %d", added.SeqNum, showedByID.SeqNum)
+	}
+
+	// Show not found
+	notFound := r.run("events", "show", wsID, "99999")
+	requireExitCode(t, notFound, 3)
+}
+
+func TestDeprecatedEventRedirect(t *testing.T) {
+	r := newRunner(t)
+	res := r.run("event")
+	requireExitCode(t, res, 2)
+	if !strings.Contains(strings.ToLower(res.Combined()), "deprecated") {
+		t.Fatalf("expected 'deprecated' in output, got:\n%s", res.Combined())
 	}
 }

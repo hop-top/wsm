@@ -46,7 +46,7 @@ func TestCompletionWorkspaceAndFlagValues(t *testing.T) {
 		t.Fatalf("expected status values in completion output, got:\n%s", statusCompletion.Stdout)
 	}
 
-	eventTypeCompletion := r.run("__complete", "event", "add", "alpha", "")
+	eventTypeCompletion := r.run("__complete", "events", "add", "alpha", "")
 	requireExitCode(t, eventTypeCompletion, 0)
 	if !strings.Contains(eventTypeCompletion.Stdout, "message.added") || !strings.Contains(eventTypeCompletion.Stdout, "file.changed") {
 		t.Fatalf("expected event type values in completion output, got:\n%s", eventTypeCompletion.Stdout)

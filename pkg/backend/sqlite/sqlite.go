@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -295,6 +296,39 @@ func (b *Backend) AppendEvent(ctx context.Context, event model.Event) (model.Eve
 		return model.Event{}, err
 	}
 	return event, nil
+}
+
+func (b *Backend) GetEvent(ctx context.Context, workspaceID string, ref string) (*model.Event, error) {
+	var query string
+	var arg any
+	if seqNum, err := strconv.ParseUint(ref, 10, 64); err == nil {
+		query = `SELECT id, workspace_id, type, device_id, session_id, agent_id, timestamp, data, seq_num FROM events WHERE workspace_id = ? AND seq_num = ?`
+		arg = seqNum
+	} else {
+		query = `SELECT id, workspace_id, type, device_id, session_id, agent_id, timestamp, data, seq_num FROM events WHERE workspace_id = ? AND id = ?`
+		arg = ref
+	}
+	var ev model.Event
+	var typ, data string
+	var sessionID, agentID sql.NullString
+	err := b.db.QueryRowContext(ctx, query, workspaceID, arg).Scan(
+		&ev.ID, &ev.WorkspaceID, &typ, &ev.DeviceID, &sessionID, &agentID, &ev.Timestamp, &data, &ev.SeqNum,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if sessionID.Valid {
+		ev.SessionID = sessionID.String
+	}
+	if agentID.Valid {
+		ev.AgentID = agentID.String
+	}
+	ev.Type = model.EventType(typ)
+	ev.Data = json.RawMessage(data)
+	return &ev, nil
 }
 
 func (b *Backend) ListEvents(ctx context.Context, workspaceID string, opts backend.EventListOptions) ([]model.Event, error) {

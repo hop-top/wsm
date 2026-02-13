@@ -174,6 +174,23 @@ func (m *Manager) RecordEvent(ctx context.Context, workspaceRef string, eventTyp
 	return &out, nil
 }
 
+// GetEvent retrieves a single event by seq_num or ULID.
+func (m *Manager) GetEvent(ctx context.Context, workspaceRef string, eventRef string) (*Event, error) {
+	ws, err := m.ResolveWorkspaceRef(ctx, workspaceRef)
+	if err != nil {
+		return nil, err
+	}
+	ev, err := m.backend.GetEvent(ctx, ws.ID, eventRef)
+	if err != nil {
+		return nil, backendError("get event", err)
+	}
+	if ev == nil {
+		return nil, notFoundError(fmt.Sprintf("event %q not found", eventRef))
+	}
+	out := Event(*ev)
+	return &out, nil
+}
+
 // Events returns ordered event log for workspace.
 func (m *Manager) Events(ctx context.Context, workspaceRef string, opts backend.EventListOptions) ([]Event, error) {
 	ws, err := m.ResolveWorkspaceRef(ctx, workspaceRef)

@@ -88,3 +88,61 @@ func TestSQLiteBackend_Conformance(t *testing.T) {
 		t.Fatalf("expected cascaded snapshot delete, got %d", sc)
 	}
 }
+
+func TestSQLiteBackend_GetEvent(t *testing.T) {
+	ctx := context.Background()
+	b := openTestBackend(t)
+
+	now := time.Now().UTC()
+	ws := model.Workspace{ID: "w-get-ev", Name: "get-event", Status: model.StatusActive, CreatedAt: now, UpdatedAt: now}
+	if err := b.CreateWorkspace(ctx, ws); err != nil {
+		t.Fatalf("create workspace: %v", err)
+	}
+
+	d, _ := json.Marshal(model.MessageData{Role: "user", Content: "hello"})
+	e1, err := b.AppendEvent(ctx, model.Event{WorkspaceID: ws.ID, Type: model.EventMessageAdded, Data: d})
+	if err != nil {
+		t.Fatalf("append event: %v", err)
+	}
+
+	// Lookup by seq_num (decimal string)
+	bySeq, err := b.GetEvent(ctx, ws.ID, "1")
+	if err != nil {
+		t.Fatalf("get event by seq_num: %v", err)
+	}
+	if bySeq == nil {
+		t.Fatal("expected event by seq_num, got nil")
+	}
+	if bySeq.ID != e1.ID {
+		t.Fatalf("expected event id %s, got %s", e1.ID, bySeq.ID)
+	}
+
+	// Lookup by ULID string
+	byID, err := b.GetEvent(ctx, ws.ID, e1.ID)
+	if err != nil {
+		t.Fatalf("get event by ULID: %v", err)
+	}
+	if byID == nil {
+		t.Fatal("expected event by ULID, got nil")
+	}
+	if byID.SeqNum != e1.SeqNum {
+		t.Fatalf("expected seq_num %d, got %d", e1.SeqNum, byID.SeqNum)
+	}
+
+	// Not found returns nil, nil
+	missing, err := b.GetEvent(ctx, ws.ID, "99999")
+	if err != nil {
+		t.Fatalf("get missing event: %v", err)
+	}
+	if missing != nil {
+		t.Fatalf("expected nil for missing event, got %+v", missing)
+	}
+
+	missingULID, err := b.GetEvent(ctx, ws.ID, "01NOTAREALULID000000000000")
+	if err != nil {
+		t.Fatalf("get missing ULID event: %v", err)
+	}
+	if missingULID != nil {
+		t.Fatalf("expected nil for missing ULID event, got %+v", missingULID)
+	}
+}

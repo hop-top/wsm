@@ -159,8 +159,8 @@ func newRootCmd() *cobra.Command {
 		newCreateCmd(&opts),
 		newListCmd(&opts),
 		newInspectCmd(&opts),
-		newEventCmd(&opts),
-		newEventsCmd(&opts),
+		newEventsGroupCmd(&opts),
+		newDeprecatedEventCmd(),
 		newSnapshotCmd(&opts),
 		newArchiveCmd(&opts),
 		newUnarchiveCmd(&opts),
@@ -364,14 +364,28 @@ func newInspectCmd(opts *globalOptions) *cobra.Command {
 	return cmd
 }
 
-func newEventsCmd(opts *globalOptions) *cobra.Command {
+func newEventsGroupCmd(opts *globalOptions) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "events",
+		Short: "Event operations",
+	}
+	cmd.AddCommand(
+		newEventsListCmd(opts),
+		newEventsAddCmd(opts),
+		newEventsShowCmd(opts),
+	)
+	return cmd
+}
+
+func newEventsListCmd(opts *globalOptions) *cobra.Command {
 	var types []string
 	var afterSeq, beforeSeq uint64
 	var limit int
 	cmd := &cobra.Command{
-		Use:   "events <workspace>",
-		Short: "List workspace events with filtering",
-		Args:  cobra.ExactArgs(1),
+		Use:     "list <workspace>",
+		Aliases: []string{"ls", "all"},
+		Short:   "List workspace events with filtering",
+		Args:    cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
 				evTypes := make([]workspace.EventType, 0, len(types))
@@ -420,16 +434,53 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 	return cmd
 }
 
-func newEventCmd(opts *globalOptions) *cobra.Command {
+func newEventsShowCmd(opts *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "event",
-		Short: "Event operations",
+		Use:     "show <workspace> <seq-or-id>",
+		Aliases: []string{"get", "s"},
+		Short:   "Show a single event by seq number or ID",
+		Args:    cobra.ExactArgs(2),
+		RunE: func(_ *cobra.Command, args []string) error {
+			return withApp(opts, func(ctx context.Context, app *appContext) error {
+				ev, err := app.manager.GetEvent(ctx, args[0], args[1])
+				if err != nil {
+					return err
+				}
+				if shouldJSON(*opts) {
+					return writeJSON(os.Stdout, ev)
+				}
+				fmt.Fprintf(os.Stdout, "Event:     %s\n", ev.ID)
+				fmt.Fprintf(os.Stdout, "Type:      %s\n", ev.Type)
+				fmt.Fprintf(os.Stdout, "Seq:       %d\n", ev.SeqNum)
+				fmt.Fprintf(os.Stdout, "Device:    %s\n", ev.DeviceID)
+				if ev.SessionID != "" {
+					fmt.Fprintf(os.Stdout, "Session:   %s\n", ev.SessionID)
+				}
+				if ev.AgentID != "" {
+					fmt.Fprintf(os.Stdout, "Agent:     %s\n", ev.AgentID)
+				}
+				fmt.Fprintf(os.Stdout, "Timestamp: %s\n", ev.Timestamp.Format(time.RFC3339))
+				fmt.Fprintf(os.Stdout, "Data:      %s\n", string(ev.Data))
+				return nil
+			})
+		},
 	}
-	cmd.AddCommand(newEventAddCmd(opts))
 	return cmd
 }
 
-func newEventAddCmd(opts *globalOptions) *cobra.Command {
+func newDeprecatedEventCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:    "event",
+		Short:  "Deprecated: use 'wsm events' instead",
+		Hidden: true,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			return workspace.NewErrorUsage("'wsm event' is deprecated; use 'wsm events add|list|show' instead")
+		},
+	}
+	return cmd
+}
+
+func newEventsAddCmd(opts *globalOptions) *cobra.Command {
 	var rawData string
 	var role, content, format string
 	var toolName, toolInput, toolOutput, toolStatus string
@@ -438,9 +489,10 @@ func newEventAddCmd(opts *globalOptions) *cobra.Command {
 	var deviceID, deviceName string
 
 	cmd := &cobra.Command{
-		Use:   "add <workspace> <type>",
-		Short: "Append an event to a workspace",
-		Args:  cobra.ExactArgs(2),
+		Use:     "add <workspace> <type>",
+		Aliases: []string{"create", "a", "+"},
+		Short:   "Append an event to a workspace",
+		Args:    cobra.ExactArgs(2),
 		RunE: func(_ *cobra.Command, args []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
 				eventType := workspace.EventType(strings.TrimSpace(args[1]))
@@ -892,12 +944,17 @@ func registerWorkspaceCompletion(root *cobra.Command, opts *globalOptions) {
 		return pkgcli.WorkspaceCompletionValues(items), cobra.ShellCompDirectiveNoFileComp
 	}
 
-	for _, name := range []string{"inspect", "archive", "unarchive", "delete", "events", "snapshot"} {
+	for _, name := range []string{"inspect", "archive", "unarchive", "delete", "snapshot"} {
 		if c, _, err := root.Find([]string{name}); err == nil && c != nil {
 			c.ValidArgsFunction = completer
 		}
 	}
-	if c, _, err := root.Find([]string{"event", "add"}); err == nil && c != nil {
+	for _, sub := range []string{"list", "show"} {
+		if c, _, err := root.Find([]string{"events", sub}); err == nil && c != nil {
+			c.ValidArgsFunction = completer
+		}
+	}
+	if c, _, err := root.Find([]string{"events", "add"}); err == nil && c != nil {
 		c.ValidArgsFunction = func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 			if len(args) == 0 {
 				return completer(cmd, args, toComplete)

@@ -17,6 +17,7 @@ type Backend interface {
 	DeleteWorkspace(ctx context.Context, id string) error
 
 	AppendEvent(ctx context.Context, event model.Event) (model.Event, error)
+	GetEvent(ctx context.Context, workspaceID string, ref string) (*model.Event, error)
 	ListEvents(ctx context.Context, workspaceID string, opts EventListOptions) ([]model.Event, error)
 	EventCount(ctx context.Context, workspaceID string) (uint64, error)
 
