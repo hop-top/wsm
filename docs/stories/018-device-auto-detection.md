@@ -17,6 +17,8 @@ As an integrator, I want automatic device detection so that events recorded thro
 4. **Given** a Device, **When** I register it via the Registry, **Then** it can be retrieved by ID.
 5. **Given** a Device already registered, **When** I register it again with a newer LastSeen, **Then** LastSeen is updated but FirstSeen is preserved.
 6. **Given** the same device, **When** two Managers are created with different `SessionID`s and the same `AgentID`, and both record events, **Then** each event carries the correct `session_id` and `agent_id`, linking the device to multiple sessions.
+7. **Given** a device registered through events, **When** I run `wsm devices list`, **Then** the device appears with correct OS, Arch, and LastSeen.
+8. **Given** a device with events across sessions, **When** I run `wsm devices show <id>`, **Then** output includes session_id, agent_id, workspace, and event count per session.
 
 ## Tests
 
