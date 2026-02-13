@@ -16,6 +16,7 @@ As a user, I want to inspect a workspace so that I can see its metadata, event c
 3. **Given** workspace `my-project` exists, **When** I run `wsm inspect my-project --events-all --json`, **Then** I get full JSON including all events.
 4. **Given** workspace `my-project` exists, **When** I run `wsm inspect my-project --devices`, **Then** I see attached devices.
 5. **Given** no workspace `xyz` exists, **When** I run `wsm inspect xyz`, **Then** I get an error with exit code 3 and a hint to run `wsm list`.
+6. *(Future)* **Given** events with `session_id` and `agent_id`, **When** I inspect a workspace with `--events`, **Then** session and agent columns are visible.
 
 ## Tests
 

@@ -1,0 +1,32 @@
+FROM ubuntu:24.04
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG GO_VERSION=1.23.8
+ARG TARGETARCH
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+  ca-certificates \
+  curl \
+  expect \
+  git \
+  make \
+  build-essential \
+  pkg-config \
+  util-linux \
+  bash-completion \
+  && rm -rf /var/lib/apt/lists/*
+
+RUN curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-${TARGETARCH}.tar.gz" -o /tmp/go.tgz \
+  && rm -rf /usr/local/go \
+  && tar -C /usr/local -xzf /tmp/go.tgz \
+  && rm -f /tmp/go.tgz
+
+ENV PATH="/usr/local/go/bin:${PATH}" \
+  CGO_ENABLED=1 \
+  GOCACHE=/workspace/.tmp/gocache
+
+WORKDIR /workspace
+
+COPY . /workspace
+
+CMD ["bash", "-lc", "make test && make test-e2e && make test-e2e-charm && make verify-no-ui-leak && make build-charm"]

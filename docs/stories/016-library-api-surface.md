@@ -16,12 +16,14 @@ As an integrator, I want a clean Go API for workspace management so that I can e
 3. **Given** a Manager, **When** I call `RecordEvent` with a typed payload (MessageData, ToolCallData), **Then** the event is serialized and stored correctly.
 4. **Given** a Manager, **When** I call `Events` with filter options, **Then** I get filtered, ordered events without shelling out.
 5. **Given** `pkg/workspace` and `pkg/backend`, **When** I check their public API, **Then** there are no CLI or presentation concerns leaked into the library types.
+6. **Given** I call `NewManager(backend, WithSessionID("s1"), WithAgentID("a1"))`, **Then** the Manager is configured with those identifiers and propagates them to recorded events.
 
 ## Tests
 
 ### Unit
 - `pkg/workspace/manager_test.go` -- `TestManager_APIContract`
+- `pkg/workspace/manager_test.go` -- `TestManager_ManagerOptionsContract`
 - `pkg/workspace/event_test.go` -- `TestEventPayload_TypeSafety`
 
 ### E2E
-- None (library-level; covered by unit tests)
+- `tests/e2e/module_test.go` -- `TestLibraryAPISurface_GoModuleContracts`

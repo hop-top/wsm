@@ -1,0 +1,52 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.x'
+
+      - name: Test
+        run: make test
+
+      - name: E2E (default build)
+        run: make test-e2e
+
+      - name: Verify pkg/* UI dependency boundary
+        run: make verify-no-ui-leak
+
+      - name: Build charmui path
+        run: make build-charm
+
+      - name: E2E (charm build)
+        run: make test-e2e-charm
+
+      - name: Verify required docs exist
+        run: |
+          test -f README.md
+          test -f AGENTS.md
+          test -f CONTRIBUTING.md
+          test -f SECURITY.md
+          test -f CODE_OF_CONDUCT.md
+          test -f CHANGELOG.md
+          test -f docs/stories/README.md
+
+  ubuntu-docker:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Dockerized Ubuntu test matrix
+        run: make test-ubuntu-docker

@@ -6,11 +6,11 @@
 
 **Architecture:** Event-sourced workspace sessions persisted via pluggable storage backends. Workspaces are append-only event logs that can be replayed into point-in-time snapshots. The library (`pkg/`) is the primary deliverable; the CLI (`cmd/wsm/`) is a thin consumer.
 
-**Tech Stack:** Go, Cobra (CLI), SQLite (default backend), JSONL (event serialization)
+**Tech Stack:** Go, Cobra (CLI), SQLite (default backend), Charmbracelet stack for optional TUI (`bubbletea`, `bubbles`, `lipgloss`)
 
 **Repository**: New repository `github.com/aps/workspace-cli` (or `github.com/aps/wsm`)
 **Priority**: P0 (Foundation)
-**Status**: Design Phase
+**Status**: Design Phase (decomposed into `01a` through `01h`)
 **Date**: 2026-02-12
 
 ---
@@ -43,6 +43,7 @@ A **standalone CLI tool** (`wsm` - Workspace Session Manager) that provides:
 - Snapshot generation
 - Basic device registry (no profile awareness)
 - CLI commands for workspace lifecycle
+- TUI command (`wsm tui`) with optional Charmbracelet build path
 - Configuration hierarchy (flags > env > config file > defaults)
 - Output modes (TTY, JSON, quiet, pipe)
 - Error taxonomy and exit codes
@@ -54,7 +55,7 @@ A **standalone CLI tool** (`wsm` - Workspace Session Manager) that provides:
 - Profile awareness (Plan 4)
 - Postgres and Git backends (deferred — interface is defined, implementations come later)
 - Multi-device access (Plan 7)
-- TUI (deferred to Plan 4 / APS integration)
+- IDE-specific adapters and APS coupling (TUI exists in this repo; APS integration remains separate)
 
 ---
 
@@ -130,8 +131,8 @@ workspace-cli/
 
 1. **`pkg/` not `internal/`** — the library is the primary deliverable for vendoring.
 2. **SQLite only in Plan 1** — Postgres and Git backends are defined by the interface but implemented later. YAGNI.
-3. **No TUI** — `wsm` is a headless CLI. TUI comes via `aps workspace` (Plan 4).
-4. **No Lipgloss/Bubbletea dependency** — keep the module lightweight. Use `text/tabwriter` and ANSI escape codes directly, or a minimal styling library.
+3. **TUI is part of v1** — `wsm tui` is supported with Charmbracelet in this repo.
+4. **UI dependencies are optional for integrators** — keep core `pkg/*` UI-free; Charmbracelet path is enabled via `-tags charmui` and `go.charm.mod`.
 5. **Cobra for CLI** — standard, well-known, supports completions natively.
 
 ---
@@ -811,7 +812,7 @@ function GenerateSnapshot(workspace, events, maxSeqNum):
 
 - All SQLite writes use transactions. A crash mid-write rolls back cleanly.
 - `SIGINT` / `SIGTERM` during operations triggers context cancellation, which propagates to the backend and rolls back any in-flight transaction.
-- No JSONL files — events are stored in SQLite rows, not flat files. This eliminates the truncated-line corruption risk.
+- No JSONL files in Plan 1 persistence — events are stored in SQLite rows, not flat files.
 
 ---
 
@@ -826,8 +827,11 @@ Plan 1 ships with minimal dependencies:
 | `github.com/mattn/go-sqlite3` | SQLite driver |
 | `github.com/mattn/go-isatty` | TTY detection for output modes |
 | `gopkg.in/yaml.v3` | Config file parsing |
+| `github.com/charmbracelet/bubbletea` | Optional TUI event loop (`charmui` build only) |
+| `github.com/charmbracelet/bubbles` | Optional TUI components (`charmui` build only) |
+| `github.com/charmbracelet/lipgloss` | Optional TUI styling (`charmui` build only) |
 
-No Lipgloss, no Bubbletea, no Bubble. Keep it lean for vendoring.
+Core vendoring remains lean: `pkg/*` must not import Charmbracelet packages.
 
 ---
 

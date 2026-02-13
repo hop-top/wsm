@@ -1,0 +1,4 @@
+- `wsm event` and `wsm events`? should be `wsm events add|list|show`, drop `wsm event`
+- `wsm devices` got lost, how would a local (or remote) device register?
+- add sane aliases to certain commands (e.g. list -> ls|all, add -> create|a|+)
+- how to use a snapshot?

@@ -1,0 +1,150 @@
+package e2e_test
+
+import (
+	"strings"
+	"testing"
+
+	"hop.top/wsm/pkg/workspace"
+)
+
+func TestJSON_Create(t *testing.T) {
+	r := newRunner(t)
+	res := r.run("create", "json-create", "--json")
+	requireExitCode(t, res, 0)
+	var payload map[string]any
+	mustUnmarshalJSON(t, res.Stdout, &payload)
+	if payload["id"] == "" || payload["created_at"] == "" {
+		t.Fatalf("expected create json payload with id/created_at, got: %s", res.Stdout)
+	}
+}
+
+func TestJSON_List(t *testing.T) {
+	r := newRunner(t)
+	r.mustCreateWorkspace("json-list")
+	res := r.run("list", "--json")
+	requireExitCode(t, res, 0)
+	items := mustUnmarshalJSONArray[workspace.Workspace](t, res.Stdout)
+	if len(items) != 1 || items[0].Name != "json-list" {
+		t.Fatalf("unexpected list json output: %+v", items)
+	}
+}
+
+func TestJSON_Inspect(t *testing.T) {
+	r := newRunner(t)
+	id := r.mustCreateWorkspace("json-inspect")
+	res := r.run("inspect", id, "--json")
+	requireExitCode(t, res, 0)
+	var payload inspectJSON
+	mustUnmarshalJSON(t, res.Stdout, &payload)
+	if payload.Workspace.ID != id {
+		t.Fatalf("expected inspect workspace id %s, got %s", id, payload.Workspace.ID)
+	}
+	if payload.EventCount == 0 {
+		t.Fatalf("expected non-zero event_count for inspect output, got %d", payload.EventCount)
+	}
+}
+
+func TestJSON_Archive(t *testing.T) {
+	r := newRunner(t)
+	id := r.mustCreateWorkspace("json-archive")
+	res := r.run("archive", id, "--json")
+	requireExitCode(t, res, 0)
+	var payload map[string]any
+	mustUnmarshalJSON(t, res.Stdout, &payload)
+	if payload["id"] != id {
+		t.Fatalf("expected archive payload id %s, got %+v", id, payload)
+	}
+	if payload["archived_at"] == "" {
+		t.Fatalf("expected archived_at in archive payload, got %+v", payload)
+	}
+}
+
+func TestJSON_ErrorIsolation(t *testing.T) {
+	r := newRunner(t)
+	res := r.run("inspect", "missing-workspace", "--json")
+	requireExitCode(t, res, 3)
+	if strings.TrimSpace(res.Stdout) != "" {
+		t.Fatalf("expected stdout to stay empty on json error, got: %q", res.Stdout)
+	}
+	if strings.TrimSpace(res.Stderr) == "" {
+		t.Fatalf("expected stderr to include error details")
+	}
+}
+
+func TestPipe_NoANSI(t *testing.T) {
+	r := newRunner(t)
+	r.mustCreateWorkspace("pipe-no-ansi")
+	res := r.run("list")
+	requireExitCode(t, res, 0)
+	if hasANSI(res.Stdout) || hasANSI(res.Stderr) {
+		t.Fatalf("expected no ANSI escapes in non-tty output:\nstdout=%q\nstderr=%q", res.Stdout, res.Stderr)
+	}
+}
+
+func TestPipe_QuietIds(t *testing.T) {
+	r := newRunner(t)
+	idA := r.mustCreateWorkspace("pipe-a")
+	idB := r.mustCreateWorkspace("pipe-b")
+
+	res := r.run("list", "-q")
+	requireExitCode(t, res, 0)
+	lines := sortedLines(res.Stdout)
+	if len(lines) != 2 {
+		t.Fatalf("expected two ids in quiet output, got %d:\n%s", len(lines), res.Stdout)
+	}
+	if lines[0] != idA && lines[0] != idB {
+		t.Fatalf("unexpected quiet output ids: %v", lines)
+	}
+	if lines[1] != idA && lines[1] != idB {
+		t.Fatalf("unexpected quiet output ids: %v", lines)
+	}
+}
+
+func TestPipe_DeleteRequiresForce(t *testing.T) {
+	r := newRunner(t)
+	r.mustCreateWorkspace("pipe-delete")
+
+	res := r.run("delete", "pipe-delete")
+	requireExitCode(t, res, 2)
+	if !strings.Contains(strings.ToLower(res.Stderr), "requires --force") {
+		t.Fatalf("expected non-tty delete usage guidance, got: %s", res.Stderr)
+	}
+}
+
+func TestUIModeSelection(t *testing.T) {
+	r := newRunner(t)
+	r.mustCreateWorkspace("ui-mode")
+
+	auto := r.run("list", "--ui=auto")
+	requireExitCode(t, auto, 0)
+	if hasANSI(auto.Stdout) {
+		t.Fatalf("expected plain output in auto mode on non-tty, got ansi in: %q", auto.Stdout)
+	}
+
+	plain := r.run("list", "--ui=plain")
+	requireExitCode(t, plain, 0)
+	if hasANSI(plain.Stdout) {
+		t.Fatalf("expected plain output in --ui=plain mode, got ansi in: %q", plain.Stdout)
+	}
+
+	charmUnavailable := r.run("--ui=charm", "list")
+	requireExitCode(t, charmUnavailable, 2)
+	if !strings.Contains(charmUnavailable.Stderr, "rebuild with -tags charmui") {
+		t.Fatalf("expected charm build guidance in ui=charm usage error, got: %s", charmUnavailable.Stderr)
+	}
+}
+
+func TestNoColorTTY(t *testing.T) {
+	r := newRunner(t)
+	r.mustCreateWorkspace("no-color")
+
+	res := r.exec(runOptions{
+		Args:     []string{"--data-dir", r.dataDir, "list", "--ui=plain"},
+		TTY:      true,
+		ExtraEnv: map[string]string{"NO_COLOR": "1"},
+	})
+	requireExitCode(t, res, 0)
+	if hasANSI(res.Stdout) || hasANSI(res.Stderr) {
+		t.Fatalf("expected NO_COLOR tty output without ANSI escapes:\nstdout=%q\nstderr=%q", res.Stdout, res.Stderr)
+	}
+}

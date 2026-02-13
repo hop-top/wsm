@@ -22,3 +22,6 @@ As a maintainer, I want a conformance test suite for the Backend interface so th
 ### Unit
 - `pkg/backend/conformance_test.go` -- `TestBackendConformance`
 - `pkg/backend/sqlite/sqlite_test.go` -- `TestSQLiteBackend_Conformance`
+
+### E2E
+- `tests/e2e/module_test.go` -- `TestBackendConformanceGate`

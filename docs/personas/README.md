@@ -1,10 +1,10 @@
 # Personas
 
-Actor personas for the wsm (Workspace Session Manager) project.
+Actor personas for the wsm (Workspace & Session Manager) project.
 
-| Persona | Description | Stories |
-|---------|-------------|---------|
-| [User](user.md) | End-user who creates workspaces, records events, and manages lifecycle via CLI | 9 stories |
-| [Maintainer](maintainer.md) | Developer who writes tests and ensures data integrity | 3 stories |
-| [External Client](external-client.md) | Script or CI/CD pipeline consuming wsm output programmatically | 3 stories |
-| [Integrator](integrator.md) | Developer who vendors wsm as a Go module into another tool | 3 stories |
+| Persona | Description | Discovery | Delivery | Stories |
+|---------|-------------|-----------|----------|---------| 
+| [User](user.md) | End-user; CLI/TUI workflows | Web manual, `--help`, TUI hints, man pages | Web guides, plain text, prompts, color output | 14 |
+| [Maintainer](maintainer.md) | Tests, conformance, governance | GoDoc, CONTRIBUTING, CI logs, git history | Markdown, test reports, diffs | 5 |
+| [External Client](external-client.md) | Automation / scripted consumers | API docs, JSON schemas, exit-code table | JSON, exit codes, versioned schemas | 4 |
+| [Integrator](integrator.md) | Embedding `pkg/` as Go module | GoDoc, examples/, interface contracts | Go source, example tests, semver notes | 5 |

@@ -1,0 +1,25 @@
+# Binaries
+bin/
+dist/
+/wsm
+
+# Go
+*.test
+*.out
+coverage.out
+
+# Build artifacts
+.build/
+.tmp/
+
+# Editors/OS
+.DS_Store
+.vscode/
+.idea/
+
+# Env
+.env
+.env.*
+
+# Logs
+*.log

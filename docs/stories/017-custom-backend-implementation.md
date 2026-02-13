@@ -23,4 +23,4 @@ As an integrator, I want to implement the Backend interface for my own storage s
 - `pkg/backend/backend_test.go` -- `TestBackendInterface_NoLeakedTypes`
 
 ### E2E
-- None (library-level; covered by conformance suite)
+- `tests/e2e/module_test.go` -- `TestBackendConformanceGate`
