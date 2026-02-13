@@ -481,3 +481,47 @@ func (b *Backend) ListDevices(ctx context.Context) ([]device.Device, error) {
 	}
 	return out, rows.Err()
 }
+
+func (b *Backend) ListDeviceSessions(ctx context.Context, deviceID string) ([]backend.DeviceSession, error) {
+	rows, err := b.db.QueryContext(ctx, `
+		SELECT
+			e.device_id,
+			COALESCE(e.session_id, '') AS session_id,
+			COALESCE(e.agent_id, '') AS agent_id,
+			e.workspace_id,
+			w.name AS workspace_name,
+			COUNT(*) AS event_count,
+			MAX(e.timestamp) AS last_event_at
+		FROM events e
+		JOIN workspaces w ON w.id = e.workspace_id
+		WHERE e.device_id = ?
+		GROUP BY e.device_id, e.session_id, e.agent_id, e.workspace_id
+		ORDER BY last_event_at DESC
+	`, deviceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]backend.DeviceSession, 0)
+	for rows.Next() {
+		var ds backend.DeviceSession
+		var lastEventAt string
+		if err := rows.Scan(
+			&ds.DeviceID, &ds.SessionID,
+			&ds.AgentID, &ds.WorkspaceID,
+			&ds.WorkspaceName, &ds.EventCount,
+			&lastEventAt,
+		); err != nil {
+			return nil, err
+		}
+		ds.LastEventAt, _ = time.Parse(time.RFC3339Nano, lastEventAt)
+		if ds.LastEventAt.IsZero() {
+			ds.LastEventAt, _ = time.Parse("2006-01-02 15:04:05.999999999-07:00", lastEventAt)
+		}
+		if ds.LastEventAt.IsZero() {
+			ds.LastEventAt, _ = time.Parse("2006-01-02T15:04:05Z", lastEventAt)
+		}
+		out = append(out, ds)
+	}
+	return out, rows.Err()
+}

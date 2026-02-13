@@ -2,6 +2,7 @@ package backend
 
 import (
 	"context"
+	"time"
 
 	"hop.top/wsm/pkg/device"
 	"hop.top/wsm/pkg/model"
@@ -28,6 +29,7 @@ type Backend interface {
 	SaveDevice(ctx context.Context, dev device.Device) error
 	GetDevice(ctx context.Context, id string) (*device.Device, error)
 	ListDevices(ctx context.Context) ([]device.Device, error)
+	ListDeviceSessions(ctx context.Context, deviceID string) ([]DeviceSession, error)
 
 	Migrate(ctx context.Context) error
 	Close() error
@@ -40,6 +42,17 @@ type ListOptions struct {
 	SortDir string // asc, desc
 	Limit   int
 	Offset  int
+}
+
+// DeviceSession summarizes a session on a device.
+type DeviceSession struct {
+	DeviceID      string    `json:"device_id"`
+	SessionID     string    `json:"session_id"`
+	AgentID       string    `json:"agent_id"`
+	WorkspaceID   string    `json:"workspace_id"`
+	WorkspaceName string    `json:"workspace_name"`
+	EventCount    int       `json:"event_count"`
+	LastEventAt   time.Time `json:"last_event_at"`
 }
 
 // EventListOptions controls event filtering.
