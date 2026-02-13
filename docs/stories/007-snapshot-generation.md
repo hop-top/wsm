@@ -1,0 +1,28 @@
+# Snapshot Generation
+
+**ID**: 007
+**Feature**: Event Sourcing
+**Persona**: [User](../personas/user.md)
+**Priority**: P0
+
+## Story
+
+As a user, I want to generate a snapshot of a workspace so that I can see a summary of its current state without replaying all events.
+
+## Acceptance Scenarios
+
+1. **Given** workspace with 100 events, **When** I generate a snapshot, **Then** it contains message_count, tool_calls, files_changed, and devices derived from events.
+2. **Given** workspace with a previous snapshot at seq 50 and 50 new events, **When** I generate a snapshot, **Then** it replays only from seq 51 onward (incremental).
+3. **Given** workspace with file.changed events for paths A, B, A, **When** I generate a snapshot, **Then** files_changed contains [A, B] (deduplicated).
+4. **Given** workspace with device.attached and device.detached events, **When** I generate a snapshot, **Then** devices reflects only currently-attached devices.
+5. **Given** empty workspace (no events), **When** I generate a snapshot, **Then** all counts are zero.
+
+## Tests
+
+### Unit
+- `pkg/workspace/snapshot_test.go` -- `TestGenerateSnapshot`
+- `pkg/workspace/snapshot_test.go` -- `TestGenerateSnapshot_Incremental`
+- `pkg/workspace/snapshot_test.go` -- `TestGenerateSnapshot_Empty`
+
+### E2E
+- `tests/e2e/snapshot_test.go` -- `TestSnapshotGeneration`
