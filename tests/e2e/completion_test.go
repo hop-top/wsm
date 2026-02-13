@@ -34,7 +34,7 @@ func TestCompletionWorkspaceAndFlagValues(t *testing.T) {
 		t.Fatalf("expected workspace names in completion output, got:\n%s", workspaceCompletion.Stdout)
 	}
 
-	snapshotCompletion := r.run("__complete", "snapshot", "")
+	snapshotCompletion := r.run("__complete", "snapshot", "generate", "")
 	requireExitCode(t, snapshotCompletion, 0)
 	if !strings.Contains(snapshotCompletion.Stdout, "alpha") || !strings.Contains(snapshotCompletion.Stdout, "beta") {
 		t.Fatalf("expected workspace names in snapshot completion output, got:\n%s", snapshotCompletion.Stdout)

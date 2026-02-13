@@ -160,8 +160,9 @@ func newRootCmd() *cobra.Command {
 		newListCmd(&opts),
 		newInspectCmd(&opts),
 		newEventsGroupCmd(&opts),
+		newDevicesGroupCmd(&opts),
 		newDeprecatedEventCmd(),
-		newSnapshotCmd(&opts),
+		newSnapshotGroupCmd(&opts),
 		newArchiveCmd(&opts),
 		newUnarchiveCmd(&opts),
 		newDeleteCmd(&opts),
@@ -468,6 +469,100 @@ func newEventsShowCmd(opts *globalOptions) *cobra.Command {
 	return cmd
 }
 
+func newDevicesGroupCmd(opts *globalOptions) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "devices",
+		Short: "Device operations",
+	}
+	cmd.AddCommand(
+		newDevicesListCmd(opts),
+		newDevicesShowCmd(opts),
+	)
+	return cmd
+}
+
+func newDevicesListCmd(opts *globalOptions) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:     "list",
+		Short:   "List known devices",
+		Aliases: []string{"ls", "all"},
+		RunE: func(_ *cobra.Command, _ []string) error {
+			return withApp(opts, func(ctx context.Context, app *appContext) error {
+				devs, err := app.manager.ListDevices(ctx)
+				if err != nil {
+					return err
+				}
+				if len(devs) == 0 {
+					fmt.Fprintln(os.Stdout, "No devices registered yet.")
+					return nil
+				}
+				if opts.Quiet {
+					for _, d := range devs {
+						fmt.Fprintln(os.Stdout, d.ID)
+					}
+					return nil
+				}
+				if shouldJSON(*opts) {
+					return writeJSON(os.Stdout, devs)
+				}
+				tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+				fmt.Fprintln(tw, "ID\tNAME\tOS\tARCH\tLAST SEEN")
+				for _, d := range devs {
+					fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n",
+						shortID(d.ID), d.Name, d.OS, d.Arch, humanAgo(d.LastSeen))
+				}
+				return tw.Flush()
+			})
+		},
+	}
+	return cmd
+}
+
+func newDevicesShowCmd(opts *globalOptions) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:     "show <device-id>",
+		Short:   "Show device details",
+		Aliases: []string{"get", "s"},
+		Args:    cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			return withApp(opts, func(ctx context.Context, app *appContext) error {
+				dev, err := app.manager.GetDevice(ctx, args[0])
+				if err != nil {
+					return err
+				}
+				sessions, _ := app.manager.DeviceSessions(ctx, dev.ID)
+				if shouldJSON(*opts) {
+					resp := map[string]any{
+						"device":   dev,
+						"sessions": sessions,
+					}
+					return writeJSON(os.Stdout, resp)
+				}
+				fmt.Fprintf(os.Stdout, "Device:     %s\n", dev.Name)
+				fmt.Fprintf(os.Stdout, "ID:         %s\n", dev.ID)
+				fmt.Fprintf(os.Stdout, "OS:         %s\n", dev.OS)
+				fmt.Fprintf(os.Stdout, "Arch:       %s\n", dev.Arch)
+				fmt.Fprintf(os.Stdout, "First Seen: %s\n", dev.FirstSeen.Format(time.RFC3339))
+				fmt.Fprintf(os.Stdout, "Last Seen:  %s\n", dev.LastSeen.Format(time.RFC3339))
+				if len(sessions) > 0 {
+					fmt.Fprintln(os.Stdout, "\nSESSIONS")
+					tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+					fmt.Fprintln(tw, "SESSION\tAGENT\tWORKSPACE\tEVENTS\tLAST ACTIVITY")
+					for _, s := range sessions {
+						fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%s\n",
+							shortID(s.SessionID), s.AgentID,
+							s.WorkspaceName, s.EventCount,
+							humanAgo(s.LastEventAt))
+					}
+					_ = tw.Flush()
+				}
+				return nil
+			})
+		},
+	}
+	return cmd
+}
+
 func newDeprecatedEventCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:    "event",
@@ -691,17 +786,33 @@ func manualAppendableEventTypes() []string {
 	}
 }
 
-func newSnapshotCmd(opts *globalOptions) *cobra.Command {
+func newSnapshotGroupCmd(opts *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:     "snapshot [workspace]",
+		Use:     "snapshot",
+		Short:   "Snapshot operations",
 		Aliases: []string{"snap"},
+	}
+	cmd.AddCommand(
+		newSnapshotGenerateCmd(opts),
+		newSnapshotShowCmd(opts),
+		newSnapshotContextCmd(opts),
+	)
+	return cmd
+}
+
+func newSnapshotGenerateCmd(opts *globalOptions) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:     "generate [workspace]",
 		Short:   "Generate and persist a workspace snapshot",
+		Aliases: []string{"gen", "g"},
 		Args:    cobra.MaximumNArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
 				var ws workspace.Workspace
 				if len(args) == 0 {
-					items, err := app.manager.List(ctx, backend.ListOptions{SortBy: "updated", SortDir: "desc", Limit: 1})
+					items, err := app.manager.List(ctx, backend.ListOptions{
+						SortBy: "updated", SortDir: "desc", Limit: 1,
+					})
 					if err != nil {
 						return err
 					}
@@ -734,11 +845,76 @@ func newSnapshotCmd(opts *globalOptions) *cobra.Command {
 				fmt.Fprintf(os.Stdout, "  tool_calls:    %d\n", snap.ToolCalls)
 				fmt.Fprintf(os.Stdout, "  files_changed: %d\n", len(snap.FilesChanged))
 				fmt.Fprintf(os.Stdout, "  devices:       %d\n", len(snap.Devices))
-				fmt.Fprintf(os.Stdout, "  generated_at:  %s\n", snap.GeneratedAt.Format(time.RFC3339))
+				fmt.Fprintf(os.Stdout, "  generated_at:  %s\n",
+					snap.GeneratedAt.Format(time.RFC3339))
 				return nil
 			})
 		},
 	}
+	return cmd
+}
+
+func newSnapshotShowCmd(opts *globalOptions) *cobra.Command {
+	return &cobra.Command{
+		Use:     "show <workspace>",
+		Short:   "Show latest snapshot",
+		Aliases: []string{"get", "s"},
+		Args:    cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			return withApp(opts, func(ctx context.Context, app *appContext) error {
+				ws, err := app.manager.ResolveWorkspaceRef(ctx, args[0])
+				if err != nil {
+					return err
+				}
+				snap, err := app.manager.Snapshot(ctx, ws.ID)
+				if err != nil {
+					return err
+				}
+				if shouldJSON(*opts) {
+					return writeJSON(os.Stdout, snap)
+				}
+				fmt.Fprintf(os.Stdout, "Snapshot for %s (%s)\n", ws.Name, ws.ID)
+				fmt.Fprintf(os.Stdout, "  at_seq_num:    %d\n", snap.AtSeqNum)
+				fmt.Fprintf(os.Stdout, "  message_count: %d\n", snap.MessageCount)
+				fmt.Fprintf(os.Stdout, "  tool_calls:    %d\n", snap.ToolCalls)
+				fmt.Fprintf(os.Stdout, "  files_changed: %d\n", len(snap.FilesChanged))
+				fmt.Fprintf(os.Stdout, "  devices:       %d\n", len(snap.Devices))
+				fmt.Fprintf(os.Stdout, "  generated_at:  %s\n",
+					snap.GeneratedAt.Format(time.RFC3339))
+				return nil
+			})
+		},
+	}
+}
+
+func newSnapshotContextCmd(opts *globalOptions) *cobra.Command {
+	var recentEvents int
+	cmd := &cobra.Command{
+		Use:     "context <workspace>",
+		Short:   "Generate context handoff brief",
+		Aliases: []string{"ctx"},
+		Args:    cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			return withApp(opts, func(ctx context.Context, app *appContext) error {
+				ws, err := app.manager.ResolveWorkspaceRef(ctx, args[0])
+				if err != nil {
+					return err
+				}
+				snap, err := app.manager.Snapshot(ctx, ws.ID)
+				if err != nil {
+					return err
+				}
+				events, _ := app.manager.Events(ctx, ws.ID,
+					backend.EventListOptions{})
+				out := workspace.FormatContext(snap, events,
+					workspace.ContextOptions{RecentEvents: recentEvents})
+				fmt.Fprint(os.Stdout, out)
+				return nil
+			})
+		},
+	}
+	cmd.Flags().IntVar(&recentEvents, "events", 5,
+		"Number of recent events to include")
 	return cmd
 }
 
@@ -944,8 +1120,13 @@ func registerWorkspaceCompletion(root *cobra.Command, opts *globalOptions) {
 		return pkgcli.WorkspaceCompletionValues(items), cobra.ShellCompDirectiveNoFileComp
 	}
 
-	for _, name := range []string{"inspect", "archive", "unarchive", "delete", "snapshot"} {
+	for _, name := range []string{"inspect", "archive", "unarchive", "delete"} {
 		if c, _, err := root.Find([]string{name}); err == nil && c != nil {
+			c.ValidArgsFunction = completer
+		}
+	}
+	for _, sub := range []string{"generate", "show", "context"} {
+		if c, _, err := root.Find([]string{"snapshot", sub}); err == nil && c != nil {
 			c.ValidArgsFunction = completer
 		}
 	}

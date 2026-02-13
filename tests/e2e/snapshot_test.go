@@ -3,6 +3,7 @@ package e2e_test
 import (
 	"context"
 	"sort"
+	"strings"
 	"testing"
 
 	"hop.top/wsm/pkg/workspace"
@@ -35,7 +36,7 @@ func TestSnapshotGeneration(t *testing.T) {
 	mustRecord(workspace.EventDeviceAttached, workspace.DeviceData{DeviceID: "dev-2", DeviceName: "CI"})
 	mustRecord(workspace.EventDeviceDetached, workspace.DeviceData{DeviceID: "dev-2", DeviceName: "CI"})
 
-	firstSnapshotRes := r.run("snapshot", ws.ID, "--json")
+	firstSnapshotRes := r.run("snapshot", "generate", ws.ID, "--json")
 	requireExitCode(t, firstSnapshotRes, 0)
 	var snap1 workspace.Snapshot
 	mustUnmarshalJSON(t, firstSnapshotRes.Stdout, &snap1)
@@ -56,7 +57,7 @@ func TestSnapshotGeneration(t *testing.T) {
 	mustRecord(workspace.EventMessageAdded, workspace.MessageData{Role: "assistant", Content: "m2"})
 	mustRecord(workspace.EventFileChanged, workspace.FileChangeData{Path: "c.txt", Operation: "create"})
 
-	secondSnapshotRes := r.run("snapshot", ws.ID, "--json")
+	secondSnapshotRes := r.run("snapshot", "generate", ws.ID, "--json")
 	requireExitCode(t, secondSnapshotRes, 0)
 	var snap2 workspace.Snapshot
 	mustUnmarshalJSON(t, secondSnapshotRes.Stdout, &snap2)
@@ -97,11 +98,29 @@ func TestSnapshotGeneration(t *testing.T) {
 		t.Fatalf("expected empty files/devices for empty workspace snapshot, got files=%v devices=%v", emptySnap.FilesChanged, emptySnap.Devices)
 	}
 
-	implicitRes := r.run("snapshot", "--json")
+	implicitRes := r.run("snapshot", "generate", "--json")
 	requireExitCode(t, implicitRes, 0)
 	var implicit workspace.Snapshot
 	mustUnmarshalJSON(t, implicitRes.Stdout, &implicit)
 	if implicit.WorkspaceID != empty.ID {
 		t.Fatalf("expected implicit snapshot target to be most-recent workspace %s, got %s", empty.ID, implicit.WorkspaceID)
+	}
+}
+
+func TestSnapshotContext(t *testing.T) {
+	r := newRunner(t)
+	wsID := r.mustCreateWorkspace("snap-context-test")
+	r.run("events", "add", wsID, "message.added", "--content=context-test")
+
+	genRes := r.run("snapshot", "generate", wsID, "--json")
+	requireExitCode(t, genRes, 0)
+
+	ctxRes := r.run("snapshot", "context", wsID)
+	requireExitCode(t, ctxRes, 0)
+	if !strings.Contains(ctxRes.Stdout, "snap-context-test") {
+		t.Fatalf("expected workspace name in context, got: %s", ctxRes.Stdout)
+	}
+	if !strings.Contains(ctxRes.Stdout, "## Summary") {
+		t.Fatalf("expected Summary header in context")
 	}
 }

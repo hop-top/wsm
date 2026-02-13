@@ -405,6 +405,36 @@ func (m *Manager) SnapshotCount(ctx context.Context, ref string) (uint64, error)
 	return n, nil
 }
 
+// ListDevices returns all known devices.
+func (m *Manager) ListDevices(ctx context.Context) ([]device.Device, error) {
+	devs, err := m.backend.ListDevices(ctx)
+	if err != nil {
+		return nil, backendError("list devices", err)
+	}
+	return devs, nil
+}
+
+// GetDevice returns a device by ID.
+func (m *Manager) GetDevice(ctx context.Context, id string) (*device.Device, error) {
+	dev, err := m.backend.GetDevice(ctx, id)
+	if err != nil {
+		return nil, backendError("get device", err)
+	}
+	if dev == nil {
+		return nil, notFoundError(fmt.Sprintf("device %q not found", id))
+	}
+	return dev, nil
+}
+
+// DeviceSessions returns session summaries for a device.
+func (m *Manager) DeviceSessions(ctx context.Context, deviceID string) ([]backend.DeviceSession, error) {
+	sessions, err := m.backend.ListDeviceSessions(ctx, deviceID)
+	if err != nil {
+		return nil, backendError("list device sessions", err)
+	}
+	return sessions, nil
+}
+
 func mapBackendErr(msg string, err error) error {
 	if err == nil {
 		return nil
