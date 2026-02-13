@@ -1,3 +1,5 @@
+export GOFLAGS ?= -buildvcs=false
+
 .PHONY: help build build-charm test test-e2e test-e2e-charm test-ubuntu-docker verify-no-ui-leak fmt
 
 help:
