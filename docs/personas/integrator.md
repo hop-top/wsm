@@ -28,3 +28,5 @@ A developer who vendors `wsm` as a Go module (`pkg/`) to build workspace capabil
 - [018 - Device Auto-Detection](../stories/018-device-auto-detection.md)
 - [019 - Workspace Reference Resolution](../stories/019-workspace-reference-resolution.md)
 - [024 - Vendored UI Optionality](../stories/024-vendored-ui-optionality.md)
+- [029 - Format Adapter Interface](../stories/029-format-adapter-interface.md)
+- [046 - Format Adapter Interface Review](../stories/046-format-adapter-interface-review.md)

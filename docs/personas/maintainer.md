@@ -28,6 +28,7 @@ A developer or maintainer of the wsm project who writes and runs automated tests
 - [012 - Backend Conformance Tests](../stories/012-backend-conformance-tests.md)
 - [025 - Repository Foundation and Governance](../stories/025-repo-foundation-and-governance.md)
 - [026 - Test Harness and Conformance Gates](../stories/026-test-harness-and-conformance-gates.md)
+- [045 - Format Adapter Conformance Tests](../stories/045-format-adapter-conformance-tests.md)
 
 ## Related Stories
 

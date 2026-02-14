@@ -39,6 +39,23 @@ An end-user of the `wsm` CLI/TUI who creates workspaces, records events, inspect
 - [021 - TUI Launch and Navigation](../stories/021-tui-launch-and-navigation.md)
 - [022 - TUI Workspace Operations](../stories/022-tui-workspace-operations.md)
 - [023 - UI Rendering Modes](../stories/023-ui-rendering-modes.md)
+- [027 - Cross-IDE Session Continuity](../stories/027-cross-ide-session-continuity.md)
+- [028 - Session Management and Branching](../stories/028-session-management.md)
+- [030 - Claude Code Adapter](../stories/030-claude-code-adapter.md)
+- [031 - Sessions Push Command](../stories/031-sessions-push-command.md)
+- [032 - Push Dry-Run & Preview](../stories/032-push-dry-run-preview.md)
+- [033 - Push Idempotency](../stories/033-push-idempotency.md)
+- [034 - Gemini Adapter](../stories/034-gemini-adapter.md)
+- [035 - Codex Adapter](../stories/035-codex-adapter.md)
+- [036 - Vibe Adapter](../stories/036-vibe-adapter.md)
+- [037 - OpenCode Adapter](../stories/037-opencode-adapter.md)
+- [038 - Droid Adapter](../stories/038-droid-adapter.md)
+- [039 - Cursor Adapter](../stories/039-cursor-adapter.md)
+- [040 - VS Code Copilot Adapter](../stories/040-vscode-copilot-adapter.md)
+- [041 - Antigravity Adapter](../stories/041-antigravity-adapter.md)
+- [042 - Aider Adapter](../stories/042-aider-adapter.md)
+- [043 - Goose Adapter](../stories/043-goose-adapter.md)
+- [044 - Sessions Discover](../stories/044-sessions-discover.md)
 
 ## Related Stories
 

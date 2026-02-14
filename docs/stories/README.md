@@ -21,6 +21,29 @@ User stories for the wsm (Workspace Session Manager) project, organized by perso
 | 022 | [TUI Workspace Operations](022-tui-workspace-operations.md) | TUI | P0 |
 | 023 | [UI Rendering Modes](023-ui-rendering-modes.md) | Output Modes | P1 |
 | 027 | [Cross-IDE Session Continuity](027-cross-ide-session-continuity.md) | CLI Core / Event Sourcing | P0 |
+| 028 | [Session Management and Branching](028-session-management.md) | Session Management | P1 |
+| 047 | [Single Entry Append](047-single-entry-append.md) | Session Management | P1 |
+
+### IDE Session Import
+
+| ID | Story | Feature | Priority |
+|----|-------|---------|----------|
+| 029 | [Format Adapter Interface](029-format-adapter-interface.md) | IDE Session Import | P0 |
+| 030 | [Claude Code Adapter](030-claude-code-adapter.md) | IDE Session Import | P0 |
+| 031 | [Sessions Push Command](031-sessions-push-command.md) | IDE Session Import | P0 |
+| 032 | [Push Dry-Run & Preview](032-push-dry-run-and-preview.md) | IDE Session Import | P1 |
+| 033 | [Push Idempotency](033-push-idempotency.md) | IDE Session Import | P1 |
+| 034 | [Gemini Adapter](034-gemini-adapter.md) | IDE Session Import | P1 |
+| 035 | [Codex Adapter](035-codex-adapter.md) | IDE Session Import | P1 |
+| 036 | [Vibe Adapter](036-vibe-adapter.md) | IDE Session Import | P1 |
+| 037 | [OpenCode Adapter](037-opencode-adapter.md) | IDE Session Import | P1 |
+| 038 | [Droid Adapter](038-droid-adapter.md) | IDE Session Import | P1 |
+| 039 | [Cursor Adapter](039-cursor-adapter.md) | IDE Session Import | P1 |
+| 040 | [VS Code Copilot Adapter](040-vscode-copilot-adapter.md) | IDE Session Import | P1 |
+| 041 | [Antigravity Adapter](041-antigravity-adapter.md) | IDE Session Import | P1 |
+| 042 | [Aider Adapter](042-aider-adapter.md) | IDE Session Import | P2 |
+| 043 | [Goose Adapter](043-goose-adapter.md) | IDE Session Import | P2 |
+| 044 | [Sessions Discover](044-sessions-discover.md) | IDE Session Import | P2 |
 
 ## Maintainer (Testing/Operations)
 
@@ -31,6 +54,7 @@ User stories for the wsm (Workspace Session Manager) project, organized by perso
 | 012 | [Backend Conformance Tests](012-backend-conformance-tests.md) | Backend interface | P0 |
 | 025 | [Repository Foundation and Governance](025-repo-foundation-and-governance.md) | Repo standards | P1 |
 | 026 | [Test Harness and Conformance Gates](026-test-harness-and-conformance-gates.md) | 001-024 | P0 |
+| 045 | [Format Adapter Conformance Tests](045-format-adapter-conformance-tests.md) | IDE Session Import | P0 |
 
 ## External Client (Scripting/CI)
 
@@ -50,3 +74,6 @@ User stories for the wsm (Workspace Session Manager) project, organized by perso
 | 018 | [Device Auto-Detection](018-device-auto-detection.md) | Go Module | P1 |
 | 019 | [Workspace Reference Resolution](019-workspace-reference-resolution.md) | CLI Core / Go Module | P0 |
 | 024 | [Vendored UI Optionality](024-vendored-ui-optionality.md) | Go Module | P0 |
+| 029 | [Format Adapter Interface](029-format-adapter-interface.md) | IDE Session Import | P0 |
+| 046 | [Format Adapter Interface Review](046-format-adapter-interface-review.md) | IDE Session Import | P1 |
+| 047 | [Single Entry Append](047-single-entry-append.md) | Session Management | P1 |
