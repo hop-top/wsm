@@ -13,7 +13,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, "Error:", err)
 		if workspace.IsKind(err, workspace.ErrorKindNotFound) {
 			fmt.Fprintln(os.Stderr)
-			fmt.Fprintln(os.Stderr, "Run 'wsm list' to see available workspaces.")
+			fmt.Fprintln(os.Stderr, "Run 'wsm workspace list' to see available workspaces.")
 		}
 		os.Exit(exitCodeForError(err))
 	}

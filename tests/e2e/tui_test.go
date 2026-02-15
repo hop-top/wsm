@@ -40,7 +40,7 @@ func TestTUIWorkspaceLifecycle(t *testing.T) {
 		t.Fatalf("expected detail pane content after create flow, got:\n%s", createFromTUI.Stdout)
 	}
 
-	list := r.run("list", "--json")
+	list := r.run("workspace", "list", "--json")
 	requireExitCode(t, list, 0)
 	items := mustUnmarshalJSONArray[workspace.Workspace](t, list.Stdout)
 	if len(items) != 1 {
@@ -50,34 +50,34 @@ func TestTUIWorkspaceLifecycle(t *testing.T) {
 
 	archive := runTUICommand(t, r, "aq")
 	requireExitCode(t, archive, 0)
-	inspectArchived := r.run("inspect", id, "--json")
-	requireExitCode(t, inspectArchived, 0)
+	showArchived := r.run("workspace", "show", id, "--json")
+	requireExitCode(t, showArchived, 0)
 	var archived inspectJSON
-	mustUnmarshalJSON(t, inspectArchived.Stdout, &archived)
+	mustUnmarshalJSON(t, showArchived.Stdout, &archived)
 	if archived.Workspace.Status != workspace.StatusArchived {
 		t.Fatalf("expected workspace to be archived by tui, got %s", archived.Workspace.Status)
 	}
 
 	unarchive := runTUICommand(t, r, "aq")
 	requireExitCode(t, unarchive, 0)
-	inspectActive := r.run("inspect", id, "--json")
-	requireExitCode(t, inspectActive, 0)
+	showActive := r.run("workspace", "show", id, "--json")
+	requireExitCode(t, showActive, 0)
 	var active inspectJSON
-	mustUnmarshalJSON(t, inspectActive.Stdout, &active)
+	mustUnmarshalJSON(t, showActive.Stdout, &active)
 	if active.Workspace.Status != workspace.StatusActive {
 		t.Fatalf("expected workspace to be active after tui unarchive, got %s", active.Workspace.Status)
 	}
 
 	deleteFlow := runTUICommand(t, r, "ddq")
 	requireExitCode(t, deleteFlow, 0)
-	deleted := r.run("inspect", id)
+	deleted := r.run("workspace", "show", id)
 	requireExitCode(t, deleted, 3)
 }
 
 func runTUICommand(t *testing.T, r *e2eRunner, script string) commandResult {
 	t.Helper()
 	if runtime.GOOS == "darwin" {
-		return r.runWithEnv(map[string]string{"WSM_TUI_SCRIPT": script}, "--ui=charm", "tui")
+		return r.runWithEnv(map[string]string{"WSM_TUI_SCRIPT": script}, "tui")
 	}
 	return runTUICommandExpect(t, r, script)
 }
@@ -112,7 +112,7 @@ func buildExpectScript(binary, dataDir, keys string) string {
 	var b strings.Builder
 	b.WriteString("set timeout 30\n")
 	b.WriteString("log_user 1\n")
-	b.WriteString(fmt.Sprintf("spawn %s --data-dir %s --ui=charm tui\n", tclQuote(binary), tclQuote(dataDir)))
+	b.WriteString(fmt.Sprintf("spawn %s --data-dir %s tui\n", tclQuote(binary), tclQuote(dataDir)))
 	b.WriteString("expect \"wsm TUI\"\n")
 	for _, k := range keys {
 		if k == '\n' {

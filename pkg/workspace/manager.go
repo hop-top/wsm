@@ -208,16 +208,26 @@ func (m *Manager) Events(ctx context.Context, workspaceRef string, opts backend.
 	return out, nil
 }
 
+// SnapshotOptions controls snapshot generation behavior.
+type SnapshotOptions struct {
+	SessionID string
+	Name      string
+	IsSeed    bool
+}
+
 // Snapshot generates and stores a point-in-time snapshot.
-func (m *Manager) Snapshot(ctx context.Context, workspaceRef string) (*Snapshot, error) {
+func (m *Manager) Snapshot(ctx context.Context, workspaceRef string, opts SnapshotOptions) (*Snapshot, error) {
 	ws, err := m.ResolveWorkspaceRef(ctx, workspaceRef)
 	if err != nil {
 		return nil, err
 	}
 
-	latest, err := m.backend.GetLatestSnapshot(ctx, ws.ID)
-	if err != nil {
-		return nil, backendError("get latest snapshot", err)
+	var latest *model.Snapshot
+	if opts.SessionID == "" {
+		latest, err = m.backend.GetLatestSnapshot(ctx, ws.ID)
+		if err != nil {
+			return nil, backendError("get latest snapshot", err)
+		}
 	}
 
 	afterSeq := uint64(0)
@@ -230,6 +240,17 @@ func (m *Manager) Snapshot(ctx context.Context, workspaceRef string) (*Snapshot,
 		return nil, backendError("list snapshot events", err)
 	}
 
+	if opts.SessionID != "" {
+		var filtered []model.Event
+		for _, ev := range events {
+			if ev.SessionID == opts.SessionID {
+				filtered = append(filtered, ev)
+			}
+		}
+		events = filtered
+		latest = nil
+	}
+
 	var snap model.Snapshot
 	if latest == nil {
 		snap = model.GenerateSnapshot(model.Workspace(*ws), events, 0)
@@ -237,17 +258,72 @@ func (m *Manager) Snapshot(ctx context.Context, workspaceRef string) (*Snapshot,
 		tmp := Snapshot(*latest)
 		return &tmp, nil
 	} else {
-		// Incremental path: synthesize full state by replaying from latest sequence only.
 		base := *latest
+		base.ID = ""
 		base.GeneratedAt = time.Now().UTC()
 		snap = applyEventsToSnapshot(base, events)
 	}
+
+	snap.Name = opts.Name
+	snap.IsSeed = opts.IsSeed
 
 	if err := m.backend.SaveSnapshot(ctx, snap); err != nil {
 		return nil, backendError("save snapshot", err)
 	}
 	out := Snapshot(snap)
 	return &out, nil
+}
+
+// GetSnapshot retrieves a snapshot by ID or name.
+func (m *Manager) GetSnapshot(ctx context.Context, idOrName string) (*Snapshot, error) {
+	snap, err := m.backend.GetSnapshot(ctx, idOrName)
+	if err != nil {
+		return nil, backendError("get snapshot", err)
+	}
+	if snap == nil {
+		return nil, notFoundError(fmt.Sprintf("snapshot %q not found", idOrName))
+	}
+	out := Snapshot(*snap)
+	return &out, nil
+}
+
+// UpdateSnapshotOptions controls snapshot update behavior.
+type UpdateSnapshotOptions struct {
+	Name   *string
+	IsSeed *bool
+}
+
+// UpdateSnapshot updates a snapshot's metadata.
+func (m *Manager) UpdateSnapshot(ctx context.Context, idOrName string, opts UpdateSnapshotOptions) (*Snapshot, error) {
+	snap, err := m.backend.GetSnapshot(ctx, idOrName)
+	if err != nil {
+		return nil, backendError("get snapshot for update", err)
+	}
+	if snap == nil {
+		return nil, notFoundError(fmt.Sprintf("snapshot %q not found", idOrName))
+	}
+	if opts.Name != nil {
+		snap.Name = *opts.Name
+	}
+	if opts.IsSeed != nil {
+		snap.IsSeed = *opts.IsSeed
+	}
+	if err := m.backend.UpdateSnapshot(ctx, *snap); err != nil {
+		return nil, backendError("update snapshot", err)
+	}
+	out := Snapshot(*snap)
+	return &out, nil
+}
+
+// DeleteSnapshot removes a snapshot by ID or name.
+func (m *Manager) DeleteSnapshot(ctx context.Context, idOrName string) error {
+	if err := m.backend.DeleteSnapshot(ctx, idOrName); err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			return notFoundError(fmt.Sprintf("snapshot %q not found", idOrName))
+		}
+		return backendError("delete snapshot", err)
+	}
+	return nil
 }
 
 func applyEventsToSnapshot(base model.Snapshot, events []model.Event) model.Snapshot {
@@ -403,6 +479,19 @@ func (m *Manager) SnapshotCount(ctx context.Context, ref string) (uint64, error)
 		return 0, backendError("count snapshots", err)
 	}
 	return n, nil
+}
+
+// ListSnapshots returns snapshots with optional filtering.
+func (m *Manager) ListSnapshots(ctx context.Context, opts backend.SnapshotListOptions) ([]Snapshot, error) {
+	snaps, err := m.backend.ListSnapshots(ctx, opts)
+	if err != nil {
+		return nil, backendError("list snapshots", err)
+	}
+	out := make([]Snapshot, len(snaps))
+	for i, s := range snaps {
+		out[i] = Snapshot(s)
+	}
+	return out, nil
 }
 
 // ListDevices returns all known devices.

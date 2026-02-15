@@ -28,7 +28,7 @@ func TestCompletionWorkspaceAndFlagValues(t *testing.T) {
 	r.mustCreateWorkspace("alpha")
 	r.mustCreateWorkspace("beta")
 
-	workspaceCompletion := r.run("__complete", "inspect", "")
+	workspaceCompletion := r.run("__complete", "workspace", "show", "")
 	requireExitCode(t, workspaceCompletion, 0)
 	if !strings.Contains(workspaceCompletion.Stdout, "alpha") || !strings.Contains(workspaceCompletion.Stdout, "beta") {
 		t.Fatalf("expected workspace names in completion output, got:\n%s", workspaceCompletion.Stdout)
@@ -40,13 +40,13 @@ func TestCompletionWorkspaceAndFlagValues(t *testing.T) {
 		t.Fatalf("expected workspace names in snapshot completion output, got:\n%s", snapshotCompletion.Stdout)
 	}
 
-	statusCompletion := r.run("__complete", "list", "--status=")
+	statusCompletion := r.run("__complete", "workspace", "list", "--status=")
 	requireExitCode(t, statusCompletion, 0)
 	if !strings.Contains(statusCompletion.Stdout, "active") || !strings.Contains(statusCompletion.Stdout, "archived") {
 		t.Fatalf("expected status values in completion output, got:\n%s", statusCompletion.Stdout)
 	}
 
-	eventTypeCompletion := r.run("__complete", "events", "add", "alpha", "")
+	eventTypeCompletion := r.run("__complete", "event", "add", "alpha", "")
 	requireExitCode(t, eventTypeCompletion, 0)
 	if !strings.Contains(eventTypeCompletion.Stdout, "message.added") || !strings.Contains(eventTypeCompletion.Stdout, "file.changed") {
 		t.Fatalf("expected event type values in completion output, got:\n%s", eventTypeCompletion.Stdout)

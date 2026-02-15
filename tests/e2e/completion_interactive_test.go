@@ -148,8 +148,8 @@ echo "SOURCING_COMPLETE"
 
 			// Simple verification
 			t.Log("Testing completion...")
-			// Send "wsm lis" then TAB.
-			console.Send("wsm lis")
+			// Send "wsm workspace lis" then TAB.
+			console.Send("wsm workspace lis")
 			// A small delay for tab to register
 			time.Sleep(100 * time.Millisecond)
 			console.Send("\t")
@@ -165,7 +165,7 @@ echo "SOURCING_COMPLETE"
 			r.mustCreateWorkspace("test-comp-ws")
 			t.Log("Created workspace test-comp-ws")
 
-			console.Send("wsm inspect test-co")
+			console.Send("wsm workspace show test-co")
 			time.Sleep(100 * time.Millisecond)
 			console.Send("\t")
 			expectString("test-comp-ws")

@@ -23,7 +23,11 @@ type Backend interface {
 	EventCount(ctx context.Context, workspaceID string) (uint64, error)
 
 	SaveSnapshot(ctx context.Context, snap model.Snapshot) error
+	GetSnapshot(ctx context.Context, id string) (*model.Snapshot, error)
 	GetLatestSnapshot(ctx context.Context, workspaceID string) (*model.Snapshot, error)
+	ListSnapshots(ctx context.Context, opts SnapshotListOptions) ([]model.Snapshot, error)
+	UpdateSnapshot(ctx context.Context, snap model.Snapshot) error
+	DeleteSnapshot(ctx context.Context, id string) error
 	SnapshotCount(ctx context.Context, workspaceID string) (uint64, error)
 
 	SaveDevice(ctx context.Context, dev device.Device) error
@@ -60,5 +64,15 @@ type EventListOptions struct {
 	AfterSeqNum  uint64
 	BeforeSeqNum uint64
 	Types        []model.EventType
+	Limit        int
+}
+
+// SnapshotListOptions controls snapshot listing behavior.
+type SnapshotListOptions struct {
+	WorkspaceIDs []string
+	Sessions     []string
+	After        time.Time
+	Before       time.Time
+	SortDir      string // asc, desc
 	Limit        int
 }

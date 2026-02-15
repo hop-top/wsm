@@ -1,6 +1,6 @@
 export GOFLAGS ?= -buildvcs=false
 
-.PHONY: help build build-charm test test-e2e test-e2e-charm test-ubuntu-docker verify-no-ui-leak fmt
+.PHONY: help build build-charm test test-e2e test-e2e-charm test-ubuntu-docker verify-no-ui-leak fmt setup-aps-wsm
 
 help:
 	@echo "Targets:"
@@ -12,6 +12,7 @@ help:
 	@echo "  test-ubuntu-docker  Run full test matrix inside Ubuntu Docker image"
 	@echo "  verify-no-ui-leak   Ensure pkg/* does not depend on charmbracelet"
 	@echo "  fmt                 Run gofmt on Go files"
+	@echo "  setup-aps-wsm       Set up APS + WSM integration (builds both)"
 
 build:
 	@mkdir -p .tmp/gocache bin
@@ -50,3 +51,7 @@ verify-no-ui-leak:
 
 fmt:
 	@if find . -name '*.go' | grep -q .; then gofmt -w $$(find . -name '*.go'); else echo 'no Go files to format'; fi
+
+setup-aps-wsm: ## Set up APS + WSM integration
+	@echo "Setting up APS + WSM integration..."
+	@bash scripts/setup-aps-wsm.sh

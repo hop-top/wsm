@@ -5,7 +5,7 @@
 ## Scope
 
 - Commands: `create`, `list`, `inspect`, `event add`, `events`, `snapshot`, `archive`, `unarchive`, `delete`, `config show`, `completion`, `tui`
-- Global flags: `--json`, `--quiet`, `--ui=auto|plain|charm`, backend/data-dir/backend-url flags
+- Global flags: `--json`, `--quiet`, `--no-color`, backend/data-dir/backend-url flags
 - Output contracts for TTY, non-TTY, JSON mode, and quiet mode
 - Exit code taxonomy and completion behavior
 
@@ -13,13 +13,13 @@
 
 1. JSON mode emits JSON only on stdout.
 2. Non-TTY defaults to pipe-safe plain output unless JSON explicitly required by contract.
-3. `NO_COLOR=1` disables colorization.
-4. `--ui=charm` requires charm-enabled build path; otherwise returns usage error.
+3. TTY outputs styled output by default.
+4. `--no-color` or `NO_COLOR=1` disables colorization.
 
 ## Completion
 
 - Workspace reference completion for `inspect`, `archive`, `unarchive`, `delete`, `events`, `snapshot`, and `event add`.
-- Enumerated completion for `--status` and `--sort` and `--ui`.
+- Enumerated completion for `--status` and `--sort`.
 
 ## Acceptance Criteria
 

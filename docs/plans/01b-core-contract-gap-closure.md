@@ -22,7 +22,7 @@
 - JSON data goes to stdout only; errors/progress go to stderr only.
 
 5. **Global config flags**
-- Root-level persistent flags: `--backend`, `--data-dir`, `--backend-url`, `--ui`.
+- Root-level persistent flags: `--backend`, `--data-dir`, `--backend-url`, `--no-color`.
 - Precedence: flags > env > config file > defaults.
 
 6. **Data format consistency**

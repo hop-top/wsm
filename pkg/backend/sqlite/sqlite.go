@@ -89,15 +89,18 @@ func (b *Backend) Migrate(ctx context.Context) error {
 			last_seen DATETIME NOT NULL
 		);`,
 		`CREATE TABLE IF NOT EXISTS snapshots (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
+			name TEXT UNIQUE,
 			at_seq_num INTEGER NOT NULL,
 			at_timestamp DATETIME NOT NULL,
 			data TEXT NOT NULL,
+			is_seed INTEGER NOT NULL DEFAULT 0,
 			generated_at DATETIME NOT NULL,
 			UNIQUE(workspace_id, at_seq_num),
 			FOREIGN KEY(workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
 		);`,
+		`CREATE INDEX IF NOT EXISTS idx_snapshots_workspace ON snapshots(workspace_id);`,
 	}
 
 	tx, err := b.db.BeginTx(ctx, nil)
@@ -110,6 +113,32 @@ func (b *Backend) Migrate(ctx context.Context) error {
 			return err
 		}
 	}
+
+	var hasIsSeed int
+	err = tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM pragma_table_info('snapshots') WHERE name='is_seed'`).Scan(&hasIsSeed)
+	if err != nil {
+		return err
+	}
+	if hasIsSeed == 0 {
+		if _, err := tx.ExecContext(ctx, `ALTER TABLE snapshots ADD COLUMN is_seed INTEGER NOT NULL DEFAULT 0`); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_snapshots_is_seed ON snapshots(is_seed)`); err != nil {
+			return err
+		}
+	}
+
+	var hasName int
+	err = tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM pragma_table_info('snapshots') WHERE name='name'`).Scan(&hasName)
+	if err != nil {
+		return err
+	}
+	if hasName == 0 {
+		if _, err := tx.ExecContext(ctx, `ALTER TABLE snapshots ADD COLUMN name TEXT UNIQUE`); err != nil {
+			return err
+		}
+	}
+
 	return tx.Commit()
 }
 
@@ -392,17 +421,62 @@ func (b *Backend) EventCount(ctx context.Context, workspaceID string) (uint64, e
 }
 
 func (b *Backend) SaveSnapshot(ctx context.Context, snap model.Snapshot) error {
-	blob, err := json.Marshal(snap)
-	if err != nil {
+	isSeed := 0
+	if snap.IsSeed {
+		isSeed = 1
+	}
+	var name any
+	if snap.Name != "" {
+		name = snap.Name
+	}
+
+	var existingID string
+	err := b.db.QueryRowContext(ctx, `
+		SELECT id FROM snapshots WHERE workspace_id = ? AND at_seq_num = ?
+	`, snap.WorkspaceID, snap.AtSeqNum).Scan(&existingID)
+	if err == nil {
+		blob, err := json.Marshal(snap)
+		if err != nil {
+			return err
+		}
+		_, err = b.db.ExecContext(ctx, `
+			UPDATE snapshots SET name = ?, at_timestamp = ?, data = ?, is_seed = ?, generated_at = ? WHERE id = ?
+		`, name, snap.AtTimestamp.UTC(), string(blob), isSeed, snap.GeneratedAt.UTC(), existingID)
+		snap.ID = existingID
+		return err
+	} else if errors.Is(err, sql.ErrNoRows) {
+		if snap.ID == "" {
+			snap.ID = ulid.Make().String()
+		}
+		blob, err := json.Marshal(snap)
+		if err != nil {
+			return err
+		}
+		_, err = b.db.ExecContext(ctx, `
+			INSERT INTO snapshots(id, workspace_id, name, at_seq_num, at_timestamp, data, is_seed, generated_at)
+			VALUES(?, ?, ?, ?, ?, ?, ?, ?)
+		`, snap.ID, snap.WorkspaceID, name, snap.AtSeqNum, snap.AtTimestamp.UTC(), string(blob), isSeed, snap.GeneratedAt.UTC())
 		return err
 	}
-	_, err = b.db.ExecContext(ctx, `
-		INSERT INTO snapshots(workspace_id, at_seq_num, at_timestamp, data, generated_at)
-		VALUES(?, ?, ?, ?, ?)
-		ON CONFLICT(workspace_id, at_seq_num)
-		DO UPDATE SET at_timestamp = excluded.at_timestamp, data = excluded.data, generated_at = excluded.generated_at
-	`, snap.WorkspaceID, snap.AtSeqNum, snap.AtTimestamp.UTC(), string(blob), snap.GeneratedAt.UTC())
 	return err
+}
+
+func (b *Backend) GetSnapshot(ctx context.Context, id string) (*model.Snapshot, error) {
+	var data string
+	err := b.db.QueryRowContext(ctx, `
+		SELECT data FROM snapshots WHERE id = ? OR name = ?
+	`, id, id).Scan(&data)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var snap model.Snapshot
+	if err := json.Unmarshal([]byte(data), &snap); err != nil {
+		return nil, err
+	}
+	return &snap, nil
 }
 
 func (b *Backend) GetLatestSnapshot(ctx context.Context, workspaceID string) (*model.Snapshot, error) {
@@ -427,6 +501,121 @@ func (b *Backend) SnapshotCount(ctx context.Context, workspaceID string) (uint64
 	var n uint64
 	err := b.db.QueryRowContext(ctx, `SELECT COUNT(1) FROM snapshots WHERE workspace_id = ?`, workspaceID).Scan(&n)
 	return n, err
+}
+
+func (b *Backend) ListSnapshots(ctx context.Context, opts backend.SnapshotListOptions) ([]model.Snapshot, error) {
+	query := "SELECT data FROM snapshots WHERE 1=1"
+	var args []any
+
+	if len(opts.WorkspaceIDs) > 0 {
+		placeholders := make([]string, len(opts.WorkspaceIDs))
+		for i, id := range opts.WorkspaceIDs {
+			placeholders[i] = "?"
+			args = append(args, id)
+		}
+		query += " AND workspace_id IN (" + strings.Join(placeholders, ",") + ")"
+	}
+	if !opts.After.IsZero() {
+		query += " AND generated_at > ?"
+		args = append(args, opts.After.UTC())
+	}
+	if !opts.Before.IsZero() {
+		query += " AND generated_at < ?"
+		args = append(args, opts.Before.UTC())
+	}
+
+	sortDir := "DESC"
+	if opts.SortDir == "asc" {
+		sortDir = "ASC"
+	}
+	query += " ORDER BY generated_at " + sortDir
+
+	rows, err := b.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var snaps []model.Snapshot
+	for rows.Next() {
+		var data string
+		if err := rows.Scan(&data); err != nil {
+			return nil, err
+		}
+		var snap model.Snapshot
+		if err := json.Unmarshal([]byte(data), &snap); err != nil {
+			return nil, err
+		}
+
+		if len(opts.Sessions) > 0 {
+			if !containsAnySession(snap.Sessions, opts.Sessions) {
+				continue
+			}
+		}
+
+		snaps = append(snaps, snap)
+		if opts.Limit > 0 && len(snaps) >= opts.Limit {
+			break
+		}
+	}
+	return snaps, rows.Err()
+}
+
+func containsAnySession(snapSessions []string, filterSessions []string) bool {
+	snapSet := make(map[string]struct{}, len(snapSessions))
+	for _, s := range snapSessions {
+		snapSet[s] = struct{}{}
+	}
+	for _, f := range filterSessions {
+		if _, ok := snapSet[f]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func (b *Backend) UpdateSnapshot(ctx context.Context, snap model.Snapshot) error {
+	blob, err := json.Marshal(snap)
+	if err != nil {
+		return err
+	}
+	isSeed := 0
+	if snap.IsSeed {
+		isSeed = 1
+	}
+	var name any
+	if snap.Name != "" {
+		name = snap.Name
+	}
+	result, err := b.db.ExecContext(ctx, `
+		UPDATE snapshots SET name = ?, data = ?, is_seed = ? WHERE id = ? OR name = ?
+	`, name, string(blob), isSeed, snap.ID, snap.ID)
+	if err != nil {
+		return err
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return fmt.Errorf("snapshot not found: %s", snap.ID)
+	}
+	return nil
+}
+
+func (b *Backend) DeleteSnapshot(ctx context.Context, id string) error {
+	result, err := b.db.ExecContext(ctx, `DELETE FROM snapshots WHERE id = ? OR name = ?`, id, id)
+	if err != nil {
+		return err
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return fmt.Errorf("snapshot not found: %s", id)
+	}
+	return nil
 }
 
 func (b *Backend) SaveDevice(ctx context.Context, dev device.Device) error {

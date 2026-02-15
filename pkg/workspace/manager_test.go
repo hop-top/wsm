@@ -225,7 +225,7 @@ func TestManager_Delete(t *testing.T) {
 	if _, err := m.RecordEvent(ctx, ws.ID, EventMessageAdded, MessageData{Role: "user", Content: "x"}); err != nil {
 		t.Fatalf("record event: %v", err)
 	}
-	if _, err := m.Snapshot(ctx, ws.ID); err != nil {
+	if _, err := m.Snapshot(ctx, ws.ID, SnapshotOptions{}); err != nil {
 		t.Fatalf("snapshot: %v", err)
 	}
 
@@ -420,7 +420,7 @@ func TestManager_FullLifecycle(t *testing.T) {
 	if _, err := m.RecordEvent(ctx, ws.ID, EventMessageAdded, MessageData{Role: "user", Content: "first"}); err != nil {
 		t.Fatalf("record event: %v", err)
 	}
-	if _, err := m.Snapshot(ctx, ws.ID); err != nil {
+	if _, err := m.Snapshot(ctx, ws.ID, SnapshotOptions{}); err != nil {
 		t.Fatalf("snapshot: %v", err)
 	}
 	if err := m.Archive(ctx, ws.ID); err != nil {
@@ -457,7 +457,7 @@ func TestManager_APIContract(t *testing.T) {
 		t.Fatalf("record event: %v", err)
 	}
 
-	if _, err := m.Snapshot(ctx, ws.ID); err != nil {
+	if _, err := m.Snapshot(ctx, ws.ID, SnapshotOptions{}); err != nil {
 		t.Fatalf("snapshot: %v", err)
 	}
 	if count, err := m.EventCount(ctx, ws.ID); err != nil || count == 0 {

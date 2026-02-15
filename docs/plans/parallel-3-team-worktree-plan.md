@@ -63,7 +63,7 @@ git hop add team-c-tui-optional
 - `tests/e2e/tui_test.go`
 
 **May edit with Team B approval**:
-- `cmd/wsm/main.go` only for wiring `tui` subcommand and `--ui` behavior
+- `cmd/wsm/main.go` only for wiring `tui` subcommand
 
 **Must not edit**:
 - `pkg/workspace/**`, `pkg/backend/**`, `pkg/config/**`, `pkg/device/**`
@@ -75,7 +75,7 @@ These interfaces are frozen before feature completion:
 
 1. `backend.Backend` includes explicit name lookup for workspace references.
 2. `workspace.Manager` includes `ResolveWorkspaceRef` and typed delete preview.
-3. Global CLI flags include `--ui=auto|plain|charm`.
+3. Global CLI flags include `--no-color` for disabling styled output.
 4. `pkg/*` has no Charmbracelet imports.
 
 If a contract change is required after freeze, open a small RFC PR tagged `contract-change` and merge it first.

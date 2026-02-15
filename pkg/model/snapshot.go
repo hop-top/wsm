@@ -4,20 +4,25 @@ import (
 	"encoding/json"
 	"sort"
 	"time"
+
+	"github.com/oklog/ulid/v2"
 )
 
 // GenerateSnapshot replays events up to maxSeqNum (or all if maxSeqNum == 0).
 func GenerateSnapshot(ws Workspace, events []Event, maxSeqNum uint64) Snapshot {
 	snap := Snapshot{
+		ID:           ulid.Make().String(),
 		WorkspaceID:  ws.ID,
 		Workspace:    ws,
 		FilesChanged: make([]string, 0),
 		Devices:      make([]string, 0),
+		Sessions:     make([]string, 0),
 		GeneratedAt:  time.Now().UTC(),
 	}
 
 	files := make(map[string]struct{})
 	attached := make(map[string]struct{})
+	sessions := make(map[string]struct{})
 	var last Event
 	var seen bool
 
@@ -27,6 +32,10 @@ func GenerateSnapshot(ws Workspace, events []Event, maxSeqNum uint64) Snapshot {
 		}
 		seen = true
 		last = ev
+
+		if ev.SessionID != "" {
+			sessions[ev.SessionID] = struct{}{}
+		}
 
 		switch ev.Type {
 		case EventMessageAdded:
@@ -71,6 +80,10 @@ func GenerateSnapshot(ws Workspace, events []Event, maxSeqNum uint64) Snapshot {
 		snap.Devices = append(snap.Devices, d)
 	}
 	sort.Strings(snap.Devices)
+	for s := range sessions {
+		snap.Sessions = append(snap.Sessions, s)
+	}
+	sort.Strings(snap.Sessions)
 
 	return snap
 }

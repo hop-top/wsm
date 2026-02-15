@@ -13,7 +13,7 @@ type ActionManager interface {
 	Unarchive(ctx context.Context, ref string) error
 	Delete(ctx context.Context, ref string) error
 	EventCount(ctx context.Context, ref string) (uint64, error)
-	Snapshot(ctx context.Context, ref string) (*workspace.Snapshot, error)
+	Snapshot(ctx context.Context, ref string, opts workspace.SnapshotOptions) (*workspace.Snapshot, error)
 }
 
 // CreateWorkspace executes the create action.
@@ -50,7 +50,7 @@ func LoadWorkspaceDetail(ctx context.Context, manager ActionManager, ws workspac
 	if err != nil {
 		return WorkspaceDetail{}, err
 	}
-	snap, err := manager.Snapshot(ctx, ws.ID)
+	snap, err := manager.Snapshot(ctx, ws.ID, workspace.SnapshotOptions{})
 	if err != nil {
 		return WorkspaceDetail{}, err
 	}

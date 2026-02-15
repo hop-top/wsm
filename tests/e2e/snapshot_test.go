@@ -72,7 +72,7 @@ func TestSnapshotGeneration(t *testing.T) {
 		t.Fatalf("expected 3 deduplicated files in incremental snapshot, got %v", snap2.FilesChanged)
 	}
 
-	inspectRes := r.run("inspect", ws.ID, "--json")
+	inspectRes := r.run("workspace", "show", ws.ID, "--json")
 	requireExitCode(t, inspectRes, 0)
 	var inspectPayload inspectJSON
 	mustUnmarshalJSON(t, inspectRes.Stdout, &inspectPayload)
@@ -87,7 +87,7 @@ func TestSnapshotGeneration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create empty workspace: %v", err)
 	}
-	emptySnap, err := mgr.Snapshot(ctx, empty.ID)
+	emptySnap, err := mgr.Snapshot(ctx, empty.ID, workspace.SnapshotOptions{})
 	if err != nil {
 		t.Fatalf("snapshot empty workspace: %v", err)
 	}
@@ -110,7 +110,7 @@ func TestSnapshotGeneration(t *testing.T) {
 func TestSnapshotContext(t *testing.T) {
 	r := newRunner(t)
 	wsID := r.mustCreateWorkspace("snap-context-test")
-	r.run("events", "add", wsID, "message.added", "--content=context-test")
+	r.run("event", "add", wsID, "message.added", "--content=context-test")
 
 	genRes := r.run("snapshot", "generate", wsID, "--json")
 	requireExitCode(t, genRes, 0)
@@ -122,5 +122,229 @@ func TestSnapshotContext(t *testing.T) {
 	}
 	if !strings.Contains(ctxRes.Stdout, "## Summary") {
 		t.Fatalf("expected Summary header in context")
+	}
+}
+
+func TestSnapshotGenerate_Session(t *testing.T) {
+	r := newRunner(t)
+	wsID := r.mustCreateWorkspace("snap-session-test")
+
+	r.run("event", "add", wsID, "message.added", "--content=m1", "--session-id=sess-1")
+	r.run("event", "add", wsID, "message.added", "--content=m2", "--session-id=sess-2")
+	r.run("event", "add", wsID, "message.added", "--content=m3", "--session-id=sess-1")
+
+	allRes := r.run("snapshot", "generate", wsID, "--json")
+	requireExitCode(t, allRes, 0)
+	var allSnap workspace.Snapshot
+	mustUnmarshalJSON(t, allRes.Stdout, &allSnap)
+	if allSnap.MessageCount != 3 {
+		t.Fatalf("expected 3 messages in full snapshot, got %d", allSnap.MessageCount)
+	}
+	if len(allSnap.Sessions) != 2 {
+		t.Fatalf("expected 2 sessions in full snapshot, got %d", len(allSnap.Sessions))
+	}
+	if allSnap.ID == "" {
+		t.Fatal("expected snapshot to have an ID")
+	}
+
+	sess1Res := r.run("snapshot", "generate", wsID, "-s", "sess-1", "--json")
+	requireExitCode(t, sess1Res, 0)
+	var sess1Snap workspace.Snapshot
+	mustUnmarshalJSON(t, sess1Res.Stdout, &sess1Snap)
+	if sess1Snap.MessageCount != 2 {
+		t.Fatalf("expected 2 messages in sess-1 snapshot, got %d", sess1Snap.MessageCount)
+	}
+	if len(sess1Snap.Sessions) != 1 || sess1Snap.Sessions[0] != "sess-1" {
+		t.Fatalf("expected only sess-1 in sessions, got %v", sess1Snap.Sessions)
+	}
+
+	sess2Res := r.run("snapshot", "generate", wsID, "-s", "sess-2", "--json")
+	requireExitCode(t, sess2Res, 0)
+	var sess2Snap workspace.Snapshot
+	mustUnmarshalJSON(t, sess2Res.Stdout, &sess2Snap)
+	if sess2Snap.MessageCount != 1 {
+		t.Fatalf("expected 1 message in sess-2 snapshot, got %d", sess2Snap.MessageCount)
+	}
+}
+
+func TestSnapshotGenerate_NameAndSeed(t *testing.T) {
+	r := newRunner(t)
+	wsID := r.mustCreateWorkspace("snap-name-test")
+
+	r.run("event", "add", wsID, "message.added", "--content=m1")
+
+	namedRes := r.run("snapshot", "generate", wsID, "-n", "baseline", "--seed", "--json")
+	requireExitCode(t, namedRes, 0)
+	var namedSnap workspace.Snapshot
+	mustUnmarshalJSON(t, namedRes.Stdout, &namedSnap)
+	if namedSnap.Name != "baseline" {
+		t.Fatalf("expected name=baseline, got %q", namedSnap.Name)
+	}
+	if !namedSnap.IsSeed {
+		t.Fatal("expected is_seed=true")
+	}
+
+	getRes := r.run("snapshot", "generate", wsID, "-n", "baseline", "--json")
+	requireExitCode(t, getRes, 0)
+	var getSnap workspace.Snapshot
+	mustUnmarshalJSON(t, getRes.Stdout, &getSnap)
+	if getSnap.ID != namedSnap.ID {
+		t.Fatalf("expected same snapshot when using name, got %s vs %s", getSnap.ID, namedSnap.ID)
+	}
+
+	listRes := r.run("snapshot", "list", "-w", wsID, "--json")
+	requireExitCode(t, listRes, 0)
+	var snaps []workspace.Snapshot
+	mustUnmarshalJSON(t, listRes.Stdout, &snaps)
+	if len(snaps) != 1 {
+		t.Fatalf("expected 1 snapshot, got %d", len(snaps))
+	}
+	if snaps[0].Name != "baseline" {
+		t.Fatalf("expected name in list, got %q", snaps[0].Name)
+	}
+	if !snaps[0].IsSeed {
+		t.Fatal("expected is_seed in list")
+	}
+}
+
+func TestSnapshotUpdate(t *testing.T) {
+	r := newRunner(t)
+	wsID := r.mustCreateWorkspace("snap-update-test")
+
+	r.run("event", "add", wsID, "message.added", "--content=m1")
+	genRes := r.run("snapshot", "generate", wsID, "--json")
+	requireExitCode(t, genRes, 0)
+	var snap workspace.Snapshot
+	mustUnmarshalJSON(t, genRes.Stdout, &snap)
+
+	updateRes := r.run("snapshot", "update", snap.ID, "-n", "renamed", "--seed", "--json")
+	requireExitCode(t, updateRes, 0)
+	var updated workspace.Snapshot
+	mustUnmarshalJSON(t, updateRes.Stdout, &updated)
+	if updated.Name != "renamed" {
+		t.Fatalf("expected name=renamed, got %q", updated.Name)
+	}
+	if !updated.IsSeed {
+		t.Fatal("expected is_seed=true")
+	}
+
+	byNameRes := r.run("snapshot", "update", "renamed", "-n", "final", "--json")
+	requireExitCode(t, byNameRes, 0)
+	var byName workspace.Snapshot
+	mustUnmarshalJSON(t, byNameRes.Stdout, &byName)
+	if byName.Name != "final" {
+		t.Fatalf("expected name=final, got %q", byName.Name)
+	}
+}
+
+func TestSnapshotRemove(t *testing.T) {
+	r := newRunner(t)
+	wsID := r.mustCreateWorkspace("snap-remove-test")
+
+	r.run("event", "add", wsID, "message.added", "--content=m1")
+	genRes := r.run("snapshot", "generate", wsID, "-n", "to-remove", "--json")
+	requireExitCode(t, genRes, 0)
+	var snap workspace.Snapshot
+	mustUnmarshalJSON(t, genRes.Stdout, &snap)
+
+	listBefore := r.run("snapshot", "list", "-w", wsID, "--json")
+	requireExitCode(t, listBefore, 0)
+	var before []workspace.Snapshot
+	mustUnmarshalJSON(t, listBefore.Stdout, &before)
+	if len(before) != 1 {
+		t.Fatalf("expected 1 snapshot before remove, got %d", len(before))
+	}
+
+	rmRes := r.run("snapshot", "remove", snap.ID, "--force")
+	requireExitCode(t, rmRes, 0)
+
+	listAfter := r.run("snapshot", "list", "-w", wsID, "--json")
+	requireExitCode(t, listAfter, 0)
+	var after []workspace.Snapshot
+	mustUnmarshalJSON(t, listAfter.Stdout, &after)
+	if len(after) != 0 {
+		t.Fatalf("expected 0 snapshots after remove, got %d", len(after))
+	}
+
+	rmByNameRes := r.run("snapshot", "remove", "nonexistent", "--force")
+	requireExitCode(t, rmByNameRes, 3)
+}
+
+func TestSnapshotList(t *testing.T) {
+	r := newRunner(t)
+	ws1 := r.mustCreateWorkspace("snap-list-1")
+	ws2 := r.mustCreateWorkspace("snap-list-2")
+
+	r.run("event", "add", ws1, "message.added", "--content=ws1-m1", "--session-id=sess-a")
+	requireExitCode(t, r.run("snapshot", "generate", ws1, "--json"), 0)
+
+	r.run("event", "add", ws2, "message.added", "--content=ws2-m1", "--session-id=sess-b")
+	r.run("event", "add", ws2, "message.added", "--content=ws2-m2", "--session-id=sess-c")
+	requireExitCode(t, r.run("snapshot", "generate", ws2, "--json"), 0)
+
+	r.run("event", "add", ws1, "message.added", "--content=ws1-m2", "--session-id=sess-a")
+	requireExitCode(t, r.run("snapshot", "generate", ws1, "--json"), 0)
+
+	allRes := r.run("snapshot", "list", "--json")
+	requireExitCode(t, allRes, 0)
+	var all []workspace.Snapshot
+	mustUnmarshalJSON(t, allRes.Stdout, &all)
+	if len(all) != 3 {
+		t.Fatalf("expected 3 total snapshots, got %d", len(all))
+	}
+
+	ws1Res := r.run("snapshot", "list", "-w", ws1, "--json")
+	requireExitCode(t, ws1Res, 0)
+	var ws1Snaps []workspace.Snapshot
+	mustUnmarshalJSON(t, ws1Res.Stdout, &ws1Snaps)
+	if len(ws1Snaps) != 2 {
+		t.Fatalf("expected 2 snapshots for ws1, got %d", len(ws1Snaps))
+	}
+
+	ws2Res := r.run("snapshot", "list", "-w", "snap-list-2", "--json")
+	requireExitCode(t, ws2Res, 0)
+	var ws2Snaps []workspace.Snapshot
+	mustUnmarshalJSON(t, ws2Res.Stdout, &ws2Snaps)
+	if len(ws2Snaps) != 1 {
+		t.Fatalf("expected 1 snapshot for ws2, got %d", len(ws2Snaps))
+	}
+	if ws2Snaps[0].MessageCount != 2 {
+		t.Fatalf("expected message_count=2, got %d", ws2Snaps[0].MessageCount)
+	}
+	if len(ws2Snaps[0].Sessions) != 2 {
+		t.Fatalf("expected 2 sessions in ws2 snapshot, got %d", len(ws2Snaps[0].Sessions))
+	}
+
+	plainRes := r.run("snapshot", "list")
+	requireExitCode(t, plainRes, 0)
+	if !strings.Contains(plainRes.Stdout, "ID") || !strings.Contains(plainRes.Stdout, "WORKSPACE") {
+		t.Fatalf("expected table headers in plain output, got:\n%s", plainRes.Stdout)
+	}
+
+	multiRes := r.run("snapshot", "list", "-w", ws1, "-w", "snap-list-2", "--json")
+	requireExitCode(t, multiRes, 0)
+	var multiSnaps []workspace.Snapshot
+	mustUnmarshalJSON(t, multiRes.Stdout, &multiSnaps)
+	if len(multiSnaps) != 3 {
+		t.Fatalf("expected 3 snapshots for multi-workspace filter, got %d", len(multiSnaps))
+	}
+
+	sessRes := r.run("snapshot", "list", "-s", "sess-b", "--json")
+	requireExitCode(t, sessRes, 0)
+	var sessSnaps []workspace.Snapshot
+	mustUnmarshalJSON(t, sessRes.Stdout, &sessSnaps)
+	if len(sessSnaps) != 1 {
+		t.Fatalf("expected 1 snapshot with sess-b, got %d", len(sessSnaps))
+	}
+	if sessSnaps[0].WorkspaceID != ws2 {
+		t.Fatalf("expected sess-b snapshot to be from ws2")
+	}
+
+	sessMultiRes := r.run("snapshot", "list", "-s", "sess-a", "-s", "sess-c", "--json")
+	requireExitCode(t, sessMultiRes, 0)
+	var sessMultiSnaps []workspace.Snapshot
+	mustUnmarshalJSON(t, sessMultiRes.Stdout, &sessMultiSnaps)
+	if len(sessMultiSnaps) != 3 {
+		t.Fatalf("expected 3 snapshots with sess-a or sess-c, got %d", len(sessMultiSnaps))
 	}
 }

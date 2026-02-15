@@ -62,7 +62,7 @@ func TestGenerateSnapshot_Incremental(t *testing.T) {
 		t.Fatalf("record first file: %v", err)
 	}
 
-	snap1, err := m.Snapshot(ctx, ws.ID)
+	snap1, err := m.Snapshot(ctx, ws.ID, SnapshotOptions{})
 	if err != nil {
 		t.Fatalf("first snapshot: %v", err)
 	}
@@ -77,7 +77,7 @@ func TestGenerateSnapshot_Incremental(t *testing.T) {
 		t.Fatalf("record duplicate file: %v", err)
 	}
 
-	snap2, err := m.Snapshot(ctx, ws.ID)
+	snap2, err := m.Snapshot(ctx, ws.ID, SnapshotOptions{})
 	if err != nil {
 		t.Fatalf("second snapshot: %v", err)
 	}

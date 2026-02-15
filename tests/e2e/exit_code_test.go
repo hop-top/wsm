@@ -8,19 +8,19 @@ import (
 
 func TestExitCode_Success(t *testing.T) {
 	r := newRunner(t)
-	res := r.run("create", "exit-success")
+	res := r.run("workspace", "add", "exit-success")
 	requireExitCode(t, res, 0)
 }
 
 func TestExitCode_Usage(t *testing.T) {
 	r := newRunner(t)
-	res := r.run("create")
+	res := r.run("workspace", "add")
 	requireExitCode(t, res, 2)
 }
 
 func TestExitCode_NotFound(t *testing.T) {
 	r := newRunner(t)
-	res := r.run("inspect", "missing")
+	res := r.run("workspace", "show", "missing")
 	requireExitCode(t, res, 3)
 }
 
@@ -28,11 +28,11 @@ func TestExitCode_Conflict(t *testing.T) {
 	r := newRunner(t)
 	r.mustCreateWorkspace("exit-conflict")
 
-	duplicate := r.run("create", "exit-conflict")
+	duplicate := r.run("workspace", "add", "exit-conflict")
 	requireExitCode(t, duplicate, 4)
 
-	requireExitCode(t, r.run("archive", "exit-conflict"), 0)
-	archivedConflict := r.run("archive", "exit-conflict")
+	requireExitCode(t, r.run("workspace", "archive", "exit-conflict"), 0)
+	archivedConflict := r.run("workspace", "archive", "exit-conflict")
 	requireExitCode(t, archivedConflict, 4)
 }
 
@@ -43,6 +43,6 @@ func TestExitCode_BackendError(t *testing.T) {
 		t.Fatalf("create bad data dir path: %v", err)
 	}
 
-	res := r.runNoGlobal("--data-dir", bad, "list")
+	res := r.runNoGlobal("--data-dir", bad, "workspace", "list")
 	requireExitCode(t, res, 5)
 }

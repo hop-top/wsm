@@ -90,6 +90,8 @@ type DeviceData struct {
 
 // Snapshot is a point-in-time materialized workspace view.
 type Snapshot struct {
+	ID           string    `json:"id"`
+	Name         string    `json:"name"`
 	WorkspaceID  string    `json:"workspace_id"`
 	AtSeqNum     uint64    `json:"at_seq_num"`
 	AtTimestamp  time.Time `json:"at_timestamp"`
@@ -98,5 +100,7 @@ type Snapshot struct {
 	ToolCalls    int       `json:"tool_calls"`
 	FilesChanged []string  `json:"files_changed"`
 	Devices      []string  `json:"devices"`
+	Sessions     []string  `json:"sessions"`
+	IsSeed       bool      `json:"is_seed"`
 	GeneratedAt  time.Time `json:"generated_at"`
 }

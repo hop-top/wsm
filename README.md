@@ -69,6 +69,58 @@ module hop.top/wsm
 Import `pkg/` for a UI-free integration surface. Charmbracelet TUI
 is optional and isolated behind a separate build tag.
 
+## Integration
+
+WSM can be used in multiple ways:
+
+### As a Go Module
+
+```go
+import "hop.top/wsm/pkg/workspace"
+
+manager, _ := workspace.NewManager(backend)
+ws, _ := manager.Create(ctx, "my-project")
+```
+
+### As a Standalone CLI
+
+```bash
+./wsm workspace create my-project --description "My coding workspace"
+./wsm session create my-project --name "Initial Session"
+```
+
+### With APS (Agent Profile System)
+
+WSM can be vendored into APS for tight integration. See [integration guide](docs/integration/aps-wsm-integration.md) for details.
+
+### With Hop (Agentic Toolkit)
+
+WSM can be orchestrated by Hop as an external CLI along with APS and other tools. See [comparison guide](docs/integration/hop-clis-comparison.md) for details.
+
+## Integration Approaches
+
+There are two main ways to integrate WSM:
+
+1. **Vendored/Moduled**: APS (or other tools) use WSM as Go library dependency
+   - Tight coupling, direct API calls
+   - Fast, type-safe, simple maintenance
+   - See: [APS + WSM Integration](docs/integration/aps-wsm-integration.md)
+
+2. **Hop Orchestration**: Hop toolkit invokes WSM and other CLIs via configuration/piping
+   - Loose coupling, CLI orchestration
+   - Flexible, multi-tool, role-based workflows
+   - See: [Hop + Third CLIs Comparison](docs/integration/hop-clis-comparison.md)
+
+3. **Hybrid**: Both approaches coexist
+   - Internal for performance, external for flexibility
+   - Best of both, higher complexity
+
+## Choosing an Approach
+
+- **Vendored**: Choose if APS is primary platform, want tight coupling
+- **Hop**: Choose if building automation toolkit, need multi-tool orchestration
+- **Hybrid**: Choose if you need both tight integration AND orchestration
+
 ## Build
 
 ```bash
