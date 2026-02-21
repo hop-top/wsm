@@ -8,6 +8,11 @@ import (
 	"hop.top/wsm/pkg/workspace"
 )
 
+var (
+	Version   = ""
+	CommitSHA = ""
+)
+
 func main() {
 	if err := newRootCmd().Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, "Error:", err)

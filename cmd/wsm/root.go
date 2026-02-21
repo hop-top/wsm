@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -107,12 +108,29 @@ func shouldJSON(opts globalOptions) bool {
 
 func newRootCmd() *cobra.Command {
 	opts := globalOptions{}
+
+	// Set version from build info if not injected at build time
+	if Version == "" {
+		if info, ok := debug.ReadBuildInfo(); ok && info.Main.Sum != "" {
+			Version = info.Main.Version
+		} else {
+			Version = "unknown (built from source)"
+		}
+	}
+
 	root := &cobra.Command{
 		Use:           "wsm",
 		Short:         "Workspace & Session Manager",
 		Long:          "Workspace & Session Manager (wsm) for IDE-agnostic session storage.",
+		Version:       Version,
 		SilenceUsage:  true,
 		SilenceErrors: true,
+	}
+
+	// Enhance version template with commit SHA if available
+	if len(CommitSHA) >= 7 {
+		vt := root.VersionTemplate()
+		root.SetVersionTemplate(vt[:len(vt)-1] + " (" + CommitSHA[0:7] + ")\n")
 	}
 
 	root.PersistentFlags().StringVar(&opts.Backend, "backend", "", "Backend: sqlite")
