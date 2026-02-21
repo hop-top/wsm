@@ -33,6 +33,7 @@ type Backend interface {
 	SaveDevice(ctx context.Context, dev device.Device) error
 	GetDevice(ctx context.Context, id string) (*device.Device, error)
 	ListDevices(ctx context.Context) ([]device.Device, error)
+	ResolveDevice(ctx context.Context, ref string) (*device.Device, []device.Device, error)
 	ListDeviceSessions(ctx context.Context, deviceID string) ([]DeviceSession, error)
 
 	Migrate(ctx context.Context) error

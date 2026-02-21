@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -512,14 +513,34 @@ func newDeviceListCmd(opts *globalOptions) *cobra.Command {
 
 func newDeviceShowCmd(opts *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:     "show <device-id>",
+		Use:     "show <device-id-or-name>",
 		Short:   "Show device details",
 		Aliases: []string{"get", "s"},
 		Args:    cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
-				dev, err := app.manager.GetDevice(ctx, args[0])
+				var ambErr *workspace.AmbiguousDeviceError
+				dev, err := app.manager.ResolveDeviceRef(ctx, args[0])
 				if err != nil {
+					if errors.As(err, &ambErr) {
+						if shouldJSON(*opts) {
+							return writeJSON(os.Stderr, map[string]any{
+								"error":   "ambiguous device reference",
+								"ref":     ambErr.Ref,
+								"matches": ambErr.Matches,
+							})
+						}
+						fmt.Fprintf(os.Stderr, "error: %s\n\n", err)
+						tw := tabwriter.NewWriter(os.Stderr, 0, 4, 2, ' ', 0)
+						fmt.Fprintln(tw, "ID\tNAME\tOS\tARCH\tLAST SEEN")
+						for _, m := range ambErr.Matches {
+							fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n",
+								shortID(m.ID), m.Name, m.OS, m.Arch, humanAgo(m.LastSeen))
+						}
+						_ = tw.Flush()
+						fmt.Fprintln(os.Stderr, "\nTip: Use a more specific ID or name prefix, or use --json for structured output")
+						return fmt.Errorf("")
+					}
 					return err
 				}
 				sessions, _ := app.manager.DeviceSessions(ctx, dev.ID)

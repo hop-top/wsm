@@ -232,3 +232,130 @@ func TestSQLite_ListDeviceSessions(t *testing.T) {
 		t.Fatalf("expected 0 sessions for unknown device, got %d", len(empty))
 	}
 }
+
+func TestSQLite_ResolveDevice(t *testing.T) {
+	ctx := context.Background()
+	b := openTestBackend(t)
+
+	now := time.Now().UTC()
+	devices := []device.Device{
+		{ID: "a1b2c3d4e5f6a7b8", Name: "MacBook-Pro", Hostname: "macbook-pro", OS: "darwin", Arch: "arm64", FirstSeen: now, LastSeen: now},
+		{ID: "a1b2c3d4e5f6a7b9", Name: "MacBook-Air", Hostname: "macbook-air", OS: "darwin", Arch: "arm64", FirstSeen: now, LastSeen: now},
+		{ID: "x9y8z7w6v5u4t3s2", Name: "Linux-Desktop", Hostname: "linux-desktop", OS: "linux", Arch: "amd64", FirstSeen: now, LastSeen: now},
+	}
+	for _, dev := range devices {
+		if err := b.SaveDevice(ctx, dev); err != nil {
+			t.Fatalf("save device %s: %v", dev.ID, err)
+		}
+	}
+
+	t.Run("exact ID match", func(t *testing.T) {
+		dev, matches, err := b.ResolveDevice(ctx, "a1b2c3d4e5f6a7b8")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if dev == nil {
+			t.Fatal("expected device, got nil")
+		}
+		if dev.ID != "a1b2c3d4e5f6a7b8" {
+			t.Fatalf("expected ID a1b2c3d4e5f6a7b8, got %s", dev.ID)
+		}
+		if matches != nil {
+			t.Fatalf("expected no matches, got %d", len(matches))
+		}
+	})
+
+	t.Run("partial ID unique match", func(t *testing.T) {
+		dev, matches, err := b.ResolveDevice(ctx, "x9y8")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if dev == nil {
+			t.Fatal("expected device, got nil")
+		}
+		if dev.ID != "x9y8z7w6v5u4t3s2" {
+			t.Fatalf("expected ID x9y8z7w6v5u4t3s2, got %s", dev.ID)
+		}
+		if matches != nil {
+			t.Fatalf("expected no matches, got %d", len(matches))
+		}
+	})
+
+	t.Run("partial ID ambiguous match", func(t *testing.T) {
+		dev, matches, err := b.ResolveDevice(ctx, "a1b2")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if dev != nil {
+			t.Fatal("expected nil device for ambiguous match, got device")
+		}
+		if len(matches) != 2 {
+			t.Fatalf("expected 2 matches, got %d", len(matches))
+		}
+	})
+
+	t.Run("partial ID min 4 chars", func(t *testing.T) {
+		dev, matches, err := b.ResolveDevice(ctx, "a1b")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if dev != nil {
+			t.Fatal("expected nil device for partial ID < 4 chars, got device")
+		}
+		if matches != nil {
+			t.Fatalf("expected no ID matches for partial ID < 4 chars, got %d", len(matches))
+		}
+	})
+
+	t.Run("partial name unique match", func(t *testing.T) {
+		dev, matches, err := b.ResolveDevice(ctx, "linux")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if dev == nil {
+			t.Fatal("expected device, got nil")
+		}
+		if dev.Name != "Linux-Desktop" {
+			t.Fatalf("expected name Linux-Desktop, got %s", dev.Name)
+		}
+		if matches != nil {
+			t.Fatalf("expected no matches, got %d", len(matches))
+		}
+	})
+
+	t.Run("partial name ambiguous match", func(t *testing.T) {
+		dev, matches, err := b.ResolveDevice(ctx, "mac")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if dev != nil {
+			t.Fatal("expected nil device for ambiguous name match, got device")
+		}
+		if len(matches) != 2 {
+			t.Fatalf("expected 2 matches, got %d", len(matches))
+		}
+	})
+
+	t.Run("not found", func(t *testing.T) {
+		dev, matches, err := b.ResolveDevice(ctx, "nonexistent")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if dev != nil {
+			t.Fatal("expected nil device for not found, got device")
+		}
+		if matches != nil {
+			t.Fatalf("expected no matches for not found, got %d", len(matches))
+		}
+	})
+
+	t.Run("empty reference", func(t *testing.T) {
+		dev, matches, err := b.ResolveDevice(ctx, "")
+		if err == nil {
+			t.Fatal("expected error for empty reference, got nil")
+		}
+		if dev != nil || matches != nil {
+			t.Fatal("expected nil device and matches for error, got non-nil")
+		}
+	})
+}

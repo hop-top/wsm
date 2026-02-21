@@ -2,12 +2,15 @@ package workspace
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"hop.top/wsm/pkg/backend"
 	sqlitebackend "hop.top/wsm/pkg/backend/sqlite"
+	"hop.top/wsm/pkg/device"
 )
 
 func newTestManager(t *testing.T) *Manager {
@@ -651,4 +654,110 @@ func TestManager_ManagerOptionsContract(t *testing.T) {
 	if ev2.SessionID != "s" || ev2.AgentID != "a" {
 		t.Fatalf("expected session=s agent=a, got session=%q agent=%q", ev2.SessionID, ev2.AgentID)
 	}
+}
+
+func TestManager_ResolveDeviceRef(t *testing.T) {
+	ctx := context.Background()
+	m := newTestManager(t)
+
+	b, ok := m.backend.(*sqlitebackend.Backend)
+	if !ok {
+		t.Fatal("backend is not sqlite")
+	}
+
+	devices := []device.Device{
+		{ID: "a1b2c3d4e5f6a7b8", Name: "MacBook-Pro", Hostname: "macbook-pro", OS: "darwin", Arch: "arm64", FirstSeen: time.Now(), LastSeen: time.Now()},
+		{ID: "a1b2c3d4e5f6a7b9", Name: "MacBook-Air", Hostname: "macbook-air", OS: "darwin", Arch: "arm64", FirstSeen: time.Now(), LastSeen: time.Now()},
+		{ID: "x9y8z7w6v5u4t3s2", Name: "Linux-Desktop", Hostname: "linux-desktop", OS: "linux", Arch: "amd64", FirstSeen: time.Now(), LastSeen: time.Now()},
+	}
+
+	for _, d := range devices {
+		if err := b.SaveDevice(ctx, d); err != nil {
+			t.Fatalf("save device %s: %v", d.ID, err)
+		}
+	}
+
+	t.Run("exact ID", func(t *testing.T) {
+		dev, err := m.ResolveDeviceRef(ctx, "x9y8z7w6v5u4t3s2")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if dev == nil {
+			t.Fatal("expected device, got nil")
+		}
+		if dev.ID != "x9y8z7w6v5u4t3s2" {
+			t.Fatalf("expected ID x9y8z7w6v5u4t3s2, got %s", dev.ID)
+		}
+	})
+
+	t.Run("partial ID unique", func(t *testing.T) {
+		dev, err := m.ResolveDeviceRef(ctx, "x9y8")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if dev == nil {
+			t.Fatal("expected device, got nil")
+		}
+		if dev.ID != "x9y8z7w6v5u4t3s2" {
+			t.Fatalf("expected ID x9y8z7w6v5u4t3s2, got %s", dev.ID)
+		}
+	})
+
+	t.Run("partial ID ambiguous", func(t *testing.T) {
+		var ambErr *AmbiguousDeviceError
+		_, err := m.ResolveDeviceRef(ctx, "a1b2")
+		if err == nil {
+			t.Fatal("expected error for ambiguous ID, got nil")
+		}
+		if !errors.As(err, &ambErr) {
+			t.Fatalf("expected AmbiguousDeviceError, got %T: %v", err, err)
+		}
+		if ambErr.Ref != "a1b2" {
+			t.Fatalf("expected ref a1b2, got %s", ambErr.Ref)
+		}
+		if len(ambErr.Matches) != 2 {
+			t.Fatalf("expected 2 matches, got %d", len(ambErr.Matches))
+		}
+	})
+
+	t.Run("partial name unique", func(t *testing.T) {
+		dev, err := m.ResolveDeviceRef(ctx, "linux")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if dev == nil {
+			t.Fatal("expected device, got nil")
+		}
+		if dev.Name != "Linux-Desktop" {
+			t.Fatalf("expected name Linux-Desktop, got %s", dev.Name)
+		}
+	})
+
+	t.Run("partial name ambiguous", func(t *testing.T) {
+		var ambErr *AmbiguousDeviceError
+		_, err := m.ResolveDeviceRef(ctx, "mac")
+		if err == nil {
+			t.Fatal("expected error for ambiguous name, got nil")
+		}
+		if !errors.As(err, &ambErr) {
+			t.Fatalf("expected AmbiguousDeviceError, got %T: %v", err, err)
+		}
+		if ambErr.Ref != "mac" {
+			t.Fatalf("expected ref mac, got %s", ambErr.Ref)
+		}
+		if len(ambErr.Matches) != 2 {
+			t.Fatalf("expected 2 matches, got %d", len(ambErr.Matches))
+		}
+	})
+
+	t.Run("not found", func(t *testing.T) {
+		_, err := m.ResolveDeviceRef(ctx, "nonexistent")
+		if err == nil {
+			t.Fatal("expected error for not found, got nil")
+		}
+		var notFound *Error
+		if !errors.As(err, &notFound) || notFound.Kind != ErrorKindNotFound {
+			t.Fatalf("expected notFoundError, got %T: %v", err, err)
+		}
+	})
 }

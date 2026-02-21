@@ -91,7 +91,7 @@ func (b *Backend) Migrate(ctx context.Context) error {
 		`CREATE TABLE IF NOT EXISTS snapshots (
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
-			name TEXT UNIQUE,
+			name TEXT,
 			at_seq_num INTEGER NOT NULL,
 			at_timestamp DATETIME NOT NULL,
 			data TEXT NOT NULL,
@@ -100,6 +100,8 @@ func (b *Backend) Migrate(ctx context.Context) error {
 			UNIQUE(workspace_id, at_seq_num),
 			FOREIGN KEY(workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
 		);`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_snapshots_name ON snapshots(name);`,
+		`CREATE INDEX IF NOT EXISTS idx_snapshots_is_seed ON snapshots(is_seed);`,
 		`CREATE INDEX IF NOT EXISTS idx_snapshots_workspace ON snapshots(workspace_id);`,
 	}
 
@@ -113,32 +115,6 @@ func (b *Backend) Migrate(ctx context.Context) error {
 			return err
 		}
 	}
-
-	var hasIsSeed int
-	err = tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM pragma_table_info('snapshots') WHERE name='is_seed'`).Scan(&hasIsSeed)
-	if err != nil {
-		return err
-	}
-	if hasIsSeed == 0 {
-		if _, err := tx.ExecContext(ctx, `ALTER TABLE snapshots ADD COLUMN is_seed INTEGER NOT NULL DEFAULT 0`); err != nil {
-			return err
-		}
-		if _, err := tx.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_snapshots_is_seed ON snapshots(is_seed)`); err != nil {
-			return err
-		}
-	}
-
-	var hasName int
-	err = tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM pragma_table_info('snapshots') WHERE name='name'`).Scan(&hasName)
-	if err != nil {
-		return err
-	}
-	if hasName == 0 {
-		if _, err := tx.ExecContext(ctx, `ALTER TABLE snapshots ADD COLUMN name TEXT UNIQUE`); err != nil {
-			return err
-		}
-	}
-
 	return tx.Commit()
 }
 
@@ -669,6 +645,83 @@ func (b *Backend) ListDevices(ctx context.Context) ([]device.Device, error) {
 		out = append(out, d)
 	}
 	return out, rows.Err()
+}
+
+func (b *Backend) ResolveDevice(ctx context.Context, ref string) (*device.Device, []device.Device, error) {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		return nil, nil, fmt.Errorf("device reference is required")
+	}
+
+	var d device.Device
+
+	if len(ref) >= 4 {
+		err := b.db.QueryRowContext(ctx, `
+			SELECT id, name, hostname, os, arch, first_seen, last_seen FROM devices WHERE id = ?
+		`, ref).Scan(&d.ID, &d.Name, &d.Hostname, &d.OS, &d.Arch, &d.FirstSeen, &d.LastSeen)
+		if err == nil {
+			return &d, nil, nil
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
+			return nil, nil, err
+		}
+
+		rows, err := b.db.QueryContext(ctx, `
+			SELECT id, name, hostname, os, arch, first_seen, last_seen FROM devices WHERE id LIKE ? || '%' ORDER BY id
+		`, ref)
+		if err != nil {
+			return nil, nil, err
+		}
+		defer rows.Close()
+
+		var matches []device.Device
+		for rows.Next() {
+			var m device.Device
+			if err := rows.Scan(&m.ID, &m.Name, &m.Hostname, &m.OS, &m.Arch, &m.FirstSeen, &m.LastSeen); err != nil {
+				return nil, nil, err
+			}
+			matches = append(matches, m)
+		}
+		if err := rows.Err(); err != nil {
+			return nil, nil, err
+		}
+
+		if len(matches) == 1 {
+			return &matches[0], nil, nil
+		}
+		if len(matches) > 1 {
+			return nil, matches, nil
+		}
+	}
+
+	rows, err := b.db.QueryContext(ctx, `
+		SELECT id, name, hostname, os, arch, first_seen, last_seen FROM devices WHERE name LIKE '%' || ? || '%' ORDER BY name
+	`, ref)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+
+	var nameMatches []device.Device
+	for rows.Next() {
+		var m device.Device
+		if err := rows.Scan(&m.ID, &m.Name, &m.Hostname, &m.OS, &m.Arch, &m.FirstSeen, &m.LastSeen); err != nil {
+			return nil, nil, err
+		}
+		nameMatches = append(nameMatches, m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, err
+	}
+
+	if len(nameMatches) == 1 {
+		return &nameMatches[0], nil, nil
+	}
+	if len(nameMatches) > 1 {
+		return nil, nameMatches, nil
+	}
+
+	return nil, nil, nil
 }
 
 func (b *Backend) ListDeviceSessions(ctx context.Context, deviceID string) ([]backend.DeviceSession, error) {

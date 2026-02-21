@@ -515,6 +515,23 @@ func (m *Manager) GetDevice(ctx context.Context, id string) (*device.Device, err
 	return dev, nil
 }
 
+// ResolveDeviceRef resolves a device reference (ID or name) to a device.
+// Supports full ID, partial ID (min 4 chars), and partial name matching.
+// Returns AmbiguousDeviceError if the reference matches multiple devices.
+func (m *Manager) ResolveDeviceRef(ctx context.Context, ref string) (*device.Device, error) {
+	dev, matches, err := m.backend.ResolveDevice(ctx, ref)
+	if err != nil {
+		return nil, backendError("resolve device", err)
+	}
+	if dev != nil {
+		return dev, nil
+	}
+	if len(matches) > 0 {
+		return nil, &AmbiguousDeviceError{Ref: ref, Matches: matches}
+	}
+	return nil, notFoundError(fmt.Sprintf("device %q not found", ref))
+}
+
 // DeviceSessions returns session summaries for a device.
 func (m *Manager) DeviceSessions(ctx context.Context, deviceID string) ([]backend.DeviceSession, error) {
 	sessions, err := m.backend.ListDeviceSessions(ctx, deviceID)
@@ -522,6 +539,15 @@ func (m *Manager) DeviceSessions(ctx context.Context, deviceID string) ([]backen
 		return nil, backendError("list device sessions", err)
 	}
 	return sessions, nil
+}
+
+type AmbiguousDeviceError struct {
+	Ref     string
+	Matches []device.Device
+}
+
+func (e *AmbiguousDeviceError) Error() string {
+	return fmt.Sprintf("ambiguous device reference %q matches %d devices", e.Ref, len(e.Matches))
 }
 
 func mapBackendErr(msg string, err error) error {
