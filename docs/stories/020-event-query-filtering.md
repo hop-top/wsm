@@ -11,7 +11,7 @@ As a user, I want event query filtering so that I can inspect large workspaces b
 
 ## Acceptance Scenarios
 
-1. **Given** events of mixed types, **When** I query with `--type=message.added`, **Then** only matching events are returned in `seq_num` order.
+1. **Given** events of mixed types, **When** I query with `--type=interaction.message`, **Then** only matching events are returned in `seq_num` order.
 2. **Given** a workspace with events 1..100, **When** I query with `--after-seq=20 --before-seq=40`, **Then** only events within the range are returned.
 3. **Given** a large event stream, **When** I query with `--limit=25`, **Then** at most 25 events are returned.
 4. **Given** filtered event queries, **When** I use `--json`, **Then** output is valid JSON and preserves sequence ordering.

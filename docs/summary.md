@@ -19,9 +19,9 @@
 
 | Action | How | What happens |
 |--------|-----|-------------|
-| Record a message | `RecordEvent(wsID, "message.added", data)` | Appends message with role/content to log |
-| Record a tool call | `RecordEvent(wsID, "tool_call.started", data)` | Logs tool name, input, timing |
-| Record a file change | `RecordEvent(wsID, "file.changed", data)` | Logs path, operation, optional diff |
+| Record a message | `RecordEvent(wsID, "interaction.message", data)` | Appends message with role/content to log |
+| Record a tool call | `RecordEvent(wsID, "interaction.tool_call", data)` | Logs tool name, input, timing |
+| Record a file change | `RecordEvent(wsID, "mutation.file_patch", data)` | Logs path, operation, optional diff |
 | Attach a device | `RecordEvent(wsID, "device.attached", data)` | Associates a machine with the workspace |
 | Generate a snapshot | `wsm inspect` / `Manager.Snapshot()` | Materialized view from event replay |
 

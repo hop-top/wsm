@@ -48,7 +48,7 @@ func TestCompletionWorkspaceAndFlagValues(t *testing.T) {
 
 	eventTypeCompletion := r.run("__complete", "event", "add", "alpha", "")
 	requireExitCode(t, eventTypeCompletion, 0)
-	if !strings.Contains(eventTypeCompletion.Stdout, "message.added") || !strings.Contains(eventTypeCompletion.Stdout, "file.changed") {
+	if !strings.Contains(eventTypeCompletion.Stdout, "interaction.message") || !strings.Contains(eventTypeCompletion.Stdout, "mutation.file_patch") {
 		t.Fatalf("expected event type values in completion output, got:\n%s", eventTypeCompletion.Stdout)
 	}
 }

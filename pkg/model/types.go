@@ -35,31 +35,38 @@ const (
 	EventWorkspaceArchived   EventType = "workspace.archived"
 	EventWorkspaceUnarchived EventType = "workspace.unarchived"
 
-	EventMessageAdded      EventType = "message.added"
-	EventToolCallStarted   EventType = "tool_call.started"
-	EventToolCallCompleted EventType = "tool_call.completed"
-	EventFileChanged       EventType = "file.changed"
+	EventInteractionMessage   EventType = "interaction.message"
+	EventInteractionToolCall  EventType = "interaction.tool_call"
+	EventInteractionToolDone  EventType = "interaction.tool_done"
+	EventMutationFilePatch    EventType = "mutation.file_patch"
+	EventMutationArtifact     EventType = "mutation.artifact"
+	EventTopologySpaceCreate  EventType = "topology.space_create"
+	EventTopologySpaceDestroy EventType = "topology.space_destroy"
+	EventCheckpointSnapshot   EventType = "checkpoint.snapshot"
 
 	EventDeviceAttached EventType = "device.attached"
 	EventDeviceDetached EventType = "device.detached"
-
-	EventSnapshotTaken EventType = "snapshot.taken"
 )
 
 // Event is an immutable event-log record.
 type Event struct {
-	ID          string          `json:"id"`
-	WorkspaceID string          `json:"workspace_id"`
-	Type        EventType       `json:"type"`
-	DeviceID    string          `json:"device_id,omitempty"`
-	SessionID   string          `json:"session_id,omitempty"`
-	AgentID     string          `json:"agent_id,omitempty"`
-	Timestamp   time.Time       `json:"timestamp"`
-	Data        json.RawMessage `json:"data"`
-	SeqNum      uint64          `json:"seq_num"`
+	ID           string          `json:"id"`
+	WorkspaceID  string          `json:"workspace_id"`
+	Type         EventType       `json:"type"`
+	DeviceID     string          `json:"device_id,omitempty"`
+	SessionID    string          `json:"session_id,omitempty"`
+	AgentID      string          `json:"agent_id,omitempty"`
+	WriterID     string          `json:"writer_id,omitempty"`
+	WriterSeq    uint64          `json:"writer_seq,omitempty"`
+	LamportClock uint64          `json:"lamport_clock,omitempty"`
+	SpaceID      string          `json:"space_id,omitempty"`
+	CausalDeps   []string        `json:"causal_deps,omitempty"`
+	Timestamp    time.Time       `json:"timestamp"`
+	Data         json.RawMessage `json:"data"`
+	SeqNum       uint64          `json:"seq_num"`
 }
 
-// MessageData payload for EventMessageAdded.
+// MessageData payload for EventInteractionMessage.
 type MessageData struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
@@ -75,11 +82,20 @@ type ToolCallData struct {
 	Duration int64           `json:"duration_ms,omitempty"`
 }
 
-// FileChangeData payload for EventFileChanged.
+// FileChangeData payload for EventMutationFilePatch.
 type FileChangeData struct {
 	Path      string `json:"path"`
 	Operation string `json:"operation"`
 	Diff      string `json:"diff,omitempty"`
+}
+
+// ArtifactData payload for EventMutationArtifact.
+type ArtifactData struct {
+	ArtifactID string `json:"artifact_id"`
+	Type       string `json:"type"`
+	Path       string `json:"path,omitempty"`
+	Hash       string `json:"hash,omitempty"`
+	Size       int64  `json:"size,omitempty"`
 }
 
 // DeviceData payload for device attach/detach.

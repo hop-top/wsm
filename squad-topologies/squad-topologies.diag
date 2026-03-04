@@ -1,0 +1,170 @@
+// Squad Topologies — Generic Framework
+// Render at: http://blockdiag.com/en/blockdiag/demo.html
+// or: pip install blockdiag && blockdiag -Tsvg squad-topologies.diag
+
+blockdiag {
+  // ── Global layout ──────────────────────────────────────────────
+  orientation = portrait;
+  default_shape = roundedbox;
+  default_fontsize = 11;
+  span_width  = 60;
+  span_height = 40;
+
+  // ── Colour classes ─────────────────────────────────────────────
+  // stream    → dark green  #0d3b2e / #1aff8c
+  // enabling  → dark indigo #1a1a3e / #6c7fff
+  // subsystem → dark rose   #2a0a1a / #ff4d8f
+  // platform  → dark amber  #2a1a00 / #ff9500
+  // (BlockDiag applies these per-node below)
+
+  // ══════════════════════════════════════════════════════════════
+  // LAYER 1 — STREAM-ALIGNED  (value flow)
+  // ══════════════════════════════════════════════════════════════
+  group stream {
+    label       = "STREAM-ALIGNED  ·  value flow";
+    color       = "#0d3b2e";
+    fontcolor   = "#1aff8c";
+    style       = dashed;
+
+    SA1 [
+      label     = "Stream Squad A\n──────────\nDomain: Billing / Payments\n• Owns pipeline end-to-end\n• Context-bounded to domain\n• Self-sufficient unit of work",
+      color     = "#0d3b2e",
+      textcolor = "#1aff8c",
+      linecolor = "#1aff8c"
+    ];
+
+    SA2 [
+      label     = "Stream Squad B\n──────────\nDomain: Content Extraction\n• Owns extraction pipeline\n• Receives enabling uplift\n• Graduates to self-sufficient",
+      color     = "#0d3b2e",
+      textcolor = "#1aff8c",
+      linecolor = "#1aff8c"
+    ];
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  // LAYER 2 — SUPPORT  (enabling + complicated subsystem)
+  // ══════════════════════════════════════════════════════════════
+  group enabling {
+    label       = "ENABLING  ·  capability uplift";
+    color       = "#1a1a3e";
+    fontcolor   = "#6c7fff";
+    style       = dashed;
+
+    EN1 [
+      label     = "Enabling Squad\n──────────\nCap: Web Scraping / Tool Use\n• Temporary attachment\n• Teaches capability, then exits\n• Goal: make itself unnecessary",
+      color     = "#1a1a3e",
+      textcolor = "#6c7fff",
+      linecolor = "#6c7fff"
+    ];
+  }
+
+  group subsystem {
+    label       = "COMPLICATED SUBSYSTEM  ·  clean interface";
+    color       = "#2a0a1a";
+    fontcolor   = "#ff4d8f";
+    style       = dashed;
+
+    CS1 [
+      label     = "Complicated Subsystem\n──────────\nDomain: Legal Reasoning / Graphs\n• Hard problem, narrow interface\n• No squad should replicate this\n• Consumed strictly as a service",
+      color     = "#2a0a1a",
+      textcolor = "#ff4d8f",
+      linecolor = "#ff4d8f"
+    ];
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  // LAYER 3 — PLATFORM  (substrate, consumed by all)
+  // ══════════════════════════════════════════════════════════════
+  group platform {
+    label       = "PLATFORM  ·  substrate";
+    color       = "#2a1a00";
+    fontcolor   = "#ff9500";
+    style       = dashed;
+
+    PL [
+      label     = "Platform Squad\n──────────\nInfra: Tool Registry · Memory · Observability\n• Self-service, versioned contracts\n• Prompt versioning + cost telemetry\n• Golden path for new squads\n• API contract — no reaching in",
+      color     = "#2a1a00",
+      textcolor = "#ff9500",
+      linecolor = "#ff9500",
+      width     = 400
+    ];
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  // INTERACTION EDGES
+  // ══════════════════════════════════════════════════════════════
+
+  // Stream ↔ Stream  →  COLLABORATION (bidirectional, time-boxed)
+  SA1 <-> SA2 [
+    label     = "COLLABORATION\ntime-boxed · discover unknowns",
+    color     = "#6c7fff",
+    style     = dashed,
+    fontcolor = "#6c7fff"
+  ];
+
+  // Stream → Subsystem  →  X-AS-A-SERVICE
+  SA1 -> CS1 [
+    label     = "X-AS-A-SERVICE\ndelegate complexity",
+    color     = "#ff9500",
+    fontcolor = "#ff9500"
+  ];
+
+  // Enabling → Stream  →  FACILITATING (dashed, one-way, exits)
+  EN1 -> SA2 [
+    label     = "FACILITATING\nteaches · then exits",
+    color     = "#1aff8c",
+    style     = dotted,
+    fontcolor = "#1aff8c"
+  ];
+
+  // All → Platform  →  X-AS-A-SERVICE (consume infra)
+  SA1 -> PL [
+    label     = "XaaS · consumes infra",
+    color     = "#ff9500",
+    fontcolor = "#ff9500"
+  ];
+  SA2 -> PL [
+    label     = "XaaS · consumes infra",
+    color     = "#ff9500",
+    fontcolor = "#ff9500"
+  ];
+  CS1 -> PL [
+    label     = "XaaS · shared memory",
+    color     = "#ff9500",
+    fontcolor = "#ff9500"
+  ];
+  EN1 -> PL [
+    label     = "XaaS · tool registry",
+    color     = "#ff9500",
+    fontcolor = "#ff9500"
+  ];
+
+  // ══════════════════════════════════════════════════════════════
+  // LEGEND  (separate node cluster at bottom)
+  // ══════════════════════════════════════════════════════════════
+  group legend {
+    label     = "INTERACTION MODE LEGEND";
+    color     = "#111";
+    fontcolor = "#888";
+    style     = dashed;
+
+    L1 [
+      label     = "X-AS-A-SERVICE\nStable · self-service · versioned\nNo coordination needed",
+      color     = "#2a1a00",
+      textcolor = "#ff9500",
+      linecolor = "#ff9500"
+    ];
+    L2 [
+      label     = "COLLABORATION\nBidirectional · time-boxed\nFor unknowns → graduates to XaaS",
+      color     = "#1a1a3e",
+      textcolor = "#6c7fff",
+      linecolor = "#6c7fff"
+    ];
+    L3 [
+      label     = "FACILITATING\nOne-way · enabling squad only\nDefined exit condition required",
+      color     = "#0d3b2e",
+      textcolor = "#1aff8c",
+      linecolor = "#1aff8c"
+    ];
+  }
+}

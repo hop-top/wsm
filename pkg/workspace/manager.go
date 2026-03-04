@@ -13,14 +13,18 @@ import (
 	"hop.top/wsm/pkg/backend"
 	"hop.top/wsm/pkg/device"
 	"hop.top/wsm/pkg/model"
+	"hop.top/wsm/pkg/owsf"
 )
 
 // Manager provides workspace lifecycle operations.
 type Manager struct {
-	backend   backend.Backend
-	device    device.Device
-	sessionID string
-	agentID   string
+	backend      backend.Backend
+	device       device.Device
+	sessionID    string
+	agentID      string
+	writerID     string
+	spaceID      string
+	lamportClock uint64
 }
 
 // CreateOptions configures workspace creation.
@@ -52,6 +56,27 @@ func WithSessionID(id string) ManagerOption {
 func WithAgentID(id string) ManagerOption {
 	return func(m *Manager) {
 		m.agentID = id
+	}
+}
+
+// WithWriterID sets the OWSF writer ID (OASF Agent URI).
+func WithWriterID(id string) ManagerOption {
+	return func(m *Manager) {
+		m.writerID = id
+	}
+}
+
+// WithSpaceID sets the OWSF space ID.
+func WithSpaceID(id string) ManagerOption {
+	return func(m *Manager) {
+		m.spaceID = id
+	}
+}
+
+// WithLamportClock sets the initial Lamport clock value.
+func WithLamportClock(c uint64) ManagerOption {
+	return func(m *Manager) {
+		m.lamportClock = c
 	}
 }
 
@@ -155,18 +180,38 @@ func (m *Manager) RecordEvent(ctx context.Context, workspaceRef string, eventTyp
 	if ws.Status == StatusArchived {
 		return nil, conflictError("archived workspaces reject new events")
 	}
+
+	if m.writerID != "" {
+		if err := owsf.ValidateAgentIdentity(m.writerID); err != nil {
+			return nil, usageError(fmt.Sprintf("invalid agent identity: %v", err))
+		}
+	}
+
 	payload, err := json.Marshal(data)
 	if err != nil {
 		return nil, usageError("event payload must be JSON-serializable")
 	}
-	appended, err := m.backend.AppendEvent(ctx, model.Event{
-		WorkspaceID: ws.ID,
-		Type:        model.EventType(eventType),
-		DeviceID:    m.device.ID,
-		SessionID:   m.sessionID,
-		AgentID:     m.agentID,
-		Data:        payload,
-	})
+
+	m.lamportClock++
+
+	ev := model.Event{
+		WorkspaceID:  ws.ID,
+		Type:         model.EventType(eventType),
+		DeviceID:     m.device.ID,
+		SessionID:    m.sessionID,
+		AgentID:      m.agentID,
+		WriterID:     m.writerID,
+		SpaceID:      m.spaceID,
+		LamportClock: m.lamportClock,
+		Data:         payload,
+	}
+
+	// OCSF Alignment and Defaulting
+	if err := owsf.DefaultAndAlign(&ev); err != nil {
+		return nil, usageError(fmt.Sprintf("OCSF alignment failure: %v", err))
+	}
+
+	appended, err := m.backend.AppendEvent(ctx, ev)
 	if err != nil {
 		return nil, mapBackendErr("append event", err)
 	}
@@ -340,15 +385,24 @@ func applyEventsToSnapshot(base model.Snapshot, events []model.Event) model.Snap
 		base.AtSeqNum = ev.SeqNum
 		base.AtTimestamp = ev.Timestamp
 		switch ev.Type {
-		case model.EventMessageAdded:
+		case model.EventInteractionMessage:
 			base.MessageCount++
-		case model.EventToolCallStarted:
+		case model.EventInteractionToolCall:
 			base.ToolCalls++
-		case model.EventFileChanged:
+		case model.EventMutationFilePatch:
 			var p model.FileChangeData
 			if json.Unmarshal(ev.Data, &p) == nil && p.Path != "" {
 				files[p.Path] = struct{}{}
 			}
+		case model.EventMutationArtifact:
+			var p model.ArtifactData
+			if json.Unmarshal(ev.Data, &p) == nil && p.Path != "" {
+				files[p.Path] = struct{}{}
+			}
+		case model.EventTopologySpaceCreate, model.EventTopologySpaceDestroy:
+			// Topology events affect the snapshot metadata or future state
+			// but for now we just track that something changed in the topology.
+			// (Maybe add space count to snapshot in the future)
 		case model.EventDeviceAttached:
 			var p model.DeviceData
 			if json.Unmarshal(ev.Data, &p) == nil {

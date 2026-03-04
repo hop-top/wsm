@@ -656,19 +656,19 @@ func newEventAddCmd(opts *globalOptions) *cobra.Command {
 
 	cmd.Flags().StringVar(&rawData, "data", "", "Raw JSON event payload (overrides typed flags)")
 
-	cmd.Flags().StringVar(&role, "role", "", "message.added: role (user|assistant|system)")
-	cmd.Flags().StringVar(&content, "content", "", "message.added: content text")
-	cmd.Flags().StringVar(&format, "format", "", "message.added: optional format")
+	cmd.Flags().StringVar(&role, "role", "", "interaction.message: role (user|assistant|system)")
+	cmd.Flags().StringVar(&content, "content", "", "interaction.message: content text")
+	cmd.Flags().StringVar(&format, "format", "", "interaction.message: optional format")
 
-	cmd.Flags().StringVar(&toolName, "tool-name", "", "tool_call.*: tool name")
-	cmd.Flags().StringVar(&toolInput, "input", "", "tool_call.*: tool input as JSON")
-	cmd.Flags().StringVar(&toolOutput, "output", "", "tool_call.*: tool output as JSON")
-	cmd.Flags().StringVar(&toolStatus, "status", "", "tool_call.*: status value")
-	cmd.Flags().Int64Var(&durationMS, "duration-ms", 0, "tool_call.*: duration in milliseconds")
+	cmd.Flags().StringVar(&toolName, "tool-name", "", "interaction.tool_*: tool name")
+	cmd.Flags().StringVar(&toolInput, "input", "", "interaction.tool_*: tool input as JSON")
+	cmd.Flags().StringVar(&toolOutput, "output", "", "interaction.tool_*: tool output as JSON")
+	cmd.Flags().StringVar(&toolStatus, "status", "", "interaction.tool_*: status value")
+	cmd.Flags().Int64Var(&durationMS, "duration-ms", 0, "interaction.tool_*: duration in milliseconds")
 
-	cmd.Flags().StringVar(&path, "path", "", "file.changed: path")
-	cmd.Flags().StringVar(&operation, "operation", "", "file.changed: operation (create|modify|delete)")
-	cmd.Flags().StringVar(&diff, "diff", "", "file.changed: optional diff")
+	cmd.Flags().StringVar(&path, "path", "", "mutation.file_patch: path")
+	cmd.Flags().StringVar(&operation, "operation", "", "mutation.file_patch: operation (create|modify|delete)")
+	cmd.Flags().StringVar(&diff, "diff", "", "mutation.file_patch: optional diff")
 
 	cmd.Flags().StringVar(&deviceID, "device-id", "", "device.*: device identifier")
 	cmd.Flags().StringVar(&deviceName, "device-name", "", "device.*: device name")
@@ -703,9 +703,9 @@ func buildEventAddPayload(eventType workspace.EventType, in eventAddPayloadInput
 	}
 
 	switch eventType {
-	case workspace.EventMessageAdded:
+	case workspace.EventInteractionMessage:
 		if strings.TrimSpace(in.content) == "" {
-			return nil, workspace.NewErrorUsage("message.added requires --content (or --data)")
+			return nil, workspace.NewErrorUsage("interaction.message requires --content (or --data)")
 		}
 		role := strings.TrimSpace(in.role)
 		if role == "" {
@@ -716,7 +716,7 @@ func buildEventAddPayload(eventType workspace.EventType, in eventAddPayloadInput
 			Content: in.content,
 			Format:  strings.TrimSpace(in.format),
 		}, nil
-	case workspace.EventToolCallStarted, workspace.EventToolCallCompleted:
+	case workspace.EventInteractionToolCall, workspace.EventInteractionToolDone:
 		if strings.TrimSpace(in.toolName) == "" {
 			return nil, workspace.NewErrorUsage(string(eventType) + " requires --tool-name (or --data)")
 		}
@@ -730,7 +730,7 @@ func buildEventAddPayload(eventType workspace.EventType, in eventAddPayloadInput
 		}
 		status := strings.TrimSpace(in.toolStatus)
 		if status == "" {
-			if eventType == workspace.EventToolCallStarted {
+			if eventType == workspace.EventInteractionToolCall {
 				status = "started"
 			} else {
 				status = "completed"
@@ -743,9 +743,9 @@ func buildEventAddPayload(eventType workspace.EventType, in eventAddPayloadInput
 			Status:   status,
 			Duration: in.durationMS,
 		}, nil
-	case workspace.EventFileChanged:
+	case workspace.EventMutationFilePatch:
 		if strings.TrimSpace(in.path) == "" {
-			return nil, workspace.NewErrorUsage("file.changed requires --path (or --data)")
+			return nil, workspace.NewErrorUsage("mutation.file_patch requires --path (or --data)")
 		}
 		op := strings.TrimSpace(in.operation)
 		if op == "" {
@@ -782,10 +782,10 @@ func parseOptionalRawJSON(field, value string) (json.RawMessage, error) {
 
 func isUserAppendableEventType(t workspace.EventType) bool {
 	switch t {
-	case workspace.EventMessageAdded,
-		workspace.EventToolCallStarted,
-		workspace.EventToolCallCompleted,
-		workspace.EventFileChanged,
+	case workspace.EventInteractionMessage,
+		workspace.EventInteractionToolCall,
+		workspace.EventInteractionToolDone,
+		workspace.EventMutationFilePatch,
 		workspace.EventDeviceAttached,
 		workspace.EventDeviceDetached:
 		return true
@@ -796,10 +796,10 @@ func isUserAppendableEventType(t workspace.EventType) bool {
 
 func manualAppendableEventTypes() []string {
 	return []string{
-		string(workspace.EventMessageAdded),
-		string(workspace.EventToolCallStarted),
-		string(workspace.EventToolCallCompleted),
-		string(workspace.EventFileChanged),
+		string(workspace.EventInteractionMessage),
+		string(workspace.EventInteractionToolCall),
+		string(workspace.EventInteractionToolDone),
+		string(workspace.EventMutationFilePatch),
 		string(workspace.EventDeviceAttached),
 		string(workspace.EventDeviceDetached),
 	}
@@ -1316,6 +1316,7 @@ func newTUICmd(opts *globalOptions) *cobra.Command {
 		Use:     "tui",
 		Aliases: []string{"ui"},
 		Short:   "Launch terminal UI",
+		Hidden:  true,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
 				return runTUI(ctx, app, *opts)
@@ -1441,13 +1442,13 @@ func isKnownEventType(t workspace.EventType) bool {
 		workspace.EventWorkspaceUpdated,
 		workspace.EventWorkspaceArchived,
 		workspace.EventWorkspaceUnarchived,
-		workspace.EventMessageAdded,
-		workspace.EventToolCallStarted,
-		workspace.EventToolCallCompleted,
-		workspace.EventFileChanged,
+		workspace.EventInteractionMessage,
+		workspace.EventInteractionToolCall,
+		workspace.EventInteractionToolDone,
+		workspace.EventMutationFilePatch,
 		workspace.EventDeviceAttached,
 		workspace.EventDeviceDetached,
-		workspace.EventSnapshotTaken:
+		workspace.EventCheckpointSnapshot:
 		return true
 	default:
 		return false

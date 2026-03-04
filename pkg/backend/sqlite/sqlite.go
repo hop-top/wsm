@@ -103,6 +103,19 @@ func (b *Backend) Migrate(ctx context.Context) error {
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_snapshots_name ON snapshots(name);`,
 		`CREATE INDEX IF NOT EXISTS idx_snapshots_is_seed ON snapshots(is_seed);`,
 		`CREATE INDEX IF NOT EXISTS idx_snapshots_workspace ON snapshots(workspace_id);`,
+		`CREATE TABLE IF NOT EXISTS spaces (
+			id TEXT PRIMARY KEY,
+			writer_id TEXT,
+			type TEXT NOT NULL,
+			parent TEXT,
+			boundary TEXT NOT NULL,
+			observables TEXT,
+			capabilities TEXT NOT NULL,
+			trust_level TEXT NOT NULL,
+			created_at DATETIME NOT NULL,
+			FOREIGN KEY(parent) REFERENCES spaces(id)
+		);`,
+		`CREATE INDEX IF NOT EXISTS idx_spaces_parent ON spaces(parent);`,
 	}
 
 	tx, err := b.db.BeginTx(ctx, nil)
@@ -115,6 +128,26 @@ func (b *Backend) Migrate(ctx context.Context) error {
 			return err
 		}
 	}
+
+	// OWSF writer and interop fields — safe for existing databases (C2 fix).
+	alters := []string{
+		`ALTER TABLE events ADD COLUMN writer_id TEXT`,
+		`ALTER TABLE events ADD COLUMN writer_seq INTEGER`,
+		`ALTER TABLE events ADD COLUMN lamport_clock INTEGER`,
+		`ALTER TABLE events ADD COLUMN space_id TEXT`,
+		`ALTER TABLE events ADD COLUMN causal_deps TEXT`,
+		`ALTER TABLE spaces ADD COLUMN writer_id TEXT`,
+		`ALTER TABLE spaces ADD COLUMN observables TEXT`,
+	}
+	for _, alter := range alters {
+		// Ignore "duplicate column" errors from re-migration.
+		if _, err := tx.ExecContext(ctx, alter); err != nil {
+			if !strings.Contains(err.Error(), "duplicate column") {
+				return err
+			}
+		}
+	}
+
 	return tx.Commit()
 }
 
@@ -284,10 +317,19 @@ func (b *Backend) AppendEvent(ctx context.Context, event model.Event) (model.Eve
 		event.SeqNum = next
 	}
 
+	var causalDeps any
+	if len(event.CausalDeps) > 0 {
+		causalDeps = marshal(event.CausalDeps)
+	}
+
 	_, err = tx.ExecContext(ctx, `
-		INSERT INTO events(id, workspace_id, type, device_id, session_id, agent_id, timestamp, data, seq_num)
-		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, event.ID, event.WorkspaceID, string(event.Type), event.DeviceID, event.SessionID, event.AgentID, event.Timestamp.UTC(), string(event.Data), event.SeqNum)
+		INSERT INTO events(id, workspace_id, type, device_id, session_id, agent_id,
+			writer_id, writer_seq, lamport_clock, space_id, causal_deps,
+			timestamp, data, seq_num)
+		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, event.ID, event.WorkspaceID, string(event.Type), event.DeviceID, event.SessionID, event.AgentID,
+		event.WriterID, event.WriterSeq, event.LamportClock, event.SpaceID, causalDeps,
+		event.Timestamp.UTC(), string(event.Data), event.SeqNum)
 	if err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "unique") {
 			return model.Event{}, fmt.Errorf("conflict: %w", err)
@@ -303,26 +345,20 @@ func (b *Backend) AppendEvent(ctx context.Context, event model.Event) (model.Eve
 	return event, nil
 }
 
-func (b *Backend) GetEvent(ctx context.Context, workspaceID string, ref string) (*model.Event, error) {
-	var query string
-	var arg any
-	if seqNum, err := strconv.ParseUint(ref, 10, 64); err == nil {
-		query = `SELECT id, workspace_id, type, device_id, session_id, agent_id, timestamp, data, seq_num FROM events WHERE workspace_id = ? AND seq_num = ?`
-		arg = seqNum
-	} else {
-		query = `SELECT id, workspace_id, type, device_id, session_id, agent_id, timestamp, data, seq_num FROM events WHERE workspace_id = ? AND id = ?`
-		arg = ref
-	}
+const eventColumns = `id, workspace_id, type, device_id, session_id, agent_id,
+	writer_id, writer_seq, lamport_clock, space_id, causal_deps,
+	timestamp, data, seq_num`
+
+func scanEvent(row scanner) (*model.Event, error) {
 	var ev model.Event
 	var typ, data string
-	var sessionID, agentID sql.NullString
-	err := b.db.QueryRowContext(ctx, query, workspaceID, arg).Scan(
-		&ev.ID, &ev.WorkspaceID, &typ, &ev.DeviceID, &sessionID, &agentID, &ev.Timestamp, &data, &ev.SeqNum,
-	)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil
-	}
-	if err != nil {
+	var sessionID, agentID, writerID, spaceID, causalDepsJSON sql.NullString
+	var writerSeq, lamportClock sql.NullInt64
+	if err := row.Scan(
+		&ev.ID, &ev.WorkspaceID, &typ, &ev.DeviceID, &sessionID, &agentID,
+		&writerID, &writerSeq, &lamportClock, &spaceID, &causalDepsJSON,
+		&ev.Timestamp, &data, &ev.SeqNum,
+	); err != nil {
 		return nil, err
 	}
 	if sessionID.Valid {
@@ -331,13 +367,45 @@ func (b *Backend) GetEvent(ctx context.Context, workspaceID string, ref string) 
 	if agentID.Valid {
 		ev.AgentID = agentID.String
 	}
+	if writerID.Valid {
+		ev.WriterID = writerID.String
+	}
+	if writerSeq.Valid {
+		ev.WriterSeq = uint64(writerSeq.Int64)
+	}
+	if lamportClock.Valid {
+		ev.LamportClock = uint64(lamportClock.Int64)
+	}
+	if spaceID.Valid {
+		ev.SpaceID = spaceID.String
+	}
+	if causalDepsJSON.Valid && causalDepsJSON.String != "" {
+		_ = json.Unmarshal([]byte(causalDepsJSON.String), &ev.CausalDeps)
+	}
 	ev.Type = model.EventType(typ)
 	ev.Data = json.RawMessage(data)
 	return &ev, nil
 }
 
+func (b *Backend) GetEvent(ctx context.Context, workspaceID string, ref string) (*model.Event, error) {
+	var query string
+	var arg any
+	if seqNum, err := strconv.ParseUint(ref, 10, 64); err == nil {
+		query = `SELECT ` + eventColumns + ` FROM events WHERE workspace_id = ? AND seq_num = ?`
+		arg = seqNum
+	} else {
+		query = `SELECT ` + eventColumns + ` FROM events WHERE workspace_id = ? AND id = ?`
+		arg = ref
+	}
+	ev, err := scanEvent(b.db.QueryRowContext(ctx, query, workspaceID, arg))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	return ev, err
+}
+
 func (b *Backend) ListEvents(ctx context.Context, workspaceID string, opts backend.EventListOptions) ([]model.Event, error) {
-	query := `SELECT id, workspace_id, type, device_id, session_id, agent_id, timestamp, data, seq_num FROM events WHERE workspace_id = ?`
+	query := `SELECT ` + eventColumns + ` FROM events WHERE workspace_id = ?`
 	args := []any{workspaceID}
 	if opts.AfterSeqNum > 0 {
 		query += " AND seq_num > ?"
@@ -370,22 +438,11 @@ func (b *Backend) ListEvents(ctx context.Context, workspaceID string, opts backe
 	defer rows.Close()
 	out := make([]model.Event, 0)
 	for rows.Next() {
-		var ev model.Event
-		var typ string
-		var data string
-		var sessionID, agentID sql.NullString
-		if err := rows.Scan(&ev.ID, &ev.WorkspaceID, &typ, &ev.DeviceID, &sessionID, &agentID, &ev.Timestamp, &data, &ev.SeqNum); err != nil {
+		ev, err := scanEvent(rows)
+		if err != nil {
 			return nil, err
 		}
-		if sessionID.Valid {
-			ev.SessionID = sessionID.String
-		}
-		if agentID.Valid {
-			ev.AgentID = agentID.String
-		}
-		ev.Type = model.EventType(typ)
-		ev.Data = json.RawMessage(data)
-		out = append(out, ev)
+		out = append(out, *ev)
 	}
 	return out, rows.Err()
 }
@@ -764,6 +821,96 @@ func (b *Backend) ListDeviceSessions(ctx context.Context, deviceID string) ([]ba
 			ds.LastEventAt, _ = time.Parse("2006-01-02T15:04:05Z", lastEventAt)
 		}
 		out = append(out, ds)
+	}
+	return out, rows.Err()
+}
+
+func (b *Backend) SaveSpace(ctx context.Context, s model.Space) error {
+	var parent any
+	if s.Parent != "" {
+		parent = s.Parent
+	}
+	var observables any
+	if len(s.Observables) > 0 {
+		observables = marshal(s.Observables)
+	}
+	_, err := b.db.ExecContext(ctx, `
+		INSERT INTO spaces(id, writer_id, type, parent, boundary, observables, capabilities, trust_level, created_at)
+		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET
+			writer_id=excluded.writer_id,
+			type=excluded.type,
+			boundary=excluded.boundary,
+			observables=excluded.observables,
+			capabilities=excluded.capabilities,
+			trust_level=excluded.trust_level
+	`, s.ID, s.WriterID, string(s.Type), parent, s.Boundary, observables, marshal(s.Capabilities), string(s.TrustLevel), s.CreatedAt.UTC())
+	return err
+}
+
+func (b *Backend) GetSpace(ctx context.Context, id string) (*model.Space, error) {
+	var s model.Space
+	var typ, trustLevel, capsJSON string
+	var parent, writerID, observablesJSON sql.NullString
+	err := b.db.QueryRowContext(ctx, `
+		SELECT id, writer_id, type, parent, boundary, observables, capabilities, trust_level, created_at
+		FROM spaces WHERE id = ?
+	`, id).Scan(&s.ID, &writerID, &typ, &parent, &s.Boundary, &observablesJSON, &capsJSON, &trustLevel, &s.CreatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	s.Type = model.SpaceType(typ)
+	s.TrustLevel = model.TrustLevel(trustLevel)
+	if parent.Valid {
+		s.Parent = parent.String
+	}
+	if writerID.Valid {
+		s.WriterID = writerID.String
+	}
+	if observablesJSON.Valid && observablesJSON.String != "" {
+		_ = json.Unmarshal([]byte(observablesJSON.String), &s.Observables)
+	}
+	_ = json.Unmarshal([]byte(capsJSON), &s.Capabilities)
+	return &s, nil
+}
+
+func (b *Backend) ListSpaces(ctx context.Context, parentID string) ([]model.Space, error) {
+	var rows *sql.Rows
+	var err error
+	query := `SELECT id, writer_id, type, parent, boundary, observables, capabilities, trust_level, created_at FROM spaces`
+	if parentID == "" {
+		rows, err = b.db.QueryContext(ctx, query+` WHERE parent = '' OR parent IS NULL ORDER BY id`)
+	} else {
+		rows, err = b.db.QueryContext(ctx, query+` WHERE parent = ? ORDER BY id`, parentID)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]model.Space, 0)
+	for rows.Next() {
+		var s model.Space
+		var typ, trustLevel, capsJSON string
+		var parent, writerID, observablesJSON sql.NullString
+		if err := rows.Scan(&s.ID, &writerID, &typ, &parent, &s.Boundary, &observablesJSON, &capsJSON, &trustLevel, &s.CreatedAt); err != nil {
+			return nil, err
+		}
+		s.Type = model.SpaceType(typ)
+		s.TrustLevel = model.TrustLevel(trustLevel)
+		if parent.Valid {
+			s.Parent = parent.String
+		}
+		if writerID.Valid {
+			s.WriterID = writerID.String
+		}
+		if observablesJSON.Valid && observablesJSON.String != "" {
+			_ = json.Unmarshal([]byte(observablesJSON.String), &s.Observables)
+		}
+		_ = json.Unmarshal([]byte(capsJSON), &s.Capabilities)
+		out = append(out, s)
 	}
 	return out, rows.Err()
 }

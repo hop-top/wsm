@@ -94,7 +94,7 @@ aps myagent &   # Start in background or separate terminal
 cd wsm
 wsm workspace create my-project --description "AI coding workspace"
 wsm session create my-project --name "Initial Session"
-wsm events add my-project message.added --content "Started project"
+wsm events add my-project interaction.message --content "Started project"
 wsm session fork <session-id> --at-entry 5 --name "Branch A"
 wsm session tree <branch-a-id>
 wsm session export <branch-a-id> --output report.html

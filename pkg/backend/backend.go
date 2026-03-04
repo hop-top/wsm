@@ -36,6 +36,10 @@ type Backend interface {
 	ResolveDevice(ctx context.Context, ref string) (*device.Device, []device.Device, error)
 	ListDeviceSessions(ctx context.Context, deviceID string) ([]DeviceSession, error)
 
+	SaveSpace(ctx context.Context, s model.Space) error
+	GetSpace(ctx context.Context, id string) (*model.Space, error)
+	ListSpaces(ctx context.Context, parentID string) ([]model.Space, error)
+
 	Migrate(ctx context.Context) error
 	Close() error
 }

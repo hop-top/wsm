@@ -74,7 +74,7 @@ manager.RecordEvent(ctx, ws.ID, workspace.EventSessionCreated, map[string]any{
 })
 
 // Record events to session
-manager.RecordEvent(ctx, ws.ID, workspace.EventMessageAdded, map[string]any{
+manager.RecordEvent(ctx, ws.ID, workspace.EventInteractionMessage, map[string]any{
     "role": "user",
     "content": "Started working on feature",
 })
@@ -94,7 +94,7 @@ make build
 ./wsm session create my-project --name "Initial Session"
 
 # Record events to workspace/session
-./wsm events add my-project message.added --content "Started project"
+./wsm events add my-project interaction.message --content "Started project"
 ./wsm session fork <session-id> --at-entry 5 --name "Branch A"
 ./wsm session tree <branch-a-id>
 ./wsm session export <branch-a-id> --output report.html
@@ -312,8 +312,8 @@ cd oss-aps-cli
 ./wsm session create my-project --name "Session C"
 
 # Record events to specific sessions
-./wsm events add my-project-session-a message.added --content "Started feature X"
-./wsm events add my-project-session-b message.added --content "Started feature Y"
+./wsm events add my-project-session-a interaction.message --content "Started feature X"
+./wsm events add my-project-session-b interaction.message --content "Started feature Y"
 
 # Fork sessions independently
 ./wsm session fork my-project-session-a --at-entry 5 --name "Branch from A"
@@ -371,8 +371,8 @@ cd wsm
 ./wsm session create my-project --name "Session A"
 
 # Record events to workspace/session
-./wsm events add my-project message.added --content "Started project"
-./wsm events add my-project file.changed --path "src/main.go" --operation "create"
+./wsm events add my-project interaction.message --content "Started project"
+./wsm events add my-project mutation.file_patch --path "src/main.go" --operation "create"
 
 # Fork session
 ./wsm session fork <session-id> --at-entry 5 --name "Branch B"
@@ -436,7 +436,7 @@ func (m *APSManager) CreateSession(ctx, workspaceID string) (string, error) {
 
 // Record event to workspace
 func (m *APSManager) RecordAction(ctx, workspaceID string, action interface{}) error {
-    return m.wsmManager.RecordEvent(ctx, workspaceID, workspace.EventMessageAdded, action)
+    return m.wsmManager.RecordEvent(ctx, workspaceID, workspace.EventInteractionMessage, action)
 }
 ```
 

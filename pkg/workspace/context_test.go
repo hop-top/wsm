@@ -23,8 +23,8 @@ func TestFormatContext(t *testing.T) {
 		GeneratedAt:  now,
 	}
 	events := []model.Event{
-		{SeqNum: 41, Type: model.EventMessageAdded, Timestamp: now},
-		{SeqNum: 42, Type: model.EventToolCallCompleted, Timestamp: now},
+		{SeqNum: 41, Type: model.EventInteractionMessage, Timestamp: now},
+		{SeqNum: 42, Type: model.EventInteractionToolDone, Timestamp: now},
 	}
 	out := FormatContext(snap, events, ContextOptions{RecentEvents: 5})
 

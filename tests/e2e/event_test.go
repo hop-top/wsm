@@ -21,7 +21,7 @@ func TestEventRecording(t *testing.T) {
 		t.Fatalf("create workspace: %v", err)
 	}
 
-	addMessage := r.run("event", "add", ws.ID, "message.added", "--content=hello", "--json")
+	addMessage := r.run("event", "add", ws.ID, "interaction.message", "--content=hello", "--json")
 	requireExitCode(t, addMessage, 0)
 	var messageEvent workspace.Event
 	mustUnmarshalJSON(t, addMessage.Stdout, &messageEvent)
@@ -30,7 +30,7 @@ func TestEventRecording(t *testing.T) {
 	}
 
 	addTool := r.run(
-		"event", "add", ws.ID, "tool_call.started",
+		"event", "add", ws.ID, "interaction.tool_call",
 		"--tool-name=grep",
 		"--input={\"pattern\":\"foo\"}",
 		"--json",
@@ -43,7 +43,7 @@ func TestEventRecording(t *testing.T) {
 	}
 
 	addFile := r.run(
-		"event", "add", ws.ID, "file.changed",
+		"event", "add", ws.ID, "mutation.file_patch",
 		"--path=README.md",
 		"--operation=modify",
 		"--json",
@@ -59,7 +59,7 @@ func TestEventRecording(t *testing.T) {
 	requireExitCode(t, res, 0)
 	events := mustUnmarshalJSONArray[workspace.Event](t, res.Stdout)
 	if len(events) < 2 {
-		t.Fatalf("expected at least workspace.created + message.added events, got %d", len(events))
+		t.Fatalf("expected at least workspace.created + interaction.message events, got %d", len(events))
 	}
 	for i := 1; i < len(events); i++ {
 		if events[i].SeqNum <= events[i-1].SeqNum {
@@ -70,7 +70,7 @@ func TestEventRecording(t *testing.T) {
 	if err := mgr.Archive(ctx, ws.ID); err != nil {
 		t.Fatalf("archive workspace: %v", err)
 	}
-	blocked := r.run("event", "add", ws.ID, "message.added", "--content=blocked")
+	blocked := r.run("event", "add", ws.ID, "interaction.message", "--content=blocked")
 	requireExitCode(t, blocked, 4)
 }
 
@@ -84,13 +84,13 @@ func TestEventListing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create workspace: %v", err)
 	}
-	if _, err := mgr.RecordEvent(ctx, ws.ID, workspace.EventMessageAdded, workspace.MessageData{Role: "user", Content: "one"}); err != nil {
+	if _, err := mgr.RecordEvent(ctx, ws.ID, workspace.EventInteractionMessage, workspace.MessageData{Role: "user", Content: "one"}); err != nil {
 		t.Fatalf("record message event: %v", err)
 	}
-	if _, err := mgr.RecordEvent(ctx, ws.ID, workspace.EventToolCallStarted, workspace.ToolCallData{ToolName: "grep"}); err != nil {
+	if _, err := mgr.RecordEvent(ctx, ws.ID, workspace.EventInteractionToolCall, workspace.ToolCallData{ToolName: "grep"}); err != nil {
 		t.Fatalf("record tool event: %v", err)
 	}
-	if _, err := mgr.RecordEvent(ctx, ws.ID, workspace.EventMessageAdded, workspace.MessageData{Role: "assistant", Content: "two"}); err != nil {
+	if _, err := mgr.RecordEvent(ctx, ws.ID, workspace.EventInteractionMessage, workspace.MessageData{Role: "assistant", Content: "two"}); err != nil {
 		t.Fatalf("record second message event: %v", err)
 	}
 
@@ -106,14 +106,14 @@ func TestEventListing(t *testing.T) {
 		}
 	}
 
-	filteredRes := r.run("event", "list", ws.ID, "--type=message.added", "--json")
+	filteredRes := r.run("event", "list", ws.ID, "--type=interaction.message", "--json")
 	requireExitCode(t, filteredRes, 0)
 	filtered := mustUnmarshalJSONArray[workspace.Event](t, filteredRes.Stdout)
 	if len(filtered) != 2 {
-		t.Fatalf("expected 2 filtered message.added events, got %d", len(filtered))
+		t.Fatalf("expected 2 filtered interaction.message events, got %d", len(filtered))
 	}
 	for _, ev := range filtered {
-		if ev.Type != workspace.EventMessageAdded {
+		if ev.Type != workspace.EventInteractionMessage {
 			t.Fatalf("unexpected event type in filtered list: %s", ev.Type)
 		}
 	}
@@ -131,19 +131,19 @@ func TestEventFilteringCLI(t *testing.T) {
 	}
 	for i := 1; i <= 100; i++ {
 		if i%2 == 0 {
-			if _, err := mgr.RecordEvent(ctx, ws.ID, workspace.EventMessageAdded, workspace.MessageData{Role: "user", Content: fmt.Sprintf("m-%d", i)}); err != nil {
+			if _, err := mgr.RecordEvent(ctx, ws.ID, workspace.EventInteractionMessage, workspace.MessageData{Role: "user", Content: fmt.Sprintf("m-%d", i)}); err != nil {
 				t.Fatalf("record message event %d: %v", i, err)
 			}
 			continue
 		}
-		if _, err := mgr.RecordEvent(ctx, ws.ID, workspace.EventToolCallStarted, workspace.ToolCallData{ToolName: fmt.Sprintf("tool-%d", i)}); err != nil {
+		if _, err := mgr.RecordEvent(ctx, ws.ID, workspace.EventInteractionToolCall, workspace.ToolCallData{ToolName: fmt.Sprintf("tool-%d", i)}); err != nil {
 			t.Fatalf("record tool event %d: %v", i, err)
 		}
 	}
 
 	res := r.run(
 		"event", "list", ws.ID,
-		"--type=message.added",
+		"--type=interaction.message",
 		"--after-seq=20",
 		"--before-seq=40",
 		"--limit=25",
@@ -156,7 +156,7 @@ func TestEventFilteringCLI(t *testing.T) {
 	}
 	var prev uint64
 	for i, ev := range filtered {
-		if ev.Type != workspace.EventMessageAdded {
+		if ev.Type != workspace.EventInteractionMessage {
 			t.Fatalf("unexpected filtered event type: %s", ev.Type)
 		}
 		if ev.SeqNum <= 20 || ev.SeqNum >= 40 {
@@ -186,12 +186,12 @@ func TestEventIntegrity_LargeVolume(t *testing.T) {
 		t.Fatalf("create workspace: %v", err)
 	}
 	for i := 1; i <= 1000; i++ {
-		if _, err := mgr.RecordEvent(ctx, ws.ID, workspace.EventMessageAdded, workspace.MessageData{Role: "user", Content: fmt.Sprintf("msg-%d", i)}); err != nil {
+		if _, err := mgr.RecordEvent(ctx, ws.ID, workspace.EventInteractionMessage, workspace.MessageData{Role: "user", Content: fmt.Sprintf("msg-%d", i)}); err != nil {
 			t.Fatalf("record event %d: %v", i, err)
 		}
 	}
 
-	res := r.run("event", "list", ws.ID, "--type=message.added", "--json")
+	res := r.run("event", "list", ws.ID, "--type=interaction.message", "--json")
 	requireExitCode(t, res, 0)
 	events := mustUnmarshalJSONArray[workspace.Event](t, res.Stdout)
 	if len(events) != 1000 {
@@ -217,7 +217,7 @@ func TestEventRecording_SessionAgentID(t *testing.T) {
 	wsID := r.mustCreateWorkspace("session-agent-e2e")
 
 	addRes := r.run(
-		"event", "add", wsID, "message.added",
+		"event", "add", wsID, "interaction.message",
 		"--content=hello-session",
 		"--session-id=e2e-sess-1",
 		"--agent-id=e2e-agent-1",
@@ -254,7 +254,7 @@ func TestEventShow(t *testing.T) {
 	r := newRunner(t)
 	wsID := r.mustCreateWorkspace("event-show-e2e")
 
-	addRes := r.run("event", "add", wsID, "message.added", "--content=show-me", "--json")
+	addRes := r.run("event", "add", wsID, "interaction.message", "--content=show-me", "--json")
 	requireExitCode(t, addRes, 0)
 	var added workspace.Event
 	mustUnmarshalJSON(t, addRes.Stdout, &added)
@@ -283,7 +283,7 @@ func TestEventAlias(t *testing.T) {
 	r := newRunner(t)
 	wsID := r.mustCreateWorkspace("event-alias-e2e")
 
-	addRes := r.run("events", "add", wsID, "message.added", "--content=alias-test", "--json")
+	addRes := r.run("events", "add", wsID, "interaction.message", "--content=alias-test", "--json")
 	requireExitCode(t, addRes, 0)
 
 	listRes := r.run("events", "list", wsID, "--json")

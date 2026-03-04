@@ -27,10 +27,10 @@ func TestGenerateSnapshot(t *testing.T) {
 	now := time.Now().UTC()
 	ws := Workspace{ID: "w1", Name: "demo", Status: StatusActive}
 	events := []Event{
-		{SeqNum: 1, Type: EventMessageAdded, Timestamp: now, Data: mustJSON(t, MessageData{Role: "user", Content: "hi"})},
-		{SeqNum: 2, Type: EventToolCallStarted, Timestamp: now.Add(time.Second), Data: mustJSON(t, ToolCallData{ToolName: "grep"})},
-		{SeqNum: 3, Type: EventFileChanged, Timestamp: now.Add(2 * time.Second), Data: mustJSON(t, FileChangeData{Path: "a.txt", Operation: "modify"})},
-		{SeqNum: 4, Type: EventFileChanged, Timestamp: now.Add(3 * time.Second), Data: mustJSON(t, FileChangeData{Path: "a.txt", Operation: "modify"})},
+		{SeqNum: 1, Type: EventInteractionMessage, Timestamp: now, Data: mustJSON(t, MessageData{Role: "user", Content: "hi"})},
+		{SeqNum: 2, Type: EventInteractionToolCall, Timestamp: now.Add(time.Second), Data: mustJSON(t, ToolCallData{ToolName: "grep"})},
+		{SeqNum: 3, Type: EventMutationFilePatch, Timestamp: now.Add(2 * time.Second), Data: mustJSON(t, FileChangeData{Path: "a.txt", Operation: "modify"})},
+		{SeqNum: 4, Type: EventMutationFilePatch, Timestamp: now.Add(3 * time.Second), Data: mustJSON(t, FileChangeData{Path: "a.txt", Operation: "modify"})},
 		{SeqNum: 5, Type: EventDeviceAttached, Timestamp: now.Add(4 * time.Second), Data: mustJSON(t, DeviceData{DeviceID: "dev-1"})},
 		{SeqNum: 6, Type: EventDeviceDetached, Timestamp: now.Add(5 * time.Second), Data: mustJSON(t, DeviceData{DeviceID: "dev-1"})},
 	}

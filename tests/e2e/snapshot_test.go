@@ -27,11 +27,11 @@ func TestSnapshotGeneration(t *testing.T) {
 		}
 	}
 
-	mustRecord(workspace.EventMessageAdded, workspace.MessageData{Role: "user", Content: "m1"})
-	mustRecord(workspace.EventToolCallStarted, workspace.ToolCallData{ToolName: "grep"})
-	mustRecord(workspace.EventFileChanged, workspace.FileChangeData{Path: "a.txt", Operation: "update"})
-	mustRecord(workspace.EventFileChanged, workspace.FileChangeData{Path: "b.txt", Operation: "update"})
-	mustRecord(workspace.EventFileChanged, workspace.FileChangeData{Path: "a.txt", Operation: "update"})
+	mustRecord(workspace.EventInteractionMessage, workspace.MessageData{Role: "user", Content: "m1"})
+	mustRecord(workspace.EventInteractionToolCall, workspace.ToolCallData{ToolName: "grep"})
+	mustRecord(workspace.EventMutationFilePatch, workspace.FileChangeData{Path: "a.txt", Operation: "update"})
+	mustRecord(workspace.EventMutationFilePatch, workspace.FileChangeData{Path: "b.txt", Operation: "update"})
+	mustRecord(workspace.EventMutationFilePatch, workspace.FileChangeData{Path: "a.txt", Operation: "update"})
 	mustRecord(workspace.EventDeviceAttached, workspace.DeviceData{DeviceID: "dev-1", DeviceName: "Laptop"})
 	mustRecord(workspace.EventDeviceAttached, workspace.DeviceData{DeviceID: "dev-2", DeviceName: "CI"})
 	mustRecord(workspace.EventDeviceDetached, workspace.DeviceData{DeviceID: "dev-2", DeviceName: "CI"})
@@ -54,8 +54,8 @@ func TestSnapshotGeneration(t *testing.T) {
 		t.Fatalf("unexpected attached devices in snapshot: %v", snap1.Devices)
 	}
 
-	mustRecord(workspace.EventMessageAdded, workspace.MessageData{Role: "assistant", Content: "m2"})
-	mustRecord(workspace.EventFileChanged, workspace.FileChangeData{Path: "c.txt", Operation: "create"})
+	mustRecord(workspace.EventInteractionMessage, workspace.MessageData{Role: "assistant", Content: "m2"})
+	mustRecord(workspace.EventMutationFilePatch, workspace.FileChangeData{Path: "c.txt", Operation: "create"})
 
 	secondSnapshotRes := r.run("snapshot", "generate", ws.ID, "--json")
 	requireExitCode(t, secondSnapshotRes, 0)
@@ -110,7 +110,7 @@ func TestSnapshotGeneration(t *testing.T) {
 func TestSnapshotContext(t *testing.T) {
 	r := newRunner(t)
 	wsID := r.mustCreateWorkspace("snap-context-test")
-	r.run("event", "add", wsID, "message.added", "--content=context-test")
+	r.run("event", "add", wsID, "interaction.message", "--content=context-test")
 
 	genRes := r.run("snapshot", "generate", wsID, "--json")
 	requireExitCode(t, genRes, 0)
@@ -129,9 +129,9 @@ func TestSnapshotGenerate_Session(t *testing.T) {
 	r := newRunner(t)
 	wsID := r.mustCreateWorkspace("snap-session-test")
 
-	r.run("event", "add", wsID, "message.added", "--content=m1", "--session-id=sess-1")
-	r.run("event", "add", wsID, "message.added", "--content=m2", "--session-id=sess-2")
-	r.run("event", "add", wsID, "message.added", "--content=m3", "--session-id=sess-1")
+	r.run("event", "add", wsID, "interaction.message", "--content=m1", "--session-id=sess-1")
+	r.run("event", "add", wsID, "interaction.message", "--content=m2", "--session-id=sess-2")
+	r.run("event", "add", wsID, "interaction.message", "--content=m3", "--session-id=sess-1")
 
 	allRes := r.run("snapshot", "generate", wsID, "--json")
 	requireExitCode(t, allRes, 0)
@@ -171,7 +171,7 @@ func TestSnapshotGenerate_NameAndSeed(t *testing.T) {
 	r := newRunner(t)
 	wsID := r.mustCreateWorkspace("snap-name-test")
 
-	r.run("event", "add", wsID, "message.added", "--content=m1")
+	r.run("event", "add", wsID, "interaction.message", "--content=m1")
 
 	namedRes := r.run("snapshot", "generate", wsID, "-n", "baseline", "--seed", "--json")
 	requireExitCode(t, namedRes, 0)
@@ -211,7 +211,7 @@ func TestSnapshotUpdate(t *testing.T) {
 	r := newRunner(t)
 	wsID := r.mustCreateWorkspace("snap-update-test")
 
-	r.run("event", "add", wsID, "message.added", "--content=m1")
+	r.run("event", "add", wsID, "interaction.message", "--content=m1")
 	genRes := r.run("snapshot", "generate", wsID, "--json")
 	requireExitCode(t, genRes, 0)
 	var snap workspace.Snapshot
@@ -241,7 +241,7 @@ func TestSnapshotRemove(t *testing.T) {
 	r := newRunner(t)
 	wsID := r.mustCreateWorkspace("snap-remove-test")
 
-	r.run("event", "add", wsID, "message.added", "--content=m1")
+	r.run("event", "add", wsID, "interaction.message", "--content=m1")
 	genRes := r.run("snapshot", "generate", wsID, "-n", "to-remove", "--json")
 	requireExitCode(t, genRes, 0)
 	var snap workspace.Snapshot
@@ -275,14 +275,14 @@ func TestSnapshotList(t *testing.T) {
 	ws1 := r.mustCreateWorkspace("snap-list-1")
 	ws2 := r.mustCreateWorkspace("snap-list-2")
 
-	r.run("event", "add", ws1, "message.added", "--content=ws1-m1", "--session-id=sess-a")
+	r.run("event", "add", ws1, "interaction.message", "--content=ws1-m1", "--session-id=sess-a")
 	requireExitCode(t, r.run("snapshot", "generate", ws1, "--json"), 0)
 
-	r.run("event", "add", ws2, "message.added", "--content=ws2-m1", "--session-id=sess-b")
-	r.run("event", "add", ws2, "message.added", "--content=ws2-m2", "--session-id=sess-c")
+	r.run("event", "add", ws2, "interaction.message", "--content=ws2-m1", "--session-id=sess-b")
+	r.run("event", "add", ws2, "interaction.message", "--content=ws2-m2", "--session-id=sess-c")
 	requireExitCode(t, r.run("snapshot", "generate", ws2, "--json"), 0)
 
-	r.run("event", "add", ws1, "message.added", "--content=ws1-m2", "--session-id=sess-a")
+	r.run("event", "add", ws1, "interaction.message", "--content=ws1-m2", "--session-id=sess-a")
 	requireExitCode(t, r.run("snapshot", "generate", ws1, "--json"), 0)
 
 	allRes := r.run("snapshot", "list", "--json")

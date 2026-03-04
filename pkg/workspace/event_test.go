@@ -19,7 +19,7 @@ func TestEvent_Serialization(t *testing.T) {
 	ev := Event{
 		ID:          "01HXYZTESTEVENT",
 		WorkspaceID: "01HXYZWORKSPACE",
-		Type:        EventMessageAdded,
+		Type:        EventInteractionMessage,
 		Timestamp:   time.Now().UTC(),
 		Data:        mustMarshal(t, MessageData{Role: "user", Content: "hello"}),
 		SeqNum:      2,
@@ -33,7 +33,7 @@ func TestEvent_Serialization(t *testing.T) {
 	if err := json.Unmarshal(b, &decoded); err != nil {
 		t.Fatalf("unmarshal event: %v", err)
 	}
-	if decoded.Type != EventMessageAdded || decoded.SeqNum != 2 {
+	if decoded.Type != EventInteractionMessage || decoded.SeqNum != 2 {
 		t.Fatalf("unexpected event after round-trip: %+v", decoded)
 	}
 }
@@ -95,7 +95,7 @@ func TestEvent_SessionAgentRoundTrip(t *testing.T) {
 	ev := Event{
 		ID:          "01HXYZTESTEVENT2",
 		WorkspaceID: "01HXYZWORKSPACE",
-		Type:        EventMessageAdded,
+		Type:        EventInteractionMessage,
 		SessionID:   "sess-round-trip",
 		AgentID:     "agent-round-trip",
 		Timestamp:   time.Now().UTC(),

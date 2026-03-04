@@ -47,11 +47,11 @@ func TestSQLiteBackend_Conformance(t *testing.T) {
 	}
 
 	d, _ := json.Marshal(model.MessageData{Role: "user", Content: "hello"})
-	e1, err := b.AppendEvent(ctx, model.Event{WorkspaceID: ws.ID, Type: model.EventMessageAdded, Data: d})
+	e1, err := b.AppendEvent(ctx, model.Event{WorkspaceID: ws.ID, Type: model.EventInteractionMessage, Data: d})
 	if err != nil {
 		t.Fatalf("append1: %v", err)
 	}
-	e2, err := b.AppendEvent(ctx, model.Event{WorkspaceID: ws.ID, Type: model.EventMessageAdded, Data: d})
+	e2, err := b.AppendEvent(ctx, model.Event{WorkspaceID: ws.ID, Type: model.EventInteractionMessage, Data: d})
 	if err != nil {
 		t.Fatalf("append2: %v", err)
 	}
@@ -101,7 +101,7 @@ func TestSQLiteBackend_GetEvent(t *testing.T) {
 	}
 
 	d, _ := json.Marshal(model.MessageData{Role: "user", Content: "hello"})
-	e1, err := b.AppendEvent(ctx, model.Event{WorkspaceID: ws.ID, Type: model.EventMessageAdded, Data: d})
+	e1, err := b.AppendEvent(ctx, model.Event{WorkspaceID: ws.ID, Type: model.EventInteractionMessage, Data: d})
 	if err != nil {
 		t.Fatalf("append event: %v", err)
 	}
@@ -174,7 +174,7 @@ func TestSQLite_ListDeviceSessions(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		_, err := b.AppendEvent(ctx, model.Event{
 			WorkspaceID: ws.ID,
-			Type:        model.EventMessageAdded,
+			Type:        model.EventInteractionMessage,
 			DeviceID:    dev.ID,
 			SessionID:   "sess-1",
 			AgentID:     "claude",
@@ -188,7 +188,7 @@ func TestSQLite_ListDeviceSessions(t *testing.T) {
 	// second session on same device
 	_, err := b.AppendEvent(ctx, model.Event{
 		WorkspaceID: ws.ID,
-		Type:        model.EventMessageAdded,
+		Type:        model.EventInteractionMessage,
 		DeviceID:    dev.ID,
 		SessionID:   "sess-2",
 		AgentID:     "user",

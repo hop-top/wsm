@@ -1,0 +1,19 @@
+[x] T-0001 Document identity — pkg/owsf/document.go @@me #owsf #core created_at=2026-03-01T13:01:48Z updated_at=2026-03-01T13:03:12Z
+[x] T-0002 Writer registry — pkg/owsf/writer.go (C1: nil-pointer guard) @@me #owsf #core #review-fix created_at=2026-03-01T13:01:49Z updated_at=2026-03-01T13:03:34Z
+[x] T-0003 Event writer fields + C2/C4/I4 fixes @@me #owsf #model #review-fix created_at=2026-03-01T13:01:50Z updated_at=2026-03-01T13:05:25Z
+[x] T-0004 Space model — pkg/model/space.go @@me #owsf #model created_at=2026-03-01T13:01:53Z updated_at=2026-03-01T13:06:27Z
+[x] T-0005 Space containment enforcement + G2 cycle detection @@me #owsf #core #review-fix created_at=2026-03-01T13:01:54Z updated_at=2026-03-01T13:07:09Z
+[x] T-0006 Space immutability rules + C3/I3 fixes @@me #owsf #core #review-fix created_at=2026-03-01T13:01:55Z updated_at=2026-03-01T13:07:58Z
+[x] T-0007 Space persistence — backend + SQLite @@me #owsf #backend created_at=2026-03-01T13:01:56Z updated_at=2026-03-01T13:09:43Z
+[x] T-0008 Multi-writer ordering (Lamport + canonical) @@me #owsf #core created_at=2026-03-01T13:01:57Z updated_at=2026-03-01T13:10:17Z
+[x] T-0009 Event type namespace alignment + I1/I6 fixes @@me #owsf #model #review-fix created_at=2026-03-01T13:01:58Z updated_at=2026-03-01T13:11:18Z
+[x] T-0010 Fork model — pkg/owsf/fork.go @@me #owsf #core created_at=2026-03-01T13:02:02Z updated_at=2026-03-01T13:12:03Z
+[x] T-0011 Handoff profile — pkg/owsf/handoff.go @@me #owsf #core created_at=2026-03-01T13:02:02Z updated_at=2026-03-01T13:20:20Z
+[x] T-0012 Partial export / slice + I2/G1 fixes @@me #owsf #core #review-fix created_at=2026-03-01T13:02:03Z updated_at=2026-03-01T13:20:56Z
+[x] T-0013 Determinism guarantees — import report @@me #owsf #core created_at=2026-03-01T13:02:04Z updated_at=2026-03-01T13:21:29Z
+[x] T-0014 Assurance profile 0 — integrity @@me #owsf #assurance created_at=2026-03-01T13:02:05Z updated_at=2026-03-01T13:22:03Z
+[x] T-0015 Assurance profile 1 — signed (I5: leave unchecked) @@me #owsf #assurance #review-fix created_at=2026-03-01T13:02:06Z updated_at=2026-03-01T13:22:07Z
+[x] T-0016 Assurance profile 2 — provenance @@me #owsf #assurance created_at=2026-03-01T13:02:07Z updated_at=2026-03-01T13:22:07Z
+[x] T-0017 No-merge invariant enforcement + G3 test @@me #owsf #core #review-fix created_at=2026-03-01T13:02:09Z updated_at=2026-03-01T13:22:41Z
+[x] T-0018 OASF independence assertion @@me #owsf #core created_at=2026-03-01T13:02:09Z updated_at=2026-03-01T13:23:05Z
+[x] T-0019 Checklist update pass @@me #owsf #docs created_at=2026-03-01T13:02:10Z updated_at=2026-03-01T13:23:45Z

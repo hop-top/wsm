@@ -22,11 +22,11 @@ func TestGenerateSnapshot(t *testing.T) {
 	now := time.Now().UTC()
 	ws := Workspace{ID: "w1", Name: "demo", Status: StatusActive}
 	events := []Event{
-		{SeqNum: 1, Type: EventMessageAdded, Timestamp: now, Data: mustRawJSON(t, MessageData{Role: "user", Content: "hi"})},
-		{SeqNum: 2, Type: EventToolCallStarted, Timestamp: now.Add(time.Second), Data: mustRawJSON(t, ToolCallData{ToolName: "grep"})},
-		{SeqNum: 3, Type: EventFileChanged, Timestamp: now.Add(2 * time.Second), Data: mustRawJSON(t, FileChangeData{Path: "a.txt", Operation: "modify"})},
-		{SeqNum: 4, Type: EventFileChanged, Timestamp: now.Add(3 * time.Second), Data: mustRawJSON(t, FileChangeData{Path: "b.txt", Operation: "modify"})},
-		{SeqNum: 5, Type: EventFileChanged, Timestamp: now.Add(4 * time.Second), Data: mustRawJSON(t, FileChangeData{Path: "a.txt", Operation: "modify"})},
+		{SeqNum: 1, Type: EventInteractionMessage, Timestamp: now, Data: mustRawJSON(t, MessageData{Role: "user", Content: "hi"})},
+		{SeqNum: 2, Type: EventInteractionToolCall, Timestamp: now.Add(time.Second), Data: mustRawJSON(t, ToolCallData{ToolName: "grep"})},
+		{SeqNum: 3, Type: EventMutationFilePatch, Timestamp: now.Add(2 * time.Second), Data: mustRawJSON(t, FileChangeData{Path: "a.txt", Operation: "modify"})},
+		{SeqNum: 4, Type: EventMutationFilePatch, Timestamp: now.Add(3 * time.Second), Data: mustRawJSON(t, FileChangeData{Path: "b.txt", Operation: "modify"})},
+		{SeqNum: 5, Type: EventMutationFilePatch, Timestamp: now.Add(4 * time.Second), Data: mustRawJSON(t, FileChangeData{Path: "a.txt", Operation: "modify"})},
 		{SeqNum: 6, Type: EventDeviceAttached, Timestamp: now.Add(5 * time.Second), Data: mustRawJSON(t, DeviceData{DeviceID: "dev-1"})},
 		{SeqNum: 7, Type: EventDeviceAttached, Timestamp: now.Add(6 * time.Second), Data: mustRawJSON(t, DeviceData{DeviceID: "dev-2"})},
 		{SeqNum: 8, Type: EventDeviceDetached, Timestamp: now.Add(7 * time.Second), Data: mustRawJSON(t, DeviceData{DeviceID: "dev-2"})},
@@ -55,10 +55,10 @@ func TestGenerateSnapshot_Incremental(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create workspace: %v", err)
 	}
-	if _, err := m.RecordEvent(ctx, ws.ID, EventMessageAdded, MessageData{Role: "user", Content: "m1"}); err != nil {
+	if _, err := m.RecordEvent(ctx, ws.ID, EventInteractionMessage, MessageData{Role: "user", Content: "m1"}); err != nil {
 		t.Fatalf("record first message: %v", err)
 	}
-	if _, err := m.RecordEvent(ctx, ws.ID, EventFileChanged, FileChangeData{Path: "a.txt", Operation: "modify"}); err != nil {
+	if _, err := m.RecordEvent(ctx, ws.ID, EventMutationFilePatch, FileChangeData{Path: "a.txt", Operation: "modify"}); err != nil {
 		t.Fatalf("record first file: %v", err)
 	}
 
@@ -67,13 +67,13 @@ func TestGenerateSnapshot_Incremental(t *testing.T) {
 		t.Fatalf("first snapshot: %v", err)
 	}
 
-	if _, err := m.RecordEvent(ctx, ws.ID, EventMessageAdded, MessageData{Role: "assistant", Content: "m2"}); err != nil {
+	if _, err := m.RecordEvent(ctx, ws.ID, EventInteractionMessage, MessageData{Role: "assistant", Content: "m2"}); err != nil {
 		t.Fatalf("record second message: %v", err)
 	}
-	if _, err := m.RecordEvent(ctx, ws.ID, EventFileChanged, FileChangeData{Path: "b.txt", Operation: "create"}); err != nil {
+	if _, err := m.RecordEvent(ctx, ws.ID, EventMutationFilePatch, FileChangeData{Path: "b.txt", Operation: "create"}); err != nil {
 		t.Fatalf("record second file: %v", err)
 	}
-	if _, err := m.RecordEvent(ctx, ws.ID, EventFileChanged, FileChangeData{Path: "a.txt", Operation: "modify"}); err != nil {
+	if _, err := m.RecordEvent(ctx, ws.ID, EventMutationFilePatch, FileChangeData{Path: "a.txt", Operation: "modify"}); err != nil {
 		t.Fatalf("record duplicate file: %v", err)
 	}
 

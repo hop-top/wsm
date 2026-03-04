@@ -58,7 +58,7 @@ func TestWorkspaceLifecycleActions(t *testing.T) {
 		t.Fatalf("expected active status from unarchive toggle, got %s", nextStatus)
 	}
 
-	if _, err := manager.RecordEvent(ctx, created.ID, workspace.EventMessageAdded, workspace.MessageData{Role: "user", Content: "hello"}); err != nil {
+	if _, err := manager.RecordEvent(ctx, created.ID, workspace.EventInteractionMessage, workspace.MessageData{Role: "user", Content: "hello"}); err != nil {
 		t.Fatalf("record event for detail load: %v", err)
 	}
 	detail, err := LoadWorkspaceDetail(ctx, manager, created)

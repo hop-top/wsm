@@ -1,0 +1,747 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Squad Topologies</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@700;800;900&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --stream:   #1aff8c;
+    --enabling: #6c7fff;
+    --subsys:   #ff4d8f;
+    --platform: #ff9500;
+    --orch:     #00d4ff;
+    --sentinel: #ffd700;
+    --bg:       #07070f;
+    --surface:  #0e0e1c;
+    --card:     #13131f;
+    --border:   #1e1e32;
+    --muted:    #555577;
+    --text:     #e8e8f0;
+    --mono:     'DM Mono', monospace;
+    --display:  'Syne', sans-serif;
+    --body:     'DM Sans', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--body);
+    min-height: 100vh;
+  }
+
+  /* ── TAB SWITCHER ─────────────────────────────── */
+  .tabs {
+    display: flex;
+    gap: 2px;
+    padding: 20px 20px 0;
+    max-width: 680px;
+    margin: 0 auto;
+  }
+  .tab {
+    flex: 1;
+    padding: 10px 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-bottom: none;
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    cursor: pointer;
+    border-radius: 6px 6px 0 0;
+    transition: all .2s;
+  }
+  .tab.active {
+    background: var(--card);
+    border-color: var(--enabling);
+    color: var(--enabling);
+  }
+
+  /* ── INFOGRAPHIC WRAPPER ──────────────────────── */
+  .infographic {
+    display: none;
+    max-width: 680px;
+    margin: 0 auto;
+    padding: 0 20px 60px;
+    border: 1px solid var(--border);
+    border-top: 1px solid var(--enabling);
+    background: var(--card);
+    border-radius: 0 0 12px 12px;
+  }
+  .infographic.active { display: block; }
+
+  /* ── HEADER ───────────────────────────────────── */
+  .infographic-header {
+    text-align: center;
+    padding: 48px 24px 36px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 40px;
+  }
+  .infographic-header .eyebrow {
+    font-family: var(--mono);
+    font-size: 9px;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 16px;
+  }
+  .infographic-header h1 {
+    font-family: var(--display);
+    font-size: 32px;
+    font-weight: 900;
+    line-height: 1.1;
+    background: linear-gradient(135deg, var(--stream), var(--enabling), var(--platform));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 12px;
+  }
+  .infographic-header .subtitle {
+    font-size: 13px;
+    color: var(--muted);
+    line-height: 1.5;
+  }
+
+  /* ── SECTION LABEL ────────────────────────────── */
+  .section-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    padding: 10px 20px;
+    border-radius: 6px;
+    margin: 32px 0 20px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .section-label .num {
+    font-size: 18px;
+    font-weight: 900;
+    font-family: var(--display);
+    opacity: .7;
+  }
+
+  /* ── CARD GRID ────────────────────────────────── */
+  .card-grid {
+    display: grid;
+    gap: 10px;
+    margin-bottom: 8px;
+  }
+  .card-grid.cols-2 { grid-template-columns: 1fr 1fr; }
+  .card-grid.cols-3 { grid-template-columns: 1fr 1fr 1fr; }
+  .card-grid.cols-1 { grid-template-columns: 1fr; }
+
+  /* ── CARD ─────────────────────────────────────── */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    transition: border-color .2s, box-shadow .2s;
+  }
+  .card:hover {
+    border-color: var(--muted);
+    box-shadow: 0 4px 20px rgba(0,0,0,.3);
+  }
+  .card .icon {
+    font-size: 22px;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+  .card .card-content {}
+  .card .card-title {
+    font-family: var(--body);
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text);
+    line-height: 1.4;
+    margin-bottom: 4px;
+  }
+  .card .card-sub {
+    font-size: 11px;
+    color: var(--muted);
+    line-height: 1.5;
+  }
+
+  /* ── SQUAD TYPE BLOCK ─────────────────────────── */
+  .squad-block {
+    border-radius: 8px;
+    padding: 16px 18px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    border: 1px solid;
+    margin-bottom: 8px;
+  }
+  .squad-block .sq-bar {
+    width: 4px;
+    border-radius: 2px;
+    align-self: stretch;
+    flex-shrink: 0;
+  }
+  .squad-block .sq-name {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 3px;
+  }
+  .squad-block .sq-desc {
+    font-size: 11px;
+    color: #aaa;
+    line-height: 1.5;
+  }
+
+  /* ── INTERACTION MODE ─────────────────────────── */
+  .mode-block {
+    border-radius: 8px;
+    padding: 14px 18px;
+    border: 1px solid;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+  }
+  .mode-block .mode-icon {
+    font-size: 20px;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+  .mode-block .mode-name {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+  .mode-block .mode-desc {
+    font-size: 11px;
+    color: #aaa;
+    line-height: 1.5;
+  }
+
+  /* ── DIVIDER ARROW ────────────────────────────── */
+  .divider-arrow {
+    text-align: center;
+    color: var(--muted);
+    font-size: 20px;
+    margin: 8px 0;
+  }
+
+  /* ── HIGHLIGHT BANNER ─────────────────────────── */
+  .banner {
+    border-radius: 8px;
+    padding: 14px 20px;
+    font-size: 12px;
+    line-height: 1.6;
+    border: 1px solid;
+    margin: 12px 0;
+  }
+
+  /* ── FOOTER ───────────────────────────────────── */
+  .infographic-footer {
+    text-align: center;
+    margin-top: 48px;
+    padding-top: 24px;
+    border-top: 1px solid var(--border);
+  }
+  .footer-logo {
+    font-family: var(--display);
+    font-size: 22px;
+    font-weight: 900;
+    background: linear-gradient(90deg, var(--stream), var(--enabling));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 6px;
+  }
+  .footer-tag {
+    font-size: 11px;
+    color: var(--muted);
+    font-family: var(--mono);
+    letter-spacing: 1px;
+  }
+
+  /* ── NUTSHELL — problem/solution blocks ──────── */
+  .nut-section {
+    border-radius: 8px;
+    padding: 10px 18px;
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    text-align: center;
+    margin: 28px 0 16px;
+  }
+  .nut-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-bottom: 4px;
+  }
+  .nut-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    font-size: 12px;
+    line-height: 1.4;
+    color: var(--text);
+  }
+  .nut-card .ni { font-size: 18px; flex-shrink: 0; }
+  .nut-card.accent { border-color: var(--enabling); background: #1a1a3e22; }
+  .nut-card.green  { border-color: var(--stream);   background: #0d3b2e33; }
+
+  /* ── ANIMATE IN ───────────────────────────────── */
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(16px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .infographic.active > * {
+    animation: fadeUp .4s ease both;
+  }
+  .infographic.active > *:nth-child(2) { animation-delay: .05s; }
+  .infographic.active > *:nth-child(3) { animation-delay: .10s; }
+  .infographic.active > *:nth-child(4) { animation-delay: .15s; }
+  .infographic.active > *:nth-child(5) { animation-delay: .20s; }
+  .infographic.active > *:nth-child(6) { animation-delay: .25s; }
+  .infographic.active > *:nth-child(7) { animation-delay: .30s; }
+  .infographic.active > *:nth-child(8) { animation-delay: .35s; }
+  .infographic.active > *:nth-child(9) { animation-delay: .40s; }
+</style>
+</head>
+<body>
+
+<div style="max-width:680px;margin:0 auto;padding:32px 20px 0;">
+  <div style="font-family:'DM Mono',monospace;font-size:9px;color:#444;letter-spacing:4px;text-transform:uppercase;margin-bottom:6px;">Team Topologies → Agent Systems</div>
+  <div style="font-family:'Syne',sans-serif;font-size:13px;font-weight:700;color:#555;letter-spacing:1px;">adapted reference materials</div>
+</div>
+
+<!-- TABS -->
+<div class="tabs">
+  <button class="tab active" onclick="switchTab('getting-started')">Getting Started</button>
+  <button class="tab" onclick="switchTab('nutshell')">In a Nutshell</button>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════
+     INFOGRAPHIC 1: GETTING STARTED
+     ══════════════════════════════════════════════════════════════ -->
+<div class="infographic active" id="getting-started">
+
+  <div class="infographic-header">
+    <div class="eyebrow">A suggested approach to applying the concepts</div>
+    <h1>Getting Started with<br>Squad Topologies</h1>
+    <div class="subtitle">Organizing autonomous agent units for fast flow<br>and minimal context load</div>
+  </div>
+
+  <!-- 1 -->
+  <div class="section-label" style="background:#0d3b2e22;border:1px solid #1aff8c33;color:var(--stream);">
+    <span class="num">1</span> Identify what kind of squads you currently have
+  </div>
+  <div class="card-grid cols-2">
+    <div class="card">
+      <div class="icon">🗺️</div>
+      <div class="card-content">
+        <div class="card-title">Map your agents to common squad types</div>
+        <div class="card-sub">Stream-aligned, Enabling, Complicated Subsystem, Platform, Orchestrator, Sentinel</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="icon">🔍</div>
+      <div class="card-content">
+        <div class="card-title">Identify which squad types to avoid or redesign</div>
+        <div class="card-sub">Look for undeclared orchestrators and squads without context boundaries</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2 -->
+  <div class="section-label" style="background:#1a1a3e33;border:1px solid #6c7fff33;color:var(--enabling);">
+    <span class="num">2</span> Fit agent clusters to the fundamental squad types
+  </div>
+
+  <div class="squad-block" style="border-color:#1aff8c33;background:#0d3b2e22;">
+    <div class="sq-bar" style="background:var(--stream);"></div>
+    <div>
+      <div class="sq-name" style="color:var(--stream);">Stream-Aligned</div>
+      <div class="sq-desc">Owns a domain pipeline end-to-end. Self-sufficient unit of work. Primary value producer.</div>
+    </div>
+  </div>
+  <div class="squad-block" style="border-color:#6c7fff33;background:#1a1a3e22;">
+    <div class="sq-bar" style="background:var(--enabling);"></div>
+    <div>
+      <div class="sq-name" style="color:var(--enabling);">Enabling</div>
+      <div class="sq-desc">Temporary attachment. Closes a capability gap in a stream squad, then exits. Must have a defined exit condition.</div>
+    </div>
+  </div>
+  <div class="squad-block" style="border-color:#ff4d8f33;background:#2a0a1a22;">
+    <div class="sq-bar" style="background:var(--subsys);"></div>
+    <div>
+      <div class="sq-name" style="color:var(--subsys);">Complicated Subsystem</div>
+      <div class="sq-desc">Hard problem behind a clean interface. No squad should replicate this. Exposed strictly as a service.</div>
+    </div>
+  </div>
+  <div class="squad-block" style="border-color:#ff950033;background:#2a1a0022;">
+    <div class="sq-bar" style="background:var(--platform);"></div>
+    <div>
+      <div class="sq-name" style="color:var(--platform);">Platform</div>
+      <div class="sq-desc">Shared substrate: tool registry, memory, prompt versioning, cost telemetry. Self-service golden path.</div>
+    </div>
+  </div>
+  <div class="squad-block" style="border-color:#00d4ff33;background:#00141a22;">
+    <div class="sq-bar" style="background:var(--orch);"></div>
+    <div>
+      <div class="sq-name" style="color:var(--orch);">Orchestrator</div>
+      <div class="sq-desc">Decomposes goals, routes tasks, synthesizes results across squads. No domain ownership. Explicitly declared.</div>
+    </div>
+  </div>
+  <div class="squad-block" style="border-color:#ffd70033;background:#1a1a0022;">
+    <div class="sq-bar" style="background:var(--sentinel);"></div>
+    <div>
+      <div class="sq-name" style="color:var(--sentinel);">Sentinel</div>
+      <div class="sq-desc">Continuous observation: monitors squads for drift, quality degradation, cost overruns, safety boundaries.</div>
+    </div>
+  </div>
+
+  <!-- 3 -->
+  <div class="section-label" style="background:#2a0a1a22;border:1px solid #ff4d8f33;color:var(--subsys);">
+    <span class="num">3</span> Limit the context load for each squad using…
+  </div>
+  <div class="card-grid cols-2">
+    <div class="card">
+      <div class="icon">📦</div>
+      <div class="card-content">
+        <div class="card-title">Keep the squad context-bounded</div>
+        <div class="card-sub">A squad's context window should be dominated by domain knowledge, not coordination overhead</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="icon">🎯</div>
+      <div class="card-content">
+        <div class="card-title">Align the squad to one domain on an ongoing basis</div>
+        <div class="card-sub">Avoid squads that span multiple domains — they accumulate context debt fast</div>
+      </div>
+    </div>
+  </div>
+  <div class="card-grid cols-3" style="margin-top:10px;">
+    <div class="card">
+      <div class="icon">✂️</div>
+      <div class="card-content">
+        <div class="card-title">Break monoliths at natural context fracture planes</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="icon">🧱</div>
+      <div class="card-content">
+        <div class="card-title">Provide a platform squad as the underlying substrate</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="icon">⚖️</div>
+      <div class="card-content">
+        <div class="card-title">Limit the scope of the subsystem each squad interacts with</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4 -->
+  <div class="section-label" style="background:#2a1a0022;border:1px solid #ff950033;color:var(--platform);">
+    <span class="num">4</span> Use the "Inverse Conway" approach to help to:
+  </div>
+  <div class="card-grid cols-2">
+    <div class="card">
+      <div class="icon">🔄</div>
+      <div class="card-content">
+        <div class="card-title">Drive agent communication patterns that align to value flow</div>
+        <div class="card-sub">Design the topology first. The agent communication architecture follows.</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="icon">🌱</div>
+      <div class="card-content">
+        <div class="card-title">Produce agent architectures that are sustainable by the system</div>
+        <div class="card-sub">Topologies that evolve deliberately instead of accreting communication debt</div>
+      </div>
+    </div>
+  </div>
+  <div class="card-grid cols-1" style="margin-top:10px;">
+    <div class="card">
+      <div class="icon">🧭</div>
+      <div class="card-content">
+        <div class="card-title">Constrain (and align) the interaction space for each squad pair</div>
+        <div class="card-sub">Declare interaction mode explicitly. Don't let it emerge from implementation convenience.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 5 -->
+  <div class="section-label" style="background:#0d3b2e22;border:1px solid #1aff8c33;color:var(--stream);">
+    <span class="num">5</span> Identify as-is and to-be squad interaction modes
+  </div>
+  <div class="mode-block" style="border-color:#ff950044;background:#2a1a0011;">
+    <div class="mode-icon">⚡</div>
+    <div>
+      <div class="mode-name" style="color:var(--platform);">X-as-a-Service</div>
+      <div class="mode-desc">Stable, versioned, self-service. No coordination. Default target state for all squad pairs. Producer doesn't know consumers.</div>
+    </div>
+  </div>
+  <div class="mode-block" style="border-color:#6c7fff44;background:#1a1a3e11;">
+    <div class="mode-icon">🤝</div>
+    <div>
+      <div class="mode-name" style="color:var(--enabling);">Collaboration</div>
+      <div class="mode-desc">Bidirectional, time-boxed. For discovering unknowns together. Must graduate to X-as-a-Service. Failure mode: permanent entanglement.</div>
+    </div>
+  </div>
+  <div class="mode-block" style="border-color:#1aff8c44;background:#0d3b2e11;">
+    <div class="mode-icon">🎓</div>
+    <div>
+      <div class="mode-name" style="color:var(--stream);">Facilitating</div>
+      <div class="mode-desc">Enabling squad teaches a stream squad, then exits. Exit condition must be declared before attachment begins.</div>
+    </div>
+  </div>
+  <div class="mode-block" style="border-color:#00d4ff44;background:#00141a11;">
+    <div class="mode-icon">📡</div>
+    <div>
+      <div class="mode-name" style="color:var(--orch);">Supervised Delegation</div>
+      <div class="mode-desc">Orchestrator hands a task to a squad but retains oversight authority — can interrupt, redirect, or reclaim mid-flight.</div>
+    </div>
+  </div>
+
+  <!-- 6 -->
+  <div class="section-label" style="background:#1a1a3e22;border:1px solid #6c7fff33;color:var(--enabling);">
+    <span class="num">6</span> Explicitly guide (and limit) inter-squad collaboration to
+  </div>
+  <div class="card-grid cols-2">
+    <div class="card">
+      <div class="icon">🔬</div>
+      <div class="card-content">
+        <div class="card-title">Inform and guide the development of Platform and Complicated Subsystem interfaces</div>
+        <div class="card-sub">Collaboration surfaces the right contract. Then freeze it.</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="icon">⚡</div>
+      <div class="card-content">
+        <div class="card-title">Drive rapid discovery at points of technological, domain, or context-boundary learning</div>
+        <div class="card-sub">Time-box it. Define graduation criteria before you start.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 7 -->
+  <div class="section-label" style="background:#2a0a1a22;border:1px solid #ff4d8f33;color:var(--subsys);">
+    <span class="num">7</span> Evolve squad structures explicitly over time
+  </div>
+  <div class="card-grid cols-3">
+    <div class="card">
+      <div class="icon">🔧</div>
+      <div class="card-content">
+        <div class="card-title">Adopt new tools and models as platform capabilities</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="icon">📐</div>
+      <div class="card-content">
+        <div class="card-title">Improve interaction contracts based on measured load</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="icon">🚫</div>
+      <div class="card-content">
+        <div class="card-title">Avoid topologies that generate context entanglement</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 8 -->
+  <div class="section-label" style="background:#2a1a0022;border:1px solid #ff950033;color:var(--platform);">
+    <span class="num">8</span> Use squad interactions for system sensing
+  </div>
+  <div class="card-grid cols-2">
+    <div class="card">
+      <div class="icon">🛡️</div>
+      <div class="card-content">
+        <div class="card-title">Use the Sentinel squad as a high-signal layer for rapid course correction</div>
+        <div class="card-sub">Drift, cost overruns, and safety boundaries — detected before they cascade</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="icon">🔁</div>
+      <div class="card-content">
+        <div class="card-title">Use interaction mode patterns to course-correct topology early and often</div>
+        <div class="card-sub">Collaboration that persists is a signal. Facilitating that never exits is a signal.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="infographic-footer">
+    <div class="footer-logo">Squad Topologies</div>
+    <div class="footer-tag">Organizing autonomous agent systems for fast flow · Adapted from Team Topologies by Skelton & Pais</div>
+  </div>
+
+</div><!-- /getting-started -->
+
+
+<!-- ══════════════════════════════════════════════════════════════
+     INFOGRAPHIC 2: IN A NUTSHELL
+     ══════════════════════════════════════════════════════════════ -->
+<div class="infographic" id="nutshell">
+
+  <div class="infographic-header">
+    <div class="eyebrow">A simple guide to the basic principles</div>
+    <h1>Squad Topologies<br>in a Nutshell</h1>
+    <div class="subtitle">Why agent systems need explicit topology design</div>
+  </div>
+
+  <!-- PROBLEM -->
+  <div class="nut-section" style="background:#1a0a0a;border:1px solid #ff4d8f44;color:var(--subsys);">
+    Do you find that your agent system…
+  </div>
+  <div class="nut-grid">
+    <div class="nut-card">
+      <span class="ni">🚧</span>
+      <span>Flow of value is blocked by coordination overhead?</span>
+    </div>
+    <div class="nut-card">
+      <span class="ni">🧠</span>
+      <span>Context windows are dominated by coordination, not domain knowledge?</span>
+    </div>
+    <div class="nut-card">
+      <span class="ni">⚠️</span>
+      <span>Too many surprises from emergent agent communication patterns?</span>
+    </div>
+    <div class="nut-card">
+      <span class="ni">🌀</span>
+      <span>Squad boundaries are unclear or constantly renegotiated?</span>
+    </div>
+  </div>
+
+  <div class="divider-arrow">↓</div>
+
+  <div class="nut-section" style="background:#1a1a0a;border:1px solid #ffd70044;color:var(--sentinel);">
+    …which is leading to…
+  </div>
+  <div class="nut-grid">
+    <div class="nut-card">
+      <span class="ni">🏗️</span>
+      <span>Topology that fights Conway's Law instead of using it</span>
+    </div>
+    <div class="nut-card">
+      <span class="ni">🪢</span>
+      <span>Squads pulled in many directions, context-entangled</span>
+    </div>
+    <div class="nut-card">
+      <span class="ni">💸</span>
+      <span>Painful context re-engineering every time a squad changes</span>
+    </div>
+    <div class="nut-card">
+      <span class="ni">🔇</span>
+      <span>Drift and degradation going undetected until it cascades</span>
+    </div>
+  </div>
+
+  <div class="divider-arrow">↓</div>
+
+  <!-- SOLUTION -->
+  <div class="nut-section" style="background:#0a1a0f;border:1px solid #1aff8c44;color:var(--stream);">
+    If the answer is yes? You can change things by…
+  </div>
+  <div class="nut-grid">
+    <div class="nut-card green">
+      <span class="ni">🎯</span>
+      <span>Taking a squad-first approach — design topology before architecture</span>
+    </div>
+    <div class="nut-card green">
+      <span class="ni">🔀</span>
+      <span>Using the Inverse Conway Maneuver to define agent communication patterns</span>
+    </div>
+    <div class="nut-card green">
+      <span class="ni">📋</span>
+      <span>Defining Squad APIs — explicit interaction mode contracts between every squad pair</span>
+    </div>
+    <div class="nut-card green">
+      <span class="ni">🧩</span>
+      <span>Utilizing the 6 fundamental squad topologies with declared roles and boundaries</span>
+    </div>
+  </div>
+
+  <div class="divider-arrow">↓</div>
+
+  <!-- 6 TYPES MINI REFERENCE -->
+  <div class="banner" style="border-color:var(--enabling);background:#1a1a3e22;color:#aaa;">
+    <span style="font-family:'DM Mono',monospace;font-size:9px;letter-spacing:3px;text-transform:uppercase;color:var(--enabling);display:block;margin-bottom:10px;">The 6 squad types</span>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">
+      <div style="font-size:11px;color:var(--stream);">◆ Stream-Aligned<br><span style="color:#666;">domain pipeline, self-sufficient</span></div>
+      <div style="font-size:11px;color:var(--enabling);">◆ Enabling<br><span style="color:#666;">capability uplift, exits</span></div>
+      <div style="font-size:11px;color:var(--subsys);">◆ Complicated Subsystem<br><span style="color:#666;">hard problem, clean interface</span></div>
+      <div style="font-size:11px;color:var(--platform);">◆ Platform<br><span style="color:#666;">substrate, self-service</span></div>
+      <div style="font-size:11px;color:var(--orch);">◆ Orchestrator<br><span style="color:#666;">goal decomposition, routing</span></div>
+      <div style="font-size:11px;color:var(--sentinel);">◆ Sentinel<br><span style="color:#666;">continuous observation, drift detection</span></div>
+    </div>
+  </div>
+
+  <!-- INTERACTION MODES MINI REFERENCE -->
+  <div class="banner" style="border-color:var(--platform);background:#2a1a0022;color:#aaa;margin-top:10px;">
+    <span style="font-family:'DM Mono',monospace;font-size:9px;letter-spacing:3px;text-transform:uppercase;color:var(--platform);display:block;margin-bottom:10px;">The 4 interaction modes</span>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+      <div style="font-size:11px;color:var(--platform);">⚡ X-as-a-Service<br><span style="color:#666;">stable · default target state</span></div>
+      <div style="font-size:11px;color:var(--enabling);">🤝 Collaboration<br><span style="color:#666;">time-boxed · graduates to XaaS</span></div>
+      <div style="font-size:11px;color:var(--stream);">🎓 Facilitating<br><span style="color:#666;">enabling squad only · exits</span></div>
+      <div style="font-size:11px;color:var(--orch);">📡 Supervised Delegation<br><span style="color:#666;">orchestrator retains oversight</span></div>
+    </div>
+  </div>
+
+  <div class="divider-arrow">↓</div>
+
+  <!-- OUTCOMES -->
+  <div class="nut-section" style="background:#0a0a1a;border:1px solid #6c7fff44;color:var(--enabling);">
+    …which will lead to…
+  </div>
+  <div class="nut-grid">
+    <div class="nut-card accent">
+      <span class="ni">🔭</span>
+      <span>System sensing — topology patterns reveal health before failures occur</span>
+    </div>
+    <div class="nut-card accent">
+      <span class="ni">🧬</span>
+      <span>Topology evolution — squad shapes adapt deliberately based on measured interaction load</span>
+    </div>
+    <div class="nut-card accent">
+      <span class="ni">⚡</span>
+      <span>High-flow squads — context load is domain knowledge, not coordination noise</span>
+    </div>
+    <div class="nut-card accent">
+      <span class="ni">🌊</span>
+      <span>Improved value flow — end-to-end from goal to output with minimal friction</span>
+    </div>
+  </div>
+
+  <div class="infographic-footer">
+    <div class="footer-logo">Squad Topologies</div>
+    <div class="footer-tag">Organizing autonomous agent systems for fast flow · Adapted from Team Topologies by Skelton & Pais</div>
+  </div>
+
+</div><!-- /nutshell -->
+
+<script>
+function switchTab(id) {
+  document.querySelectorAll('.infographic').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  event.target.classList.add('active');
+}
+</script>
+</body>
+</html>

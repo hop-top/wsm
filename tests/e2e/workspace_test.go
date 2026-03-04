@@ -137,7 +137,7 @@ func TestWorkspaceShow(t *testing.T) {
 	mgr, cleanup := r.openManager()
 	defer cleanup()
 	ctx := context.Background()
-	if _, err := mgr.RecordEvent(ctx, id, workspace.EventMessageAdded, workspace.MessageData{Role: "user", Content: "hello"}); err != nil {
+	if _, err := mgr.RecordEvent(ctx, id, workspace.EventInteractionMessage, workspace.MessageData{Role: "user", Content: "hello"}); err != nil {
 		t.Fatalf("record message event: %v", err)
 	}
 	if _, err := mgr.RecordEvent(ctx, id, workspace.EventDeviceAttached, workspace.DeviceData{DeviceID: "dev-1", DeviceName: "Laptop"}); err != nil {
@@ -154,7 +154,7 @@ func TestWorkspaceShow(t *testing.T) {
 
 	eventsRes := r.run("workspace", "show", "my-project", "--events")
 	requireExitCode(t, eventsRes, 0)
-	if !strings.Contains(eventsRes.Stdout, "EVENTS") || !strings.Contains(eventsRes.Stdout, "message.added") {
+	if !strings.Contains(eventsRes.Stdout, "EVENTS") || !strings.Contains(eventsRes.Stdout, "interaction.message") {
 		t.Fatalf("expected events table in show output:\n%s", eventsRes.Stdout)
 	}
 
@@ -276,7 +276,7 @@ func TestWorkspaceRemove_DryRun(t *testing.T) {
 	defer cleanup()
 	ctx := context.Background()
 
-	if _, err := mgr.RecordEvent(ctx, id, workspace.EventMessageAdded, workspace.MessageData{Role: "user", Content: "hi"}); err != nil {
+	if _, err := mgr.RecordEvent(ctx, id, workspace.EventInteractionMessage, workspace.MessageData{Role: "user", Content: "hi"}); err != nil {
 		t.Fatalf("record event: %v", err)
 	}
 	if _, err := mgr.Snapshot(ctx, id, workspace.SnapshotOptions{}); err != nil {
@@ -422,10 +422,10 @@ func TestWorkspaceShow_EventsAllJSONIsValid(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	if _, err := mgr.RecordEvent(ctx, id, workspace.EventMessageAdded, workspace.MessageData{Role: "user", Content: "hello"}); err != nil {
+	if _, err := mgr.RecordEvent(ctx, id, workspace.EventInteractionMessage, workspace.MessageData{Role: "user", Content: "hello"}); err != nil {
 		t.Fatalf("record event: %v", err)
 	}
-	if _, err := mgr.RecordEvent(ctx, id, workspace.EventToolCallStarted, workspace.ToolCallData{ToolName: "grep"}); err != nil {
+	if _, err := mgr.RecordEvent(ctx, id, workspace.EventInteractionToolCall, workspace.ToolCallData{ToolName: "grep"}); err != nil {
 		t.Fatalf("record event: %v", err)
 	}
 

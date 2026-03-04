@@ -38,15 +38,23 @@ func GenerateSnapshot(ws Workspace, events []Event, maxSeqNum uint64) Snapshot {
 		}
 
 		switch ev.Type {
-		case EventMessageAdded:
+		case EventInteractionMessage:
 			snap.MessageCount++
-		case EventToolCallStarted:
+		case EventInteractionToolCall:
 			snap.ToolCalls++
-		case EventFileChanged:
+		case EventMutationFilePatch:
 			var p FileChangeData
 			if json.Unmarshal(ev.Data, &p) == nil && p.Path != "" {
 				files[p.Path] = struct{}{}
 			}
+		case EventMutationArtifact:
+			var p ArtifactData
+			if json.Unmarshal(ev.Data, &p) == nil && p.Path != "" {
+				files[p.Path] = struct{}{}
+			}
+		case EventTopologySpaceCreate, EventTopologySpaceDestroy:
+			// No direct snapshot field impact yet beyond incrementing some counters
+			// if we decide to add topology stats to snapshots.
 		case EventDeviceAttached:
 			var p DeviceData
 			if json.Unmarshal(ev.Data, &p) == nil && p.DeviceID != "" {

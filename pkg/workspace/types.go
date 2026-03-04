@@ -13,21 +13,40 @@ type (
 	FileChangeData = model.FileChangeData
 	DeviceData     = model.DeviceData
 	Snapshot       = model.Snapshot
+	Space          = model.Space
+	SpaceType      = model.SpaceType
+	TrustLevel     = model.TrustLevel
 )
 
 const (
 	StatusActive   = model.StatusActive
 	StatusArchived = model.StatusArchived
 
-	EventWorkspaceCreated    = model.EventWorkspaceCreated
-	EventWorkspaceUpdated    = model.EventWorkspaceUpdated
-	EventWorkspaceArchived   = model.EventWorkspaceArchived
-	EventWorkspaceUnarchived = model.EventWorkspaceUnarchived
-	EventMessageAdded        = model.EventMessageAdded
-	EventToolCallStarted     = model.EventToolCallStarted
-	EventToolCallCompleted   = model.EventToolCallCompleted
-	EventFileChanged         = model.EventFileChanged
-	EventDeviceAttached      = model.EventDeviceAttached
-	EventDeviceDetached      = model.EventDeviceDetached
-	EventSnapshotTaken       = model.EventSnapshotTaken
+	EventWorkspaceCreated     = model.EventWorkspaceCreated
+	EventWorkspaceUpdated     = model.EventWorkspaceUpdated
+	EventWorkspaceArchived    = model.EventWorkspaceArchived
+	EventWorkspaceUnarchived  = model.EventWorkspaceUnarchived
+	EventInteractionMessage    = model.EventInteractionMessage
+	EventInteractionToolCall   = model.EventInteractionToolCall
+	EventInteractionToolDone   = model.EventInteractionToolDone
+	EventMutationFilePatch     = model.EventMutationFilePatch
+	EventMutationArtifact      = model.EventMutationArtifact
+	EventTopologySpaceCreate   = model.EventTopologySpaceCreate
+	EventTopologySpaceDestroy  = model.EventTopologySpaceDestroy
+	EventCheckpointSnapshot    = model.EventCheckpointSnapshot
+	EventDeviceAttached        = model.EventDeviceAttached
+	EventDeviceDetached        = model.EventDeviceDetached
+
+	SpaceFilesystem = model.SpaceFilesystem
+	SpaceContainer  = model.SpaceContainer
+	SpaceVM         = model.SpaceVM
+	SpaceAPI        = model.SpaceAPI
+	SpaceDatabase   = model.SpaceDatabase
+	SpaceMachine    = model.SpaceMachine
+	SpaceRemote     = model.SpaceRemote
+
+	TrustLocal     = model.TrustLocal
+	TrustVerified  = model.TrustVerified
+	TrustExternal  = model.TrustExternal
+	TrustUntrusted = model.TrustUntrusted
 )

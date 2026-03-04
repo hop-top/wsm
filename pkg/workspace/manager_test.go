@@ -23,7 +23,10 @@ func newTestManager(t *testing.T) *Manager {
 	if err := b.Migrate(context.Background()); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	m, err := NewManager(b)
+	m, err := NewManager(b,
+		WithWriterID("oasf:agent:test-runner"),
+		WithSpaceID("sp-test-root"),
+	)
 	if err != nil {
 		t.Fatalf("new manager: %v", err)
 	}
@@ -225,7 +228,7 @@ func TestManager_Delete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if _, err := m.RecordEvent(ctx, ws.ID, EventMessageAdded, MessageData{Role: "user", Content: "x"}); err != nil {
+	if _, err := m.RecordEvent(ctx, ws.ID, EventInteractionMessage, MessageData{Role: "user", Content: "x"}); err != nil {
 		t.Fatalf("record event: %v", err)
 	}
 	if _, err := m.Snapshot(ctx, ws.ID, SnapshotOptions{}); err != nil {
@@ -280,7 +283,7 @@ func TestManager_RecordEvent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	ev, err := m.RecordEvent(ctx, ws.ID, EventMessageAdded, MessageData{Role: "user", Content: "hello"})
+	ev, err := m.RecordEvent(ctx, ws.ID, EventInteractionMessage, MessageData{Role: "user", Content: "hello"})
 	if err != nil {
 		t.Fatalf("record event: %v", err)
 	}
@@ -305,7 +308,7 @@ func TestManager_RecordEvent_SeqNum(t *testing.T) {
 	}
 	var seqs []uint64
 	for i := 0; i < 5; i++ {
-		ev, err := m.RecordEvent(ctx, ws.ID, EventMessageAdded, MessageData{Role: "user", Content: fmt.Sprintf("msg-%d", i)})
+		ev, err := m.RecordEvent(ctx, ws.ID, EventInteractionMessage, MessageData{Role: "user", Content: fmt.Sprintf("msg-%d", i)})
 		if err != nil {
 			t.Fatalf("record event %d: %v", i, err)
 		}
@@ -326,18 +329,18 @@ func TestManager_Events_Filtering(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if _, err := m.RecordEvent(ctx, ws.ID, EventMessageAdded, MessageData{Role: "user", Content: "hello"}); err != nil {
+	if _, err := m.RecordEvent(ctx, ws.ID, EventInteractionMessage, MessageData{Role: "user", Content: "hello"}); err != nil {
 		t.Fatalf("record message: %v", err)
 	}
-	if _, err := m.RecordEvent(ctx, ws.ID, EventToolCallStarted, ToolCallData{ToolName: "grep"}); err != nil {
+	if _, err := m.RecordEvent(ctx, ws.ID, EventInteractionToolCall, ToolCallData{ToolName: "grep"}); err != nil {
 		t.Fatalf("record tool: %v", err)
 	}
 
-	events, err := m.Events(ctx, ws.ID, backend.EventListOptions{Types: []EventType{EventMessageAdded}})
+	events, err := m.Events(ctx, ws.ID, backend.EventListOptions{Types: []EventType{EventInteractionMessage}})
 	if err != nil {
 		t.Fatalf("events: %v", err)
 	}
-	if len(events) != 1 || events[0].Type != EventMessageAdded {
+	if len(events) != 1 || events[0].Type != EventInteractionMessage {
 		t.Fatalf("unexpected filtered events: %+v", events)
 	}
 }
@@ -353,7 +356,7 @@ func TestManager_RecordEvent_Archived(t *testing.T) {
 	if err := m.Archive(ctx, ws.ID); err != nil {
 		t.Fatalf("archive: %v", err)
 	}
-	if _, err := m.RecordEvent(ctx, ws.ID, EventMessageAdded, MessageData{Role: "user", Content: "x"}); !IsKind(err, ErrorKindConflict) {
+	if _, err := m.RecordEvent(ctx, ws.ID, EventInteractionMessage, MessageData{Role: "user", Content: "x"}); !IsKind(err, ErrorKindConflict) {
 		t.Fatalf("expected conflict recording archived workspace event, got %v", err)
 	}
 }
@@ -367,7 +370,7 @@ func TestManager_EventIntegrity_Sequential(t *testing.T) {
 		t.Fatalf("create: %v", err)
 	}
 	for i := 0; i < 250; i++ {
-		if _, err := m.RecordEvent(ctx, ws.ID, EventMessageAdded, MessageData{Role: "user", Content: fmt.Sprintf("m-%d", i)}); err != nil {
+		if _, err := m.RecordEvent(ctx, ws.ID, EventInteractionMessage, MessageData{Role: "user", Content: fmt.Sprintf("m-%d", i)}); err != nil {
 			t.Fatalf("record %d: %v", i, err)
 		}
 	}
@@ -391,14 +394,14 @@ func TestManager_EventIntegrity_Filter(t *testing.T) {
 		t.Fatalf("create: %v", err)
 	}
 	for i := 0; i < 10; i++ {
-		if _, err := m.RecordEvent(ctx, ws.ID, EventMessageAdded, MessageData{Role: "user", Content: fmt.Sprintf("m-%d", i)}); err != nil {
+		if _, err := m.RecordEvent(ctx, ws.ID, EventInteractionMessage, MessageData{Role: "user", Content: fmt.Sprintf("m-%d", i)}); err != nil {
 			t.Fatalf("record message: %v", err)
 		}
-		if _, err := m.RecordEvent(ctx, ws.ID, EventToolCallStarted, ToolCallData{ToolName: fmt.Sprintf("tool-%d", i)}); err != nil {
+		if _, err := m.RecordEvent(ctx, ws.ID, EventInteractionToolCall, ToolCallData{ToolName: fmt.Sprintf("tool-%d", i)}); err != nil {
 			t.Fatalf("record tool: %v", err)
 		}
 	}
-	events, err := m.Events(ctx, ws.ID, backend.EventListOptions{Types: []EventType{EventMessageAdded}})
+	events, err := m.Events(ctx, ws.ID, backend.EventListOptions{Types: []EventType{EventInteractionMessage}})
 	if err != nil {
 		t.Fatalf("filtered events: %v", err)
 	}
@@ -406,7 +409,7 @@ func TestManager_EventIntegrity_Filter(t *testing.T) {
 		t.Fatalf("expected 10 filtered message events, got %d", len(events))
 	}
 	for _, ev := range events {
-		if ev.Type != EventMessageAdded {
+		if ev.Type != EventInteractionMessage {
 			t.Fatalf("unexpected filtered type: %s", ev.Type)
 		}
 	}
@@ -420,7 +423,7 @@ func TestManager_FullLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if _, err := m.RecordEvent(ctx, ws.ID, EventMessageAdded, MessageData{Role: "user", Content: "first"}); err != nil {
+	if _, err := m.RecordEvent(ctx, ws.ID, EventInteractionMessage, MessageData{Role: "user", Content: "first"}); err != nil {
 		t.Fatalf("record event: %v", err)
 	}
 	if _, err := m.Snapshot(ctx, ws.ID, SnapshotOptions{}); err != nil {
@@ -456,7 +459,7 @@ func TestManager_APIContract(t *testing.T) {
 		t.Fatalf("resolve by id: %v", err)
 	}
 
-	if _, err := m.RecordEvent(ctx, ws.ID, EventFileChanged, FileChangeData{Path: "a.txt", Operation: "modify"}); err != nil {
+	if _, err := m.RecordEvent(ctx, ws.ID, EventMutationFilePatch, FileChangeData{Path: "a.txt", Operation: "modify"}); err != nil {
 		t.Fatalf("record event: %v", err)
 	}
 
@@ -481,7 +484,12 @@ func newTestManagerWithOpts(t *testing.T, opts ...ManagerOption) *Manager {
 	if err := b.Migrate(context.Background()); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	m, err := NewManager(b, opts...)
+	// Prepend default OWSF identity
+	allOpts := append([]ManagerOption{
+		WithWriterID("oasf:agent:test-runner"),
+		WithSpaceID("sp-test-root"),
+	}, opts...)
+	m, err := NewManager(b, allOpts...)
 	if err != nil {
 		t.Fatalf("new manager: %v", err)
 	}
@@ -490,7 +498,12 @@ func newTestManagerWithOpts(t *testing.T, opts ...ManagerOption) *Manager {
 
 func newTestManagerWithOptsAndBackend(t *testing.T, b backend.Backend, opts ...ManagerOption) *Manager {
 	t.Helper()
-	m, err := NewManager(b, opts...)
+	// Prepend default OWSF identity
+	allOpts := append([]ManagerOption{
+		WithWriterID("oasf:agent:test-runner"),
+		WithSpaceID("sp-test-root"),
+	}, opts...)
+	m, err := NewManager(b, allOpts...)
 	if err != nil {
 		t.Fatalf("new manager: %v", err)
 	}
@@ -505,7 +518,7 @@ func TestManager_RecordEvent_SessionAgentID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	ev, err := m.RecordEvent(ctx, ws.ID, EventMessageAdded, MessageData{Role: "user", Content: "hello"})
+	ev, err := m.RecordEvent(ctx, ws.ID, EventInteractionMessage, MessageData{Role: "user", Content: "hello"})
 	if err != nil {
 		t.Fatalf("record event: %v", err)
 	}
@@ -517,7 +530,7 @@ func TestManager_RecordEvent_SessionAgentID(t *testing.T) {
 	}
 
 	// Verify persistence via listing
-	events, err := m.Events(ctx, ws.ID, backend.EventListOptions{Types: []EventType{EventMessageAdded}})
+	events, err := m.Events(ctx, ws.ID, backend.EventListOptions{Types: []EventType{EventInteractionMessage}})
 	if err != nil {
 		t.Fatalf("list events: %v", err)
 	}
@@ -548,14 +561,14 @@ func TestManager_DeviceAgentSessionAttribution(t *testing.T) {
 		t.Fatalf("create: %v", err)
 	}
 
-	if _, err := m1.RecordEvent(ctx, ws.ID, EventMessageAdded, MessageData{Role: "user", Content: "from-a"}); err != nil {
+	if _, err := m1.RecordEvent(ctx, ws.ID, EventInteractionMessage, MessageData{Role: "user", Content: "from-a"}); err != nil {
 		t.Fatalf("m1 record: %v", err)
 	}
-	if _, err := m2.RecordEvent(ctx, ws.ID, EventMessageAdded, MessageData{Role: "user", Content: "from-b"}); err != nil {
+	if _, err := m2.RecordEvent(ctx, ws.ID, EventInteractionMessage, MessageData{Role: "user", Content: "from-b"}); err != nil {
 		t.Fatalf("m2 record: %v", err)
 	}
 
-	events, err := m1.Events(ctx, ws.ID, backend.EventListOptions{Types: []EventType{EventMessageAdded}})
+	events, err := m1.Events(ctx, ws.ID, backend.EventListOptions{Types: []EventType{EventInteractionMessage}})
 	if err != nil {
 		t.Fatalf("list events: %v", err)
 	}
@@ -595,10 +608,10 @@ func TestManager_CrossSessionAttribution(t *testing.T) {
 	}
 
 	for i := 0; i < 5; i++ {
-		if _, err := mA.RecordEvent(ctx, ws.ID, EventMessageAdded, MessageData{Role: "user", Content: fmt.Sprintf("a-%d", i)}); err != nil {
+		if _, err := mA.RecordEvent(ctx, ws.ID, EventInteractionMessage, MessageData{Role: "user", Content: fmt.Sprintf("a-%d", i)}); err != nil {
 			t.Fatalf("mA record %d: %v", i, err)
 		}
-		if _, err := mB.RecordEvent(ctx, ws.ID, EventMessageAdded, MessageData{Role: "user", Content: fmt.Sprintf("b-%d", i)}); err != nil {
+		if _, err := mB.RecordEvent(ctx, ws.ID, EventInteractionMessage, MessageData{Role: "user", Content: fmt.Sprintf("b-%d", i)}); err != nil {
 			t.Fatalf("mB record %d: %v", i, err)
 		}
 	}
@@ -633,7 +646,7 @@ func TestManager_ManagerOptionsContract(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	ev, err := m0.RecordEvent(ctx, ws.ID, EventMessageAdded, MessageData{Role: "user", Content: "x"})
+	ev, err := m0.RecordEvent(ctx, ws.ID, EventInteractionMessage, MessageData{Role: "user", Content: "x"})
 	if err != nil {
 		t.Fatalf("record: %v", err)
 	}
@@ -647,7 +660,7 @@ func TestManager_ManagerOptionsContract(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create with opts: %v", err)
 	}
-	ev2, err := m1.RecordEvent(ctx, ws2.ID, EventMessageAdded, MessageData{Role: "user", Content: "y"})
+	ev2, err := m1.RecordEvent(ctx, ws2.ID, EventInteractionMessage, MessageData{Role: "user", Content: "y"})
 	if err != nil {
 		t.Fatalf("record with opts: %v", err)
 	}

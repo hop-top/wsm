@@ -1,0 +1,86 @@
+{
+  "skill_name": "agent-triage",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "I want AI to help me draft replies to my emails. I get about 30 emails a day and it takes me forever to respond. Can you help me set this up?",
+      "expected_output": "Correctly classified as Tier 0, Profile 0 (Assistant). Produces an Agent Brief — NOT a squad topology. Brief includes: role definition, event-driven trigger (inbound email), in-context memory, approval gate before sending, escalation conditions for sensitive emails, tone instructions.",
+      "expectations": [
+        "The skill classifies this as Tier 0 — single agent, no topology needed",
+        "The skill identifies Profile 0: Assistant",
+        "The skill does NOT propose a squad topology or BlockDiag",
+        "The skill produces an Agent Brief document",
+        "The Agent Brief includes an explicit approval gate — agent drafts but does not send autonomously",
+        "The Agent Brief includes escalation conditions (e.g., legal/financial content, tier-1 clients)",
+        "The Agent Brief includes tone and voice instructions",
+        "The Agent Brief includes an evolution path section noting when this might grow into Tier 1",
+        "The skill asks at most 3-4 clarifying questions before producing the brief"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "We run a recruitment agency. We need agents to: find candidates on LinkedIn, screen their CVs against job requirements, schedule interviews with hiring managers, and send rejection emails to unsuccessful candidates. This all needs to be coordinated.",
+      "expected_output": "Correctly classified as Tier 1, multiple profiles (Researcher + Executor + Orchestrator). Routes to Squad Topologies. Identifies 3-4 stream-aligned squads (sourcing, screening, scheduling, communications), an orchestrator, and a platform. DDD augmentation noted for candidate data model.",
+      "expectations": [
+        "The skill classifies this as Tier 1 — multi-squad topology required",
+        "The skill identifies multiple profiles: Researcher (sourcing), Executor (screening, scheduling, comms), Orchestrator (coordination)",
+        "The skill asks the LeSS question — could one generalist agent do this? — and correctly concludes no",
+        "The skill identifies at least 3 distinct value streams",
+        "The skill routes to Squad Topologies Architect facilitation",
+        "The skill notes DDD as relevant augmentation (candidate data shared across squads)",
+        "The skill produces a squad map with at least 4 squads",
+        "The skill produces a squad-topology.diag in valid BlockDiag syntax",
+        "The skill produces a squad-registry.md",
+        "The skill identifies interaction modes between squads"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "We're a fintech company. We need AI agents to process loan applications — extract data from documents, run credit checks via our API, make preliminary approval decisions, flag edge cases for human review, and log everything for our compliance audit trail.",
+      "expected_output": "Correctly classified as Tier 1 with SAFe augmentation. Profiles include Executor (document processing), Validator (credit + decision), Sentinel (edge case flagging). SAFe layer is load-bearing for audit trail and compliance. Human-in-the-loop is mandatory for edge cases.",
+      "expectations": [
+        "The skill classifies this as Tier 1 with SAFe augmentation — not just Squad Topologies alone",
+        "The skill explicitly flags the compliance/audit requirement as changing the design",
+        "The skill identifies Profile 4: Validator for the credit check and decision components",
+        "The skill identifies Profile 5: Sentinel for edge case detection",
+        "The skill identifies that the human review escalation path must be architecturally guaranteed, not optional",
+        "The skill proposes guardrails as hard constraints, not soft guidelines",
+        "The skill routes to Squad Topologies Architect + SAFe layer",
+        "The skill produces a squad-registry.md with explicit guardrails noted per squad",
+        "The skill notes the audit trail requirement in the design decisions log"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "I want to summarize my weekly Notion notes every Friday at 5pm and send myself a digest email.",
+      "expected_output": "Correctly classified as Tier 0, Profile 0 (Assistant, scheduled variant). Agent Brief with scheduled trigger, Notion read access, email send, no approval gate needed (sending to self). Simple, fast, no over-engineering.",
+      "expectations": [
+        "The skill classifies this as Tier 0 immediately — very simple case",
+        "The skill does NOT ask many clarifying questions — this is self-evident",
+        "The skill identifies Event-Driven (scheduled) execution strategy",
+        "The skill identifies RAG or direct API access for Notion",
+        "The skill produces an Agent Brief, not a squad topology",
+        "The Agent Brief has a scheduled trigger (Friday 5pm)",
+        "The Agent Brief notes Notion read access and email send as the only tools needed",
+        "The Agent Brief is concise — this is a simple agent, the brief should reflect that",
+        "The skill does not propose an approval gate since the agent is emailing the owner themselves"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "We need to scrape product data from 100,000 e-commerce pages, extract structured attributes (price, SKU, description, availability), normalize it, deduplicate it, and load it into our data warehouse. It needs to run daily.",
+      "expected_output": "Correctly classified as Tier 1, Profile 6 (Swarm Unit) + unFIX augmentation for dynamic crew scaling. Squad Topologies provides the structure (ingestion, extraction, normalization, dedup, load squads or a simpler pipeline design). unFIX handles dynamic crew scaling for the crawl volume.",
+      "expectations": [
+        "The skill classifies this as Tier 1 — this is not a single agent problem at 100k pages",
+        "The skill identifies Profile 6: Swarm Unit as the primary profile",
+        "The skill identifies unFIX as the relevant augmentation for dynamic crew scaling",
+        "The skill asks the LeSS question and correctly concludes one agent cannot handle 100k pages reliably",
+        "The skill identifies a pipeline structure: crawl → extract → normalize → dedup → load",
+        "The skill notes that the platform squad needs to handle shared state (dedup requires a seen-set)",
+        "The skill produces a squad-topology.diag",
+        "The skill notes daily scheduling as a trigger in the design",
+        "The skill identifies a Sentinel need for monitoring crawl success rates and pipeline health"
+      ]
+    }
+  ]
+}
