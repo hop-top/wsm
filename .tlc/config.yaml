@@ -1,3 +1,11 @@
+git: {}
+output:
+    color: true
+    format: table
 project:
+    duplicate_id_strategy: share
+    fallback_mode: auto
     id: hop-top/wsm
+storage:
+    backend: sqlite
 version: 0.1

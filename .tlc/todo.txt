@@ -1,19 +1,34 @@
-[x] T-0001 Document identity — pkg/owsf/document.go @@me #owsf #core created_at=2026-03-01T13:01:48Z updated_at=2026-03-01T13:03:12Z
-[x] T-0002 Writer registry — pkg/owsf/writer.go (C1: nil-pointer guard) @@me #owsf #core #review-fix created_at=2026-03-01T13:01:49Z updated_at=2026-03-01T13:03:34Z
-[x] T-0003 Event writer fields + C2/C4/I4 fixes @@me #owsf #model #review-fix created_at=2026-03-01T13:01:50Z updated_at=2026-03-01T13:05:25Z
-[x] T-0004 Space model — pkg/model/space.go @@me #owsf #model created_at=2026-03-01T13:01:53Z updated_at=2026-03-01T13:06:27Z
-[x] T-0005 Space containment enforcement + G2 cycle detection @@me #owsf #core #review-fix created_at=2026-03-01T13:01:54Z updated_at=2026-03-01T13:07:09Z
-[x] T-0006 Space immutability rules + C3/I3 fixes @@me #owsf #core #review-fix created_at=2026-03-01T13:01:55Z updated_at=2026-03-01T13:07:58Z
-[x] T-0007 Space persistence — backend + SQLite @@me #owsf #backend created_at=2026-03-01T13:01:56Z updated_at=2026-03-01T13:09:43Z
-[x] T-0008 Multi-writer ordering (Lamport + canonical) @@me #owsf #core created_at=2026-03-01T13:01:57Z updated_at=2026-03-01T13:10:17Z
-[x] T-0009 Event type namespace alignment + I1/I6 fixes @@me #owsf #model #review-fix created_at=2026-03-01T13:01:58Z updated_at=2026-03-01T13:11:18Z
-[x] T-0010 Fork model — pkg/owsf/fork.go @@me #owsf #core created_at=2026-03-01T13:02:02Z updated_at=2026-03-01T13:12:03Z
-[x] T-0011 Handoff profile — pkg/owsf/handoff.go @@me #owsf #core created_at=2026-03-01T13:02:02Z updated_at=2026-03-01T13:20:20Z
-[x] T-0012 Partial export / slice + I2/G1 fixes @@me #owsf #core #review-fix created_at=2026-03-01T13:02:03Z updated_at=2026-03-01T13:20:56Z
-[x] T-0013 Determinism guarantees — import report @@me #owsf #core created_at=2026-03-01T13:02:04Z updated_at=2026-03-01T13:21:29Z
-[x] T-0014 Assurance profile 0 — integrity @@me #owsf #assurance created_at=2026-03-01T13:02:05Z updated_at=2026-03-01T13:22:03Z
-[x] T-0015 Assurance profile 1 — signed (I5: leave unchecked) @@me #owsf #assurance #review-fix created_at=2026-03-01T13:02:06Z updated_at=2026-03-01T13:22:07Z
-[x] T-0016 Assurance profile 2 — provenance @@me #owsf #assurance created_at=2026-03-01T13:02:07Z updated_at=2026-03-01T13:22:07Z
-[x] T-0017 No-merge invariant enforcement + G3 test @@me #owsf #core #review-fix created_at=2026-03-01T13:02:09Z updated_at=2026-03-01T13:22:41Z
-[x] T-0018 OASF independence assertion @@me #owsf #core created_at=2026-03-01T13:02:09Z updated_at=2026-03-01T13:23:05Z
-[x] T-0019 Checklist update pass @@me #owsf #docs created_at=2026-03-01T13:02:10Z updated_at=2026-03-01T13:23:45Z
+[x] T-0001 "Detector framework — plugin interface for scanning spaces" @Jad Bitar #interop project_id=hop-top/wsm created_at=2026-03-08T00:18:17Z updated_at=2026-03-08T02:41:25Z
+[x] T-0002 "Build/runtime detectors (Makefile, package.json, docker-compose, devcontainer, .mise.toml, .env.example)" @Jad Bitar #interop project_id=hop-top/wsm created_at=2026-03-08T00:18:17Z updated_at=2026-03-08T02:41:25Z
+[x] T-0003 "Knowledge source detectors (package registries, Context7, GitIngest, DeepWiki, local docs)" @Jad Bitar #interop project_id=hop-top/wsm created_at=2026-03-08T00:18:17Z updated_at=2026-03-08T02:41:25Z
+[x] T-0004 "Dependency health detectors (ShouldIUse.dev)" @Jad Bitar #interop project_id=hop-top/wsm created_at=2026-03-08T00:18:17Z updated_at=2026-03-08T02:41:25Z
+[x] T-0005 "Detector output -> default strategy profile per space" @Jad Bitar #interop project_id=hop-top/wsm created_at=2026-03-08T00:18:17Z updated_at=2026-03-08T02:41:25Z
+[x] T-0006 "User override/customize per space or workspace-wide" @Jad Bitar #interop project_id=hop-top/wsm created_at=2026-03-08T00:18:17Z updated_at=2026-03-08T02:41:25Z
+[x] T-0007 "mise integration (detect .mise.toml, verify tool versions)" @Jad Bitar #interop project_id=hop-top/wsm created_at=2026-03-08T00:18:18Z updated_at=2026-03-08T02:40:42Z
+[x] T-0008 "SecretSpec integration (detect secretspec.toml, verify secret declarations)" @Jad Bitar #interop project_id=hop-top/wsm created_at=2026-03-08T00:18:18Z updated_at=2026-03-08T02:40:43Z
+[x] T-0009 "fnox integration (detect fnox.toml, verify secret availability)" @Jad Bitar #interop project_id=hop-top/wsm created_at=2026-03-08T00:18:18Z updated_at=2026-03-08T02:40:43Z
+[x] T-0010 "Access grant declarations" @Jad Bitar #interop project_id=hop-top/wsm created_at=2026-03-08T00:18:18Z updated_at=2026-03-08T02:39:55Z
+[x] T-0011 "Enforcement levels (required, recommended, optional) per prerequisite" @Jad Bitar #interop project_id=hop-top/wsm created_at=2026-03-08T00:18:18Z updated_at=2026-03-08T02:39:55Z
+[x] T-0012 "Add --no-verify flag to bypass enforcement" @Jad Bitar #interop project_id=hop-top/wsm created_at=2026-03-08T00:18:18Z updated_at=2026-03-08T02:39:56Z
+[x] T-0013 "Define scope type on workspace (file patterns, operations, tool access, secrets, network)" @Jad Bitar #interop project_id=hop-top/wsm created_at=2026-03-08T00:18:18Z updated_at=2026-03-08T02:41:05Z
+[x] T-0014 "Profile/squad assignment to workspace with scope" @Jad Bitar #interop project_id=hop-top/wsm created_at=2026-03-08T00:18:18Z updated_at=2026-03-08T02:41:06Z
+[x] T-0015 "Scope intersection query API" @Jad Bitar #interop project_id=hop-top/wsm created_at=2026-03-08T00:18:18Z updated_at=2026-03-08T02:41:07Z
+[x] T-0016 "Add $XDG_CACHE_HOME/wsm/ support" @Jad Bitar #interop project_id=hop-top/wsm created_at=2026-03-08T00:18:18Z updated_at=2026-03-08T02:43:41Z
+[x] T-0017 "Add $XDG_STATE_HOME/wsm/ support" @Jad Bitar #interop project_id=hop-top/wsm created_at=2026-03-08T00:18:18Z updated_at=2026-03-08T02:43:42Z
+[x] T-0018 "Support .wsm/ local config directory (opt-in)" @Jad Bitar #interop project_id=hop-top/wsm created_at=2026-03-08T00:18:18Z updated_at=2026-03-08T02:43:42Z
+[x] T-0019 "Support .hop/wsm/ local config directory (when via hop)" @Jad Bitar #interop project_id=hop-top/wsm created_at=2026-03-08T00:18:18Z updated_at=2026-03-08T02:43:43Z
+[x] T-0020 "Workspace export as YAML (metadata + space definitions)" @Jad Bitar #interop project_id=hop-top/wsm created_at=2026-03-08T00:18:18Z updated_at=2026-03-08T02:43:43Z
+[x] T-0021 "Workspace import with conflict resolution" @Jad Bitar #interop project_id=hop-top/wsm created_at=2026-03-08T00:18:18Z updated_at=2026-03-08T02:43:44Z
+[x] T-0022 "Enforce workspace-scoped vs space-scoped session distinction" @Jad Bitar #interop project_id=hop-top/wsm created_at=2026-03-08T00:18:18Z updated_at=2026-03-08T02:41:07Z
+[x] T-0023 "Migrate workspace and session storage to XDG base directories" @Jad Bitar #xdg project_id=hop-top/wsm created_at=2026-03-08T11:22:40Z updated_at=2026-03-08T12:12:42Z
+[x] T-0024 "Implement machine identity (Device) deterministic fingerprint" @Jad Bitar #core project_id=hop-top/wsm created_at=2026-03-08T11:22:45Z updated_at=2026-03-08T12:12:42Z
+[x] T-0025 "Implement config mutual exclusion: standalone (.wsm/) vs via hop (.hop/wsm/)" @Jad Bitar #core #interop project_id=hop-top/wsm created_at=2026-03-08T12:37:45Z updated_at=2026-03-08T14:03:16Z
+[>] T-0026 "Add wsm space CLI commands (epic)" @Jad Bitar #cli #feat project_id=hop-top/wsm created_at=2026-03-08T13:49:18Z updated_at=2026-03-08T14:26:12Z
+[ ] T-0027 "Add wsm init command with config dir creation and symlink setup" #cli #feat project_id=hop-top/wsm created_at=2026-03-08T14:01:24Z updated_at=2026-03-08T14:01:24Z
+[x] T-0028 "Add workspace_spaces join table and backend CRUD" @Jad Bitar #core #schema project_id=hop-top/wsm created_at=2026-03-08T14:26:20Z updated_at=2026-03-08T14:28:58Z
+[x] T-0029 "Add basic wsm space CLI commands (add/list/show/remove)" @Jad Bitar #cli #feat project_id=hop-top/wsm created_at=2026-03-08T14:26:28Z updated_at=2026-03-08T15:35:51Z
+[ ] T-0030 "Add wsm:// URI scheme parsing" #core #feat project_id=hop-top/wsm created_at=2026-03-08T14:26:37Z updated_at=2026-03-08T14:26:37Z
+[ ] T-0031 "Add context-aware space resolution and huh prompts" #cli #feat project_id=hop-top/wsm created_at=2026-03-08T14:26:43Z updated_at=2026-03-08T14:26:43Z
+[ ] T-0032 "Integrate detectors into space add for auto-detection" #feat #interop project_id=hop-top/wsm created_at=2026-03-08T14:26:53Z updated_at=2026-03-08T14:26:53Z
+[ ] T-0033 "Create hop.top/uri module for shared URI scheme parsing" #core #module project_id=hop-top/wsm created_at=2026-03-08T14:33:02Z updated_at=2026-03-08T14:33:02Z
+[ ] T-0034 "Integrate hop.top/uri module and implement wsm TypeRegistry" #core #interop project_id=hop-top/wsm created_at=2026-03-08T15:30:20Z updated_at=2026-03-08T15:30:20Z
