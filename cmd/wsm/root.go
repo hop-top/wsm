@@ -21,6 +21,7 @@ import (
 	backendsqlite "hop.top/wsm/pkg/backend/sqlite"
 	pkgcli "hop.top/wsm/pkg/cli"
 	"hop.top/wsm/pkg/config"
+	"hop.top/wsm/pkg/detector"
 	"hop.top/wsm/pkg/workspace"
 )
 
@@ -456,17 +457,24 @@ func newSpaceAddCmd(opts *globalOptions) *cobra.Command {
 		Args:    cobra.ExactArgs(2),
 		RunE: func(_ *cobra.Command, args []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
+				// Run detector inference when type is not explicitly set.
+				inf := detector.InferSpaceFromBoundary(ctx, args[1])
+
 				typ := workspace.SpaceType(spaceType)
 				if typ == "" {
-					typ = workspace.SpaceFilesystem
+					typ = workspace.SpaceType(inf.Type)
 				}
 				trust := workspace.TrustLevel(trustLevel)
 				if trust == "" {
-					trust = workspace.TrustLocal
+					trust = workspace.TrustLevel(inf.TrustLevel)
 				}
 				caps := capabilities
 				if caps == nil {
-					caps = []string{}
+					if len(inf.Capabilities) > 0 {
+						caps = inf.Capabilities
+					} else {
+						caps = []string{}
+					}
 				}
 				sp := workspace.Space{
 					ID:           spaceID,
