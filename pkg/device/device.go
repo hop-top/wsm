@@ -21,12 +21,23 @@ type Device struct {
 }
 
 // Current returns a deterministic local-machine identity payload.
+// It uses the default data directory for fingerprint persistence.
 func Current() Device {
+	return CurrentWithDataDir("")
+}
+
+// CurrentWithDataDir returns a device identity using the given data directory
+// for fingerprint persistence. An empty dataDir uses the default location.
+func CurrentWithDataDir(dataDir string) Device {
 	host, _ := os.Hostname()
 	now := time.Now().UTC()
-	machineKey := strings.Join([]string{runtime.GOOS, runtime.GOARCH, host}, "|")
-	digest := sha256.Sum256([]byte(machineKey))
-	id := hex.EncodeToString(digest[:16])
+
+	id, err := MachineFingerprint(dataDir)
+	if err != nil || id == "" {
+		// Fallback to legacy hostname-based hash if fingerprint fails.
+		id = legacyID(host)
+	}
+
 	if host == "" {
 		host = "unknown"
 	}
@@ -39,4 +50,11 @@ func Current() Device {
 		FirstSeen: now,
 		LastSeen:  now,
 	}
+}
+
+// legacyID produces the original hostname-based device ID for backward compat.
+func legacyID(hostname string) string {
+	machineKey := strings.Join([]string{runtime.GOOS, runtime.GOARCH, hostname}, "|")
+	digest := sha256.Sum256([]byte(machineKey))
+	return hex.EncodeToString(digest[:16])
 }
