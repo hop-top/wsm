@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -104,9 +105,9 @@ func TestFindHopLocalConfig_NotFound(t *testing.T) {
 	}
 }
 
-func TestFindAnyLocalConfig_PrefersWsm(t *testing.T) {
+func TestFindAnyLocalConfig_BothIndependent_Error(t *testing.T) {
 	root := t.TempDir()
-	// Create both .wsm/ and .hop/wsm/
+	// Create both .wsm/ and .hop/wsm/ as independent directories.
 	wsmDir := filepath.Join(root, ".wsm")
 	hopDir := filepath.Join(root, ".hop", "wsm")
 	if err := os.MkdirAll(wsmDir, 0o755); err != nil {
@@ -122,15 +123,92 @@ func TestFindAnyLocalConfig_PrefersWsm(t *testing.T) {
 		t.Fatalf("write hop: %v", err)
 	}
 
+	_, err := FindAnyLocalConfig(root)
+	if err == nil {
+		t.Fatal("expected error when both .wsm/ and .hop/wsm/ exist independently")
+	}
+	if !strings.Contains(err.Error(), "conflicting local config") {
+		t.Fatalf("expected conflict error, got: %v", err)
+	}
+}
+
+func TestFindAnyLocalConfig_BothIndependent_HopBranch_Error(t *testing.T) {
+	root := t.TempDir()
+	// Both dirs exist independently, but only .hop/wsm/ has a config file.
+	// This exercises the hop-branch conflict detection path.
+	wsmDir := filepath.Join(root, ".wsm")
+	hopDir := filepath.Join(root, ".hop", "wsm")
+	if err := os.MkdirAll(wsmDir, 0o755); err != nil {
+		t.Fatalf("mkdir wsm: %v", err)
+	}
+	if err := os.MkdirAll(hopDir, 0o755); err != nil {
+		t.Fatalf("mkdir hop: %v", err)
+	}
+	// Only write config in .hop/wsm/, not in .wsm/
+	if err := os.WriteFile(filepath.Join(hopDir, "config.yaml"), []byte("source: hop\n"), 0o644); err != nil {
+		t.Fatalf("write hop: %v", err)
+	}
+
+	_, err := FindAnyLocalConfig(root)
+	if err == nil {
+		t.Fatal("expected error when both dirs exist independently (hop branch)")
+	}
+	if !strings.Contains(err.Error(), "conflicting local config") {
+		t.Fatalf("expected conflict error, got: %v", err)
+	}
+}
+
+func TestFindAnyLocalConfig_BothSymlinked_OK(t *testing.T) {
+	root := t.TempDir()
+	// Create .wsm/ as the real directory, symlink .hop/wsm/ -> .wsm/
+	wsmDir := filepath.Join(root, ".wsm")
+	hopParent := filepath.Join(root, ".hop")
+	hopDir := filepath.Join(hopParent, "wsm")
+	if err := os.MkdirAll(wsmDir, 0o755); err != nil {
+		t.Fatalf("mkdir wsm: %v", err)
+	}
+	if err := os.MkdirAll(hopParent, 0o755); err != nil {
+		t.Fatalf("mkdir hop parent: %v", err)
+	}
+	if err := os.Symlink(wsmDir, hopDir); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(wsmDir, "config.yaml"), []byte("source: wsm\n"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
 	lc, err := FindAnyLocalConfig(root)
 	if err != nil {
-		t.Fatalf("find: %v", err)
+		t.Fatalf("unexpected error: %v", err)
 	}
 	if !lc.Found {
 		t.Fatal("expected Found=true")
 	}
 	if lc.Settings["source"] != "wsm" {
-		t.Fatalf("expected .wsm/ preferred, got source=%q", lc.Settings["source"])
+		t.Fatalf("expected source=wsm, got %q", lc.Settings["source"])
+	}
+}
+
+func TestFindAnyLocalConfig_ReverseSymlink_OK(t *testing.T) {
+	root := t.TempDir()
+	// Create .hop/wsm/ as real, symlink .wsm/ -> .hop/wsm/
+	hopDir := filepath.Join(root, ".hop", "wsm")
+	if err := os.MkdirAll(hopDir, 0o755); err != nil {
+		t.Fatalf("mkdir hop: %v", err)
+	}
+	if err := os.Symlink(hopDir, filepath.Join(root, ".wsm")); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(hopDir, "config.yaml"), []byte("source: hop\n"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	lc, err := FindAnyLocalConfig(root)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !lc.Found {
+		t.Fatal("expected Found=true")
 	}
 }
 

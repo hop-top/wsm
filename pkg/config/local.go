@@ -30,15 +30,34 @@ func FindHopLocalConfig(startDir string) (*LocalConfig, error) {
 
 // FindAnyLocalConfig tries .wsm/ first, then .hop/wsm/.
 // Returns the first match or Found=false if neither exists.
+// Returns an error if both exist at the same directory level and are not
+// symlinked to each other.
 func FindAnyLocalConfig(startDir string) (*LocalConfig, error) {
 	lc, err := FindLocalConfig(startDir)
 	if err != nil {
 		return nil, err
 	}
 	if lc.Found {
+		// Check for conflict at the directory where we found .wsm/config.yaml.
+		configDir := filepath.Dir(filepath.Dir(lc.Path)) // .wsm/config.yaml -> project dir
+		if err := checkMutualExclusion(configDir); err != nil {
+			return nil, err
+		}
 		return lc, nil
 	}
-	return FindHopLocalConfig(startDir)
+
+	lc, err = FindHopLocalConfig(startDir)
+	if err != nil {
+		return nil, err
+	}
+	if lc.Found {
+		// Check for conflict at the directory where we found .hop/wsm/config.yaml.
+		configDir := filepath.Dir(filepath.Dir(filepath.Dir(lc.Path))) // .hop/wsm/config.yaml -> project dir
+		if err := checkMutualExclusion(configDir); err != nil {
+			return nil, err
+		}
+	}
+	return lc, nil
 }
 
 // LoadLocalConfig parses a local config file at the given path.
@@ -59,6 +78,45 @@ func LoadLocalConfig(path string) (*LocalConfig, error) {
 		Found:    true,
 		Settings: settings,
 	}, nil
+}
+
+// checkMutualExclusion returns an error if both .wsm/ and .hop/wsm/ exist
+// at dir as independent (non-symlinked) directories. If one is a symlink
+// to the other, they are considered equivalent and no error is returned.
+func checkMutualExclusion(dir string) error {
+	wsmDir := filepath.Join(dir, ".wsm")
+	hopDir := filepath.Join(dir, ".hop", "wsm")
+
+	// Both must exist for a conflict.
+	if _, err := os.Lstat(wsmDir); err != nil {
+		return nil
+	}
+	if _, err := os.Lstat(hopDir); err != nil {
+		return nil
+	}
+
+	// Resolve symlinks and compare real paths. Broken symlinks (dangling
+	// targets) cause EvalSymlinks to fail; treat them as non-conflicting
+	// since findLocalConfigIn uses os.Stat which also fails on broken
+	// symlinks, so they can't be "found" configs.
+	wsmReal, err := filepath.EvalSymlinks(wsmDir)
+	if err != nil {
+		return nil
+	}
+	hopReal, err := filepath.EvalSymlinks(hopDir)
+	if err != nil {
+		return nil
+	}
+
+	if wsmReal == hopReal {
+		return nil // symlinked to same location
+	}
+
+	return fmt.Errorf(
+		"conflicting local config: both %s and %s exist independently; "+
+			"symlink one to the other to resolve",
+		wsmDir, hopDir,
+	)
 }
 
 func findLocalConfigIn(startDir, relPath string) (*LocalConfig, error) {
