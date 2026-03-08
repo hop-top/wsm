@@ -274,3 +274,99 @@ func TestLoadLocalConfig_EmptyFile(t *testing.T) {
 		t.Fatalf("expected empty settings, got %v", lc.Settings)
 	}
 }
+
+func TestInitLocalConfig_Standalone(t *testing.T) {
+	root := t.TempDir()
+	configPath, err := InitLocalConfig(root, false, false)
+	if err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	if configPath != filepath.Join(root, ".wsm", "config.yaml") {
+		t.Fatalf("expected .wsm/config.yaml, got %s", configPath)
+	}
+	// .wsm/ should be a real directory.
+	info, err := os.Lstat(filepath.Join(root, ".wsm"))
+	if err != nil {
+		t.Fatalf("lstat .wsm: %v", err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		t.Fatal(".wsm should not be a symlink")
+	}
+	// .hop/wsm/ should be a symlink to .wsm/.
+	target, err := os.Readlink(filepath.Join(root, ".hop", "wsm"))
+	if err != nil {
+		t.Fatalf("readlink .hop/wsm: %v", err)
+	}
+	if target != filepath.Join(root, ".wsm") {
+		t.Fatalf("expected symlink to .wsm, got %s", target)
+	}
+	// FindAnyLocalConfig should work.
+	lc, err := FindAnyLocalConfig(root)
+	if err != nil {
+		t.Fatalf("find: %v", err)
+	}
+	if !lc.Found {
+		t.Fatal("expected Found=true")
+	}
+}
+
+func TestInitLocalConfig_Hop(t *testing.T) {
+	root := t.TempDir()
+	configPath, err := InitLocalConfig(root, true, false)
+	if err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	if configPath != filepath.Join(root, ".hop", "wsm", "config.yaml") {
+		t.Fatalf("expected .hop/wsm/config.yaml, got %s", configPath)
+	}
+	// .hop/wsm/ should be a real directory.
+	info, err := os.Lstat(filepath.Join(root, ".hop", "wsm"))
+	if err != nil {
+		t.Fatalf("lstat .hop/wsm: %v", err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		t.Fatal(".hop/wsm should not be a symlink")
+	}
+	// .wsm/ should be a symlink to .hop/wsm/.
+	target, err := os.Readlink(filepath.Join(root, ".wsm"))
+	if err != nil {
+		t.Fatalf("readlink .wsm: %v", err)
+	}
+	if target != filepath.Join(root, ".hop", "wsm") {
+		t.Fatalf("expected symlink to .hop/wsm, got %s", target)
+	}
+}
+
+func TestInitLocalConfig_ExistingRefused(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".wsm"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	_, err := InitLocalConfig(root, false, false)
+	if err == nil {
+		t.Fatal("expected error when .wsm exists")
+	}
+	if !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("expected 'already exists' error, got: %v", err)
+	}
+}
+
+func TestInitLocalConfig_ForceOverwrites(t *testing.T) {
+	root := t.TempDir()
+	// Create existing .wsm/ with content.
+	wsmDir := filepath.Join(root, ".wsm")
+	if err := os.MkdirAll(wsmDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(wsmDir, "config.yaml"), []byte("old: true\n"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	_, err := InitLocalConfig(root, false, true)
+	if err != nil {
+		t.Fatalf("init with force: %v", err)
+	}
+	// Symlink should exist now.
+	if _, err := os.Readlink(filepath.Join(root, ".hop", "wsm")); err != nil {
+		t.Fatalf("expected .hop/wsm symlink after force init: %v", err)
+	}
+}

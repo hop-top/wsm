@@ -165,6 +165,7 @@ func newRootCmd() *cobra.Command {
 	}
 
 	root.AddCommand(
+		newInitCmd(&opts),
 		newWorkspaceGroupCmd(&opts),
 		newSpaceGroupCmd(&opts),
 		newEventGroupCmd(&opts),
@@ -188,6 +189,49 @@ func withApp(opts *globalOptions, fn func(ctx context.Context, app *appContext) 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	return fn(ctx, app)
+}
+
+func newInitCmd(opts *globalOptions) *cobra.Command {
+	var hop, force bool
+	cmd := &cobra.Command{
+		Use:   "init",
+		Short: "Initialize local config directory",
+		Long: `Create a local config directory (.wsm/ or .hop/wsm/) in the current
+directory with a minimal config.yaml and a symlink from the other path.
+
+By default creates .wsm/ and symlinks .hop/wsm/ -> .wsm/.
+With --hop, creates .hop/wsm/ and symlinks .wsm/ -> .hop/wsm/.`,
+		Args: cobra.NoArgs,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			dir, err := os.Getwd()
+			if err != nil {
+				return fmt.Errorf("get working directory: %w", err)
+			}
+			configPath, err := config.InitLocalConfig(dir, hop, force)
+			if err != nil {
+				return err
+			}
+			if opts.Quiet {
+				fmt.Fprintln(os.Stdout, configPath)
+				return nil
+			}
+			if shouldJSON(*opts) {
+				return writeJSON(os.Stdout, map[string]any{
+					"config_path": configPath,
+					"mode":        map[bool]string{true: "hop", false: "standalone"}[hop],
+				})
+			}
+			mode := ".wsm/"
+			if hop {
+				mode = ".hop/wsm/"
+			}
+			fmt.Fprintf(os.Stdout, "Initialized %s in %s\n", mode, dir)
+			return nil
+		},
+	}
+	cmd.Flags().BoolVar(&hop, "hop", false, "Use .hop/wsm/ as primary (for hop-managed projects)")
+	cmd.Flags().BoolVarP(&force, "force", "f", false, "Overwrite existing config directories")
+	return cmd
 }
 
 func newWorkspaceGroupCmd(opts *globalOptions) *cobra.Command {
