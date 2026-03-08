@@ -144,6 +144,17 @@ make test-ubuntu-docker  # Full suite in clean Ubuntu container
 ```txt
 cmd/wsm/             CLI entrypoint
 pkg/                 Core library surface (UI-free)
+  access/            Access grants, enforcement levels, verification
+  backend/           Storage contract + SQLite implementation
+  cli/               Shell completion helpers
+  config/            Config loading (XDG, env, flags, local dirs)
+  detector/          Pluggable space detection framework
+  device/            Device identity and registry
+  model/             Core domain types (Workspace, Event, Space, etc.)
+  owsf/              OWSF/OCSF interop and compliance
+  scope/             Scope types, assignment, and session distinction
+  tui/               TUI model and actions
+  workspace/         Manager, export/import, context formatting
 internal/ui/charm/   Optional Charmbracelet TUI
 docs/stories/        Story catalog and acceptance criteria
 docs/personas/       Audience personas w/ discovery + delivery prefs
