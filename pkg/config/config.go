@@ -31,6 +31,9 @@ type LoadOptions struct {
 }
 
 func defaultDataDir() string {
+	if xdg := os.Getenv("XDG_DATA_HOME"); xdg != "" {
+		return filepath.Join(xdg, "wsm")
+	}
 	home, err := os.UserHomeDir()
 	if err != nil || home == "" {
 		return ".wsm"
