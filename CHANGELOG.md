@@ -46,6 +46,14 @@ The format is based on Keep a Changelog, and this project aims to follow Semanti
   and space definitions.
 - `pkg/workspace`: YAML workspace import (`ImportWorkspace`) with conflict
   resolution strategies (skip, rename, overwrite) and dry-run support.
+- `pkg/config`: `XDG_DATA_HOME` support for `defaultDataDir()`, consistent
+  with cache/state dir resolution.
+- `pkg/config`: Legacy migration helper (`MigrateFromLegacy`) moves
+  `~/.wsm/wsm.db` to XDG data dir on first run.
+- `cmd/wsm`: Auto-create XDG directories (data, cache, state) on startup.
+- `pkg/device`: Persistent machine fingerprint using platform-specific
+  sources (macOS IOPlatformUUID, Linux machine-id) with fallback UUID
+  generation and `$XDG_DATA_HOME/wsm/machine-id` persistence.
 - Story-aligned unit suites:
   - `pkg/workspace/event_test.go`
   - `pkg/workspace/snapshot_test.go`
