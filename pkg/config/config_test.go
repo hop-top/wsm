@@ -10,6 +10,7 @@ func withCleanConfigEnv(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(root, "cfg"))
+	t.Setenv("XDG_DATA_HOME", "")
 	t.Setenv("XDG_CACHE_HOME", "")
 	t.Setenv("XDG_STATE_HOME", "")
 	t.Setenv("HOME", root)
@@ -157,6 +158,19 @@ func TestConfig_StateDir_FlagOverride(t *testing.T) {
 	}
 	if cfg.StateDir != "/tmp/state-flag" {
 		t.Fatalf("expected flag state dir, got %q", cfg.StateDir)
+	}
+}
+
+func TestConfig_DataDir_XDG(t *testing.T) {
+	withCleanConfigEnv(t)
+	t.Setenv("XDG_DATA_HOME", "/tmp/xdg-data")
+	cfg, err := Load(LoadOptions{})
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	want := filepath.Join("/tmp/xdg-data", "wsm")
+	if cfg.DataDir != want {
+		t.Fatalf("expected XDG data dir %q, got %q", want, cfg.DataDir)
 	}
 }
 
