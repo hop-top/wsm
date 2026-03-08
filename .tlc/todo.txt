@@ -24,11 +24,11 @@
 [x] T-0024 "Implement machine identity (Device) deterministic fingerprint" @Jad Bitar #core project_id=hop-top/wsm created_at=2026-03-08T11:22:45Z updated_at=2026-03-08T12:12:42Z
 [x] T-0025 "Implement config mutual exclusion: standalone (.wsm/) vs via hop (.hop/wsm/)" @Jad Bitar #core #interop project_id=hop-top/wsm created_at=2026-03-08T12:37:45Z updated_at=2026-03-08T14:03:16Z
 [>] T-0026 "Add wsm space CLI commands (epic)" @Jad Bitar #cli #feat project_id=hop-top/wsm created_at=2026-03-08T13:49:18Z updated_at=2026-03-08T14:26:12Z
-[ ] T-0027 "Add wsm init command with config dir creation and symlink setup" #cli #feat project_id=hop-top/wsm created_at=2026-03-08T14:01:24Z updated_at=2026-03-08T14:01:24Z
+[x] T-0027 "Add wsm init command with config dir creation and symlink setup" @Jad Bitar #cli #feat project_id=hop-top/wsm created_at=2026-03-08T14:01:24Z updated_at=2026-03-08T15:43:41Z
 [x] T-0028 "Add workspace_spaces join table and backend CRUD" @Jad Bitar #core #schema project_id=hop-top/wsm created_at=2026-03-08T14:26:20Z updated_at=2026-03-08T14:28:58Z
 [x] T-0029 "Add basic wsm space CLI commands (add/list/show/remove)" @Jad Bitar #cli #feat project_id=hop-top/wsm created_at=2026-03-08T14:26:28Z updated_at=2026-03-08T15:35:51Z
 [ ] T-0030 "Add wsm:// URI scheme parsing" #core #feat project_id=hop-top/wsm created_at=2026-03-08T14:26:37Z updated_at=2026-03-08T14:26:37Z
 [ ] T-0031 "Add context-aware space resolution and huh prompts" #cli #feat project_id=hop-top/wsm created_at=2026-03-08T14:26:43Z updated_at=2026-03-08T14:26:43Z
-[ ] T-0032 "Integrate detectors into space add for auto-detection" #feat #interop project_id=hop-top/wsm created_at=2026-03-08T14:26:53Z updated_at=2026-03-08T14:26:53Z
+[x] T-0032 "Integrate detectors into space add for auto-detection" @Jad Bitar #feat #interop project_id=hop-top/wsm created_at=2026-03-08T14:26:53Z updated_at=2026-03-08T15:46:02Z
 [ ] T-0033 "Create hop.top/uri module for shared URI scheme parsing" #core #module project_id=hop-top/wsm created_at=2026-03-08T14:33:02Z updated_at=2026-03-08T14:33:02Z
 [ ] T-0034 "Integrate hop.top/uri module and implement wsm TypeRegistry" #core #interop project_id=hop-top/wsm created_at=2026-03-08T15:30:20Z updated_at=2026-03-08T15:30:20Z
