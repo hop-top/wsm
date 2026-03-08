@@ -65,6 +65,18 @@ func newAppContext(opts globalOptions) (*appContext, error) {
 		return nil, workspace.NewErrorUsage("only sqlite backend is currently implemented")
 	}
 
+	// Attempt legacy migration before opening the backend.
+	if err := config.MigrateFromLegacy(cfg); err != nil {
+		return nil, workspace.NewErrorBackend("migrate legacy data", err)
+	}
+
+	// Ensure XDG directories exist for first-run.
+	for _, dir := range []string{cfg.DataDir, cfg.CacheDir, cfg.StateDir} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return nil, workspace.NewErrorBackend("create directory "+dir, err)
+		}
+	}
+
 	dbPath := filepath.Join(cfg.DataDir, "wsm.db")
 	b, err := backendsqlite.Open(dbPath)
 	if err != nil {
