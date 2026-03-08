@@ -595,6 +595,91 @@ func (m *Manager) DeviceSessions(ctx context.Context, deviceID string) ([]backen
 	return sessions, nil
 }
 
+// AddSpaceToWorkspace creates a space via CreateSpace and associates it with a workspace.
+func (m *Manager) AddSpaceToWorkspace(ctx context.Context, workspaceRef string, s Space) (*Space, error) {
+	ws, err := m.ResolveWorkspaceRef(ctx, workspaceRef)
+	if err != nil {
+		return nil, err
+	}
+
+	created, err := m.CreateSpace(ctx, ws.ID, s)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := m.backend.AssociateSpace(ctx, ws.ID, created.ID); err != nil {
+		return nil, mapBackendErr("associate space with workspace", err)
+	}
+
+	return created, nil
+}
+
+// ListWorkspaceSpaces returns spaces associated with a workspace.
+func (m *Manager) ListWorkspaceSpaces(ctx context.Context, workspaceRef string) ([]Space, error) {
+	ws, err := m.ResolveWorkspaceRef(ctx, workspaceRef)
+	if err != nil {
+		return nil, err
+	}
+	spaces, err := m.backend.ListWorkspaceSpaces(ctx, ws.ID)
+	if err != nil {
+		return nil, backendError("list workspace spaces", err)
+	}
+	out := make([]Space, len(spaces))
+	for i, s := range spaces {
+		out[i] = Space(s)
+	}
+	return out, nil
+}
+
+// ListSpaceWorkspaces returns workspaces associated with a space.
+func (m *Manager) ListSpaceWorkspaces(ctx context.Context, spaceID string) ([]Workspace, error) {
+	workspaces, err := m.backend.ListSpaceWorkspaces(ctx, spaceID)
+	if err != nil {
+		return nil, backendError("list space workspaces", err)
+	}
+	out := make([]Workspace, len(workspaces))
+	for i, ws := range workspaces {
+		out[i] = Workspace(ws)
+	}
+	return out, nil
+}
+
+// RemoveSpace dissociates a space from a workspace and deletes it if no other workspaces reference it.
+func (m *Manager) RemoveSpace(ctx context.Context, workspaceRef string, spaceID string, force bool) error {
+	ws, err := m.ResolveWorkspaceRef(ctx, workspaceRef)
+	if err != nil {
+		return err
+	}
+
+	s, err := m.backend.GetSpace(ctx, spaceID)
+	if err != nil {
+		return backendError("get space", err)
+	}
+	if s == nil {
+		return notFoundError(fmt.Sprintf("space %q not found", spaceID))
+	}
+
+	if err := m.backend.DissociateSpace(ctx, ws.ID, spaceID); err != nil {
+		return mapBackendErr("dissociate space", err)
+	}
+
+	remaining, err := m.backend.ListSpaceWorkspaces(ctx, spaceID)
+	if err != nil {
+		return backendError("check space workspaces", err)
+	}
+	if len(remaining) == 0 {
+		if err := m.backend.DeleteSpace(ctx, spaceID, force); err != nil {
+			return mapBackendErr("delete space", err)
+		}
+	}
+
+	_, _ = m.RecordEvent(ctx, ws.ID, EventTopologySpaceDestroy, map[string]any{
+		"space_id": s.ID, "boundary": s.Boundary,
+	})
+
+	return nil
+}
+
 type AmbiguousDeviceError struct {
 	Ref     string
 	Matches []device.Device

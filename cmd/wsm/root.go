@@ -166,6 +166,7 @@ func newRootCmd() *cobra.Command {
 
 	root.AddCommand(
 		newWorkspaceGroupCmd(&opts),
+		newSpaceGroupCmd(&opts),
 		newEventGroupCmd(&opts),
 		newDeviceGroupCmd(&opts),
 		newSnapshotGroupCmd(&opts),
@@ -383,6 +384,199 @@ func newWorkspaceShowCmd(opts *globalOptions) *cobra.Command {
 	cmd.Flags().BoolVar(&showEvents, "events", false, "Show recent events (last 20)")
 	cmd.Flags().BoolVar(&showEventsAll, "events-all", false, "Show all events")
 	cmd.Flags().BoolVar(&showDevices, "devices", false, "Show attached devices")
+	return cmd
+}
+
+func newSpaceGroupCmd(opts *globalOptions) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:     "space",
+		Aliases: []string{"sp"},
+		Short:   "Space operations",
+	}
+	cmd.AddCommand(
+		newSpaceAddCmd(opts),
+		newSpaceListCmd(opts),
+		newSpaceShowCmd(opts),
+		newSpaceRemoveCmd(opts),
+	)
+	return cmd
+}
+
+func newSpaceAddCmd(opts *globalOptions) *cobra.Command {
+	var spaceID, spaceType, trustLevel, parent string
+	var capabilities []string
+	cmd := &cobra.Command{
+		Use:     "add <workspace> <boundary>",
+		Aliases: []string{"create", "new", "a", "+"},
+		Short:   "Add a space to a workspace",
+		Args:    cobra.ExactArgs(2),
+		RunE: func(_ *cobra.Command, args []string) error {
+			return withApp(opts, func(ctx context.Context, app *appContext) error {
+				typ := workspace.SpaceType(spaceType)
+				if typ == "" {
+					typ = workspace.SpaceFilesystem
+				}
+				trust := workspace.TrustLevel(trustLevel)
+				if trust == "" {
+					trust = workspace.TrustLocal
+				}
+				caps := capabilities
+				if caps == nil {
+					caps = []string{}
+				}
+				sp := workspace.Space{
+					ID:           spaceID,
+					Type:         typ,
+					Boundary:     args[1],
+					TrustLevel:   trust,
+					Parent:       parent,
+					Capabilities: caps,
+				}
+				s, err := app.manager.AddSpaceToWorkspace(ctx, args[0], sp)
+				if err != nil {
+					return err
+				}
+				if opts.Quiet {
+					fmt.Fprintln(os.Stdout, s.ID)
+					return nil
+				}
+				if shouldJSON(*opts) || !stdoutIsTTY() {
+					return writeJSON(os.Stdout, s)
+				}
+				fmt.Fprintf(os.Stdout, "Added space %s (%s) to workspace\n", shortID(s.ID), s.Boundary)
+				return nil
+			})
+		},
+	}
+	cmd.Flags().StringVar(&spaceID, "id", "", "Space ID (default: auto-generated ULID)")
+	cmd.Flags().StringVar(&spaceType, "type", "", "Space type: filesystem|container|vm|api|database|machine|remote")
+	cmd.Flags().StringVar(&trustLevel, "trust-level", "", "Trust level: local|verified|external|untrusted")
+	cmd.Flags().StringVar(&parent, "parent", "", "Parent space ID")
+	cmd.Flags().StringArrayVar(&capabilities, "capability", nil, "Capabilities (repeatable)")
+	_ = cmd.RegisterFlagCompletionFunc("type", func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
+		return []string{"filesystem", "container", "vm", "api", "database", "machine", "remote"}, cobra.ShellCompDirectiveNoFileComp
+	})
+	_ = cmd.RegisterFlagCompletionFunc("trust-level", func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
+		return []string{"local", "verified", "external", "untrusted"}, cobra.ShellCompDirectiveNoFileComp
+	})
+	return cmd
+}
+
+func newSpaceListCmd(opts *globalOptions) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:     "list <workspace>",
+		Aliases: []string{"ls", "all"},
+		Short:   "List spaces in a workspace",
+		Args:    cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			return withApp(opts, func(ctx context.Context, app *appContext) error {
+				spaces, err := app.manager.ListWorkspaceSpaces(ctx, args[0])
+				if err != nil {
+					return err
+				}
+				if len(spaces) == 0 {
+					fmt.Fprintln(os.Stdout, "No spaces in this workspace.")
+					return nil
+				}
+				if opts.Quiet {
+					for _, s := range spaces {
+						fmt.Fprintln(os.Stdout, s.ID)
+					}
+					return nil
+				}
+				if shouldJSON(*opts) {
+					return writeJSON(os.Stdout, spaces)
+				}
+				tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+				fmt.Fprintln(tw, "ID\tTYPE\tBOUNDARY\tTRUST\tCREATED")
+				for _, s := range spaces {
+					fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n",
+						shortID(s.ID), s.Type, s.Boundary, s.TrustLevel, humanAgo(s.CreatedAt))
+				}
+				return tw.Flush()
+			})
+		},
+	}
+	return cmd
+}
+
+func newSpaceShowCmd(opts *globalOptions) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:     "show <workspace> <space>",
+		Aliases: []string{"inspect", "info", "get", "s"},
+		Short:   "Show space details",
+		Args:    cobra.ExactArgs(2),
+		RunE: func(_ *cobra.Command, args []string) error {
+			return withApp(opts, func(ctx context.Context, app *appContext) error {
+				// Resolve workspace to validate access.
+				if _, err := app.manager.ResolveWorkspaceRef(ctx, args[0]); err != nil {
+					return err
+				}
+				s, err := app.manager.GetSpace(ctx, args[1])
+				if err != nil {
+					return err
+				}
+				if shouldJSON(*opts) {
+					return writeJSON(os.Stdout, s)
+				}
+
+				tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+				fmt.Fprintf(tw, "ID:\t%s\n", s.ID)
+				fmt.Fprintf(tw, "Type:\t%s\n", s.Type)
+				fmt.Fprintf(tw, "Boundary:\t%s\n", s.Boundary)
+				fmt.Fprintf(tw, "Trust:\t%s\n", s.TrustLevel)
+				if s.Parent != "" {
+					fmt.Fprintf(tw, "Parent:\t%s\n", s.Parent)
+				}
+				if len(s.Capabilities) > 0 {
+					fmt.Fprintf(tw, "Capabilities:\t%s\n", strings.Join(s.Capabilities, ", "))
+				}
+				if s.WriterID != "" {
+					fmt.Fprintf(tw, "Writer ID:\t%s\n", s.WriterID)
+				}
+				fmt.Fprintf(tw, "Created:\t%s\n", s.CreatedAt.Format(time.RFC3339))
+
+				// Show associated workspaces.
+				workspaces, err := app.manager.ListSpaceWorkspaces(ctx, s.ID)
+				if err == nil && len(workspaces) > 0 {
+					fmt.Fprintln(tw)
+					fmt.Fprintf(tw, "Workspaces:\t%d\n", len(workspaces))
+					for _, ws := range workspaces {
+						fmt.Fprintf(tw, "  %s\t%s\n", ws.Name, shortID(ws.ID))
+					}
+				}
+
+				return tw.Flush()
+			})
+		},
+	}
+	return cmd
+}
+
+func newSpaceRemoveCmd(opts *globalOptions) *cobra.Command {
+	var force bool
+	cmd := &cobra.Command{
+		Use:     "remove <workspace> <space>",
+		Aliases: []string{"delete", "rm", "del"},
+		Short:   "Remove a space from a workspace",
+		Args:    cobra.ExactArgs(2),
+		RunE: func(_ *cobra.Command, args []string) error {
+			return withApp(opts, func(ctx context.Context, app *appContext) error {
+				if err := app.manager.RemoveSpace(ctx, args[0], args[1], force); err != nil {
+					return err
+				}
+				if opts.Quiet {
+					return nil
+				}
+				if shouldJSON(*opts) || !stdoutIsTTY() {
+					return writeJSON(os.Stdout, map[string]any{"space_id": args[1], "removed": true})
+				}
+				fmt.Fprintf(os.Stdout, "Removed space %s\n", args[1])
+				return nil
+			})
+		},
+	}
+	cmd.Flags().BoolVarP(&force, "force", "f", false, "Force removal (cascade child spaces)")
 	return cmd
 }
 
