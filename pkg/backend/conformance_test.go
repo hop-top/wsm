@@ -144,4 +144,136 @@ func TestBackend_SpaceCRUD(t *testing.T) {
 	if missing != nil {
 		t.Fatal("expected nil for missing space")
 	}
+
+	// Delete without force fails when children exist
+	if err := b.DeleteSpace(ctx, "sp-1", false); err == nil {
+		t.Fatal("expected error deleting space with children without force")
+	}
+
+	// Delete with force cascades children
+	if err := b.DeleteSpace(ctx, "sp-1", true); err != nil {
+		t.Fatalf("force delete: %v", err)
+	}
+	if got, _ := b.GetSpace(ctx, "sp-1"); got != nil {
+		t.Fatal("expected parent deleted")
+	}
+	if got, _ := b.GetSpace(ctx, "sp-2"); got != nil {
+		t.Fatal("expected child cascaded")
+	}
+
+	// Delete not found
+	if err := b.DeleteSpace(ctx, "nonexistent", false); err == nil {
+		t.Fatal("expected not_found error")
+	}
+}
+
+func TestBackend_WorkspaceSpaceAssociation(t *testing.T) {
+	ctx := context.Background()
+	b := newBackendForConformance(t)
+
+	now := time.Now().UTC()
+	ws1 := model.Workspace{ID: "w1", Name: "proj-a", Status: model.StatusActive, CreatedAt: now, UpdatedAt: now}
+	ws2 := model.Workspace{ID: "w2", Name: "proj-b", Status: model.StatusActive, CreatedAt: now, UpdatedAt: now}
+	if err := b.CreateWorkspace(ctx, ws1); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.CreateWorkspace(ctx, ws2); err != nil {
+		t.Fatal(err)
+	}
+
+	sp := model.Space{
+		ID: "sp-1", Type: model.SpaceFilesystem,
+		Boundary: "/shared", Capabilities: []string{"read"},
+		TrustLevel: model.TrustLocal, CreatedAt: now,
+	}
+	if err := b.SaveSpace(ctx, sp); err != nil {
+		t.Fatal(err)
+	}
+
+	// Associate with both workspaces
+	if err := b.AssociateSpace(ctx, "w1", "sp-1"); err != nil {
+		t.Fatalf("associate w1: %v", err)
+	}
+	if err := b.AssociateSpace(ctx, "w2", "sp-1"); err != nil {
+		t.Fatalf("associate w2: %v", err)
+	}
+
+	// Idempotent association
+	if err := b.AssociateSpace(ctx, "w1", "sp-1"); err != nil {
+		t.Fatalf("idempotent associate: %v", err)
+	}
+
+	// List spaces for workspace
+	spaces, err := b.ListWorkspaceSpaces(ctx, "w1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(spaces) != 1 || spaces[0].ID != "sp-1" {
+		t.Fatalf("expected 1 space sp-1, got %d", len(spaces))
+	}
+
+	// List workspaces for space
+	workspaces, err := b.ListSpaceWorkspaces(ctx, "sp-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(workspaces) != 2 {
+		t.Fatalf("expected 2 workspaces, got %d", len(workspaces))
+	}
+
+	// Dissociate
+	if err := b.DissociateSpace(ctx, "w1", "sp-1"); err != nil {
+		t.Fatalf("dissociate: %v", err)
+	}
+	spaces, err = b.ListWorkspaceSpaces(ctx, "w1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(spaces) != 0 {
+		t.Fatalf("expected 0 spaces after dissociate, got %d", len(spaces))
+	}
+
+	// Dissociate not found
+	if err := b.DissociateSpace(ctx, "w1", "sp-1"); err == nil {
+		t.Fatal("expected error for missing association")
+	}
+
+	// Workspace delete cascades associations
+	if err := b.DeleteWorkspace(ctx, "w2"); err != nil {
+		t.Fatal(err)
+	}
+	workspaces, err = b.ListSpaceWorkspaces(ctx, "sp-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(workspaces) != 0 {
+		t.Fatalf("expected 0 workspaces after cascade, got %d", len(workspaces))
+	}
+
+	// Space delete cascades associations
+	sp2 := model.Space{
+		ID: "sp-2", Type: model.SpaceAPI,
+		Boundary: "https://api.example.com", Capabilities: []string{"read"},
+		TrustLevel: model.TrustExternal, CreatedAt: now,
+	}
+	if err := b.SaveSpace(ctx, sp2); err != nil {
+		t.Fatal(err)
+	}
+	ws3 := model.Workspace{ID: "w3", Name: "proj-c", Status: model.StatusActive, CreatedAt: now, UpdatedAt: now}
+	if err := b.CreateWorkspace(ctx, ws3); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.AssociateSpace(ctx, "w3", "sp-2"); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.DeleteSpace(ctx, "sp-2", false); err != nil {
+		t.Fatal(err)
+	}
+	spaces, err = b.ListWorkspaceSpaces(ctx, "w3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(spaces) != 0 {
+		t.Fatalf("expected 0 spaces after space delete cascade, got %d", len(spaces))
+	}
 }

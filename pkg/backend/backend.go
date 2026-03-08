@@ -39,6 +39,12 @@ type Backend interface {
 	SaveSpace(ctx context.Context, s model.Space) error
 	GetSpace(ctx context.Context, id string) (*model.Space, error)
 	ListSpaces(ctx context.Context, parentID string) ([]model.Space, error)
+	DeleteSpace(ctx context.Context, id string, force bool) error
+
+	AssociateSpace(ctx context.Context, workspaceID, spaceID string) error
+	DissociateSpace(ctx context.Context, workspaceID, spaceID string) error
+	ListWorkspaceSpaces(ctx context.Context, workspaceID string) ([]model.Space, error)
+	ListSpaceWorkspaces(ctx context.Context, spaceID string) ([]model.Workspace, error)
 
 	Migrate(ctx context.Context) error
 	Close() error

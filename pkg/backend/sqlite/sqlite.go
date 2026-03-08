@@ -116,6 +116,14 @@ func (b *Backend) Migrate(ctx context.Context) error {
 			FOREIGN KEY(parent) REFERENCES spaces(id)
 		);`,
 		`CREATE INDEX IF NOT EXISTS idx_spaces_parent ON spaces(parent);`,
+		`CREATE TABLE IF NOT EXISTS workspace_spaces (
+			workspace_id TEXT NOT NULL,
+			space_id TEXT NOT NULL,
+			PRIMARY KEY(workspace_id, space_id),
+			FOREIGN KEY(workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
+			FOREIGN KEY(space_id) REFERENCES spaces(id) ON DELETE CASCADE
+		);`,
+		`CREATE INDEX IF NOT EXISTS idx_workspace_spaces_space ON workspace_spaces(space_id);`,
 	}
 
 	tx, err := b.db.BeginTx(ctx, nil)
@@ -890,6 +898,102 @@ func (b *Backend) ListSpaces(ctx context.Context, parentID string) ([]model.Spac
 		return nil, err
 	}
 	defer rows.Close()
+	return scanSpaces(rows)
+}
+
+func (b *Backend) DeleteSpace(ctx context.Context, id string, force bool) error {
+	// Check for children.
+	var childCount int
+	if err := b.db.QueryRowContext(ctx, `SELECT COUNT(1) FROM spaces WHERE parent = ?`, id).Scan(&childCount); err != nil {
+		return err
+	}
+	if childCount > 0 && !force {
+		return fmt.Errorf("conflict: space %s has %d children; use --force to cascade", id, childCount)
+	}
+	if childCount > 0 {
+		// Recursively delete children first (FK has no ON DELETE CASCADE).
+		if _, err := b.db.ExecContext(ctx, `DELETE FROM spaces WHERE parent = ?`, id); err != nil {
+			return err
+		}
+	}
+	result, err := b.db.ExecContext(ctx, `DELETE FROM spaces WHERE id = ?`, id)
+	if err != nil {
+		return err
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return fmt.Errorf("not_found: space %s", id)
+	}
+	return nil
+}
+
+func (b *Backend) AssociateSpace(ctx context.Context, workspaceID, spaceID string) error {
+	_, err := b.db.ExecContext(ctx, `
+		INSERT INTO workspace_spaces(workspace_id, space_id) VALUES(?, ?)
+		ON CONFLICT(workspace_id, space_id) DO NOTHING
+	`, workspaceID, spaceID)
+	return err
+}
+
+func (b *Backend) DissociateSpace(ctx context.Context, workspaceID, spaceID string) error {
+	result, err := b.db.ExecContext(ctx, `
+		DELETE FROM workspace_spaces WHERE workspace_id = ? AND space_id = ?
+	`, workspaceID, spaceID)
+	if err != nil {
+		return err
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return fmt.Errorf("not_found: association workspace=%s space=%s", workspaceID, spaceID)
+	}
+	return nil
+}
+
+func (b *Backend) ListWorkspaceSpaces(ctx context.Context, workspaceID string) ([]model.Space, error) {
+	rows, err := b.db.QueryContext(ctx, `
+		SELECT s.id, s.writer_id, s.type, s.parent, s.boundary, s.observables, s.capabilities, s.trust_level, s.created_at
+		FROM spaces s
+		JOIN workspace_spaces ws ON ws.space_id = s.id
+		WHERE ws.workspace_id = ?
+		ORDER BY s.id
+	`, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanSpaces(rows)
+}
+
+func (b *Backend) ListSpaceWorkspaces(ctx context.Context, spaceID string) ([]model.Workspace, error) {
+	rows, err := b.db.QueryContext(ctx, `
+		SELECT w.id, w.name, w.status, w.description, w.tags, w.metadata, w.created_at, w.updated_at, w.archived_at
+		FROM workspaces w
+		JOIN workspace_spaces ws ON ws.workspace_id = w.id
+		WHERE ws.space_id = ?
+		ORDER BY w.name
+	`, spaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]model.Workspace, 0)
+	for rows.Next() {
+		ws, err := scanWorkspace(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *ws)
+	}
+	return out, rows.Err()
+}
+
+func scanSpaces(rows *sql.Rows) ([]model.Space, error) {
 	out := make([]model.Space, 0)
 	for rows.Next() {
 		var s model.Space
