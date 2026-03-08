@@ -3,52 +3,113 @@
 [![Go Module](https://img.shields.io/badge/module-hop.top%2Fwsm-blue)](https://hop.top/wsm)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-> IDE-agnostic workspace history for developers and AI coding agents.
+> Your coding history doesn't belong to your IDE.
 
-`wsm` tracks workspaces, sessions, and events across any editor or
-AI coding environment. Event-sourced by design — every message,
-tool call, and file change is a replayable record.
+Switch editors — lose your session history. Run multiple agents —
+no shared timeline. Hand off to a teammate — start from scratch.
 
-## Why wsm
+wsm is a portable, event-sourced workspace log. Every message,
+tool call, and file change is a replayable record that follows
+you across editors, machines, and agents.
 
-- **Event-sourced history** — replay, query, and snapshot any workspace
-- **IDE-agnostic** — works with Cursor, Windsurf, VS Code, terminals, etc.
-- **Dual interface** — CLI for scripts, TUI for humans
-- **Automation-safe** — stable JSON, predictable exit codes, `NO_COLOR`
-- **Embeddable** — vendorable Go module with zero UI dependencies
+## What It Does
+
+- **Event-sourced** — every message, tool call, and file change is
+  an immutable, replayable record
+- **IDE-agnostic** — works with Claude Code, Cursor, Gemini,
+  OpenCode, Codex, VS Code, and more
+- **Multi-device** — hand off between machines without losing context
+- **Pluggable detection** — auto-detect build tools, dependencies,
+  secrets, and runtime environments per workspace
+- **Access & scope** — declare who can do what, enforce prerequisites,
+  scope sessions to workspaces or spaces
+- **Export/import** — portable YAML workspace definitions with
+  conflict resolution
+- **Automation-safe** — stable JSON output, predictable exit codes,
+  `NO_COLOR` support
+- **Embeddable** — vendorable Go module (`hop.top/wsm`) with zero
+  UI dependencies
 
 ## Quick Start
 
 ```bash
 # Create a workspace
-wsm create my-project
+wsm workspace add my-project
 
 # Record events
-wsm event add my-project message.added --content "Fixing CI"
+wsm event add my-project interaction.message \
+  --role user --content "Fixing CI pipeline"
 
-# Query events
-wsm events my-project --type=message.added
+# List events
+wsm event list my-project
 
 # Take a snapshot
-wsm snapshot my-project
+wsm snapshot generate my-project
 
-# Inspect workspace + recent events
-wsm inspect my-project --events
+# Inspect snapshot context
+wsm snapshot context my-project
 
-# Launch the TUI
-wsm tui
+# Show resolved config
+wsm config show
 ```
+
+## Install
+
+```bash
+# From source
+go install hop.top/wsm/cmd/wsm@latest
+
+# Or build locally
+git clone https://github.com/hop-top/wsm.git
+cd wsm
+make build        # → bin/wsm
+```
+
+Optional Charm TUI build:
+
+```bash
+make build-charm  # → bin/wsm-charm
+```
+
+## Integration
+
+### Go Module
+
+```go
+import "hop.top/wsm/pkg/workspace"
+
+manager, _ := workspace.NewManager(backend)
+ws, _ := manager.Create(ctx, "my-project", workspace.CreateOptions{})
+```
+
+Import `pkg/` for a UI-free integration surface. Charmbracelet TUI
+is optional and isolated behind a build tag.
+
+### CLI
+
+```bash
+wsm workspace add my-project --description "My coding workspace"
+wsm event add my-project interaction.message --role user --content "Starting"
+wsm snapshot generate my-project
+```
+
+### With APS or Hop
+
+WSM integrates with [APS](docs/integration/aps-wsm-integration.md)
+as a vendored Go dependency or with
+[Hop](docs/integration/hop-clis-comparison.md) as an orchestrated CLI.
+Both approaches can coexist.
 
 ## Who It's For
 
 | Persona | What they care about |
 |---------|----------------------|
-| **User** | Fast CLI/TUI workflows, visual feedback, shell completion |
+| **User** | Fast CLI/TUI workflows, shell completion |
 | **Maintainer** | Tests, conformance gates, backend integrity |
 | **External Client** | JSON contracts, exit codes, CI integration |
 | **Integrator** | `pkg/` API surface, optional UI deps, semver stability |
 
-→ Full persona docs: [`docs/personas/`](docs/personas/)
+> Full persona docs: [`docs/personas/`](docs/personas/)
 
 ## Output Modes
 
@@ -60,112 +121,44 @@ wsm tui
 | Pipe | Non-TTY detected | Plain text, no color |
 | No color | `NO_COLOR=1` | TTY output without ANSI |
 
-## Module
-
-```txt
-module hop.top/wsm
-```
-
-Import `pkg/` for a UI-free integration surface. Charmbracelet TUI
-is optional and isolated behind a separate build tag.
-
-## Integration
-
-WSM can be used in multiple ways:
-
-### As a Go Module
-
-```go
-import "hop.top/wsm/pkg/workspace"
-
-manager, _ := workspace.NewManager(backend)
-ws, _ := manager.Create(ctx, "my-project")
-```
-
-### As a Standalone CLI
+## Build & Test
 
 ```bash
-./wsm workspace create my-project --description "My coding workspace"
-./wsm session create my-project --name "Initial Session"
+make build              # CLI binary → bin/wsm
+make build-charm        # Charm TUI binary → bin/wsm-charm
+make test               # Unit + integration
+make test-e2e           # End-to-end (CLI)
+make test-ubuntu-docker # Full suite in clean Ubuntu container
 ```
-
-### With APS (Agent Profile System)
-
-WSM can be vendored into APS for tight integration. See [integration guide](docs/integration/aps-wsm-integration.md) for details.
-
-### With Hop (Agentic Toolkit)
-
-WSM can be orchestrated by Hop as an external CLI along with APS and other tools. See [comparison guide](docs/integration/hop-clis-comparison.md) for details.
-
-## Integration Approaches
-
-There are two main ways to integrate WSM:
-
-1. **Vendored/Moduled**: APS (or other tools) use WSM as Go library dependency
-   - Tight coupling, direct API calls
-   - Fast, type-safe, simple maintenance
-   - See: [APS + WSM Integration](docs/integration/aps-wsm-integration.md)
-
-2. **Hop Orchestration**: Hop toolkit invokes WSM and other CLIs via configuration/piping
-   - Loose coupling, CLI orchestration
-   - Flexible, multi-tool, role-based workflows
-   - See: [Hop + Third CLIs Comparison](docs/integration/hop-clis-comparison.md)
-
-3. **Hybrid**: Both approaches coexist
-   - Internal for performance, external for flexibility
-   - Best of both, higher complexity
-
-## Choosing an Approach
-
-- **Vendored**: Choose if APS is primary platform, want tight coupling
-- **Hop**: Choose if building automation toolkit, need multi-tool orchestration
-- **Hybrid**: Choose if you need both tight integration AND orchestration
-
-## Build
-
-```bash
-make build         # CLI binary → bin/wsm
-make build-charm   # Charm TUI binary → bin/wsm-charm
-```
-
-## Test
-
-```bash
-make test          # Unit + integration
-make test-e2e      # End-to-end (CLI)
-make test-ubuntu-docker  # Full suite in clean Ubuntu container
-```
-
-> **macOS note**: Bash completion E2E tests require
-> `bash-completion` via Homebrew. Skipped if missing.
 
 ## Project Layout
 
 ```txt
 cmd/wsm/             CLI entrypoint
 pkg/                 Core library surface (UI-free)
-  access/            Access grants, enforcement levels, verification
+  access/            Access grants, enforcement, verification
   backend/           Storage contract + SQLite implementation
   cli/               Shell completion helpers
   config/            Config loading (XDG, env, flags, local dirs)
   detector/          Pluggable space detection framework
   device/            Device identity and registry
-  model/             Core domain types (Workspace, Event, Space, etc.)
+  model/             Core domain types (Workspace, Event, Space)
   owsf/              OWSF/OCSF interop and compliance
-  scope/             Scope types, assignment, and session distinction
+  scope/             Scope types, assignment, session distinction
   tui/               TUI model and actions
   workspace/         Manager, export/import, context formatting
 internal/ui/charm/   Optional Charmbracelet TUI
 docs/stories/        Story catalog and acceptance criteria
-docs/personas/       Audience personas w/ discovery + delivery prefs
-docs/plans/          Decomposed implementation plans
+docs/personas/       Audience personas
+docs/plans/          Implementation plans
 ```
 
 ## Docs
 
-- [Stories](docs/stories/README.md) — 26 stories across 4 personas
-- [Personas](docs/personas/README.md) — User, Maintainer, Client, Integrator
-- [Summary](docs/summary.md) — full command and API reference
+- [Stories](docs/stories/README.md) — 47 stories across 4 personas
+- [Personas](docs/personas/README.md) — User, Maintainer, Client,
+  Integrator
+- [Summary](docs/summary.md) — command and API reference
 - [Changelog](CHANGELOG.md) — version history
 - [Contributing](CONTRIBUTING.md) — how to contribute
 - [Security](SECURITY.md) — vulnerability reporting
