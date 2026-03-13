@@ -1700,13 +1700,17 @@ func isKnownEventType(t workspace.EventType) bool {
 		workspace.EventWorkspaceUpdated,
 		workspace.EventWorkspaceArchived,
 		workspace.EventWorkspaceUnarchived,
+		workspace.EventWorkspaceDeleted,
 		workspace.EventInteractionMessage,
 		workspace.EventInteractionToolCall,
 		workspace.EventInteractionToolDone,
 		workspace.EventMutationFilePatch,
 		workspace.EventDeviceAttached,
 		workspace.EventDeviceDetached,
-		workspace.EventCheckpointSnapshot:
+		workspace.EventCheckpointSnapshot,
+		workspace.EventSnapshotCreated,
+		workspace.EventSnapshotUpdated,
+		workspace.EventSnapshotDeleted:
 		return true
 	default:
 		return false

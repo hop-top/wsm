@@ -12,8 +12,9 @@ type (
 	ToolCallData   = model.ToolCallData
 	FileChangeData = model.FileChangeData
 	DeviceData     = model.DeviceData
-	Snapshot       = model.Snapshot
-	Space          = model.Space
+	Snapshot            = model.Snapshot
+	SnapshotEventData   = model.SnapshotEventData
+	Space               = model.Space
 	SpaceType      = model.SpaceType
 	TrustLevel     = model.TrustLevel
 )
@@ -36,6 +37,10 @@ const (
 	EventCheckpointSnapshot    = model.EventCheckpointSnapshot
 	EventDeviceAttached        = model.EventDeviceAttached
 	EventDeviceDetached        = model.EventDeviceDetached
+	EventWorkspaceDeleted      = model.EventWorkspaceDeleted
+	EventSnapshotCreated       = model.EventSnapshotCreated
+	EventSnapshotUpdated       = model.EventSnapshotUpdated
+	EventSnapshotDeleted       = model.EventSnapshotDeleted
 
 	SpaceFilesystem = model.SpaceFilesystem
 	SpaceContainer  = model.SpaceContainer

@@ -46,6 +46,11 @@ const (
 
 	EventDeviceAttached EventType = "device.attached"
 	EventDeviceDetached EventType = "device.detached"
+
+	EventWorkspaceDeleted  EventType = "workspace.deleted"
+	EventSnapshotCreated   EventType = "checkpoint.snapshot_created"
+	EventSnapshotUpdated   EventType = "checkpoint.snapshot_updated"
+	EventSnapshotDeleted   EventType = "checkpoint.snapshot_deleted"
 )
 
 // Event is an immutable event-log record.
@@ -102,6 +107,13 @@ type ArtifactData struct {
 type DeviceData struct {
 	DeviceID   string `json:"device_id"`
 	DeviceName string `json:"device_name"`
+}
+
+// SnapshotEventData payload for snapshot lifecycle events.
+type SnapshotEventData struct {
+	SnapshotID  string `json:"snapshot_id"`
+	WorkspaceID string `json:"workspace_id"`
+	Name        string `json:"name,omitempty"`
 }
 
 // Snapshot is a point-in-time materialized workspace view.

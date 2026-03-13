@@ -17,6 +17,7 @@ import (
 )
 
 // Manager provides workspace lifecycle operations.
+// Law 1 invariant: every write operation reads the current state first.
 type Manager struct {
 	backend      backend.Backend
 	device       device.Device
@@ -25,6 +26,7 @@ type Manager struct {
 	writerID     string
 	spaceID      string
 	lamportClock uint64
+	caps         *Capabilities
 }
 
 // CreateOptions configures workspace creation.
@@ -80,9 +82,16 @@ func WithLamportClock(c uint64) ManagerOption {
 	}
 }
 
+// WithCapabilities sets the capability policy for this manager instance.
+func WithCapabilities(caps *Capabilities) ManagerOption {
+	return func(m *Manager) {
+		m.caps = caps
+	}
+}
+
 // NewManager constructs a manager with current device identity.
 func NewManager(b backend.Backend, opts ...ManagerOption) (*Manager, error) {
-	m := &Manager{backend: b, device: device.Current()}
+	m := &Manager{backend: b, device: device.Current(), caps: AllCapabilities()}
 	for _, opt := range opts {
 		opt(m)
 	}
@@ -92,6 +101,9 @@ func NewManager(b backend.Backend, opts ...ManagerOption) (*Manager, error) {
 
 // Create creates a new workspace and records workspace.created.
 func (m *Manager) Create(ctx context.Context, name string, opts CreateOptions) (*Workspace, error) {
+	if !m.caps.Can(CapWorkspaceCreate) {
+		return nil, aopRejection(ErrorKindForbidden, "workspace create not permitted", "capability", "law5.capability_check", CapWorkspaceCreate, nil)
+	}
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return nil, usageError("workspace name is required")
@@ -315,6 +327,9 @@ func (m *Manager) Snapshot(ctx context.Context, workspaceRef string, opts Snapsh
 	if err := m.backend.SaveSnapshot(ctx, snap); err != nil {
 		return nil, backendError("save snapshot", err)
 	}
+	_, _ = m.appendLifecycleEvent(ctx, ws.ID, EventSnapshotCreated, model.SnapshotEventData{
+		SnapshotID: snap.ID, WorkspaceID: ws.ID, Name: snap.Name,
+	})
 	out := Snapshot(snap)
 	return &out, nil
 }
@@ -348,6 +363,9 @@ func (m *Manager) UpdateSnapshot(ctx context.Context, idOrName string, opts Upda
 		return nil, notFoundError(fmt.Sprintf("snapshot %q not found", idOrName))
 	}
 	if opts.Name != nil {
+		if strings.TrimSpace(*opts.Name) == "" {
+			return nil, aopRejection(ErrorKindUsage, "snapshot name must not be blank", "schema", "law2.validate_schema", "name:non-empty", nil)
+		}
 		snap.Name = *opts.Name
 	}
 	if opts.IsSeed != nil {
@@ -356,16 +374,27 @@ func (m *Manager) UpdateSnapshot(ctx context.Context, idOrName string, opts Upda
 	if err := m.backend.UpdateSnapshot(ctx, *snap); err != nil {
 		return nil, backendError("update snapshot", err)
 	}
+	_, _ = m.appendLifecycleEvent(ctx, snap.WorkspaceID, EventSnapshotUpdated, model.SnapshotEventData{
+		SnapshotID: snap.ID, WorkspaceID: snap.WorkspaceID, Name: snap.Name,
+	})
 	out := Snapshot(*snap)
 	return &out, nil
 }
 
 // DeleteSnapshot removes a snapshot by ID or name.
 func (m *Manager) DeleteSnapshot(ctx context.Context, idOrName string) error {
-	if err := m.backend.DeleteSnapshot(ctx, idOrName); err != nil {
-		if strings.Contains(err.Error(), "not found") {
-			return notFoundError(fmt.Sprintf("snapshot %q not found", idOrName))
-		}
+	// Law 1: read before delete.
+	snap, err := m.backend.GetSnapshot(ctx, idOrName)
+	if err != nil {
+		return backendError("get snapshot for delete", err)
+	}
+	if snap == nil {
+		return notFoundError(fmt.Sprintf("snapshot %q not found", idOrName))
+	}
+	_, _ = m.appendLifecycleEvent(ctx, snap.WorkspaceID, EventSnapshotDeleted, model.SnapshotEventData{
+		SnapshotID: snap.ID, WorkspaceID: snap.WorkspaceID, Name: snap.Name,
+	})
+	if err := m.backend.DeleteSnapshot(ctx, snap.ID); err != nil {
 		return backendError("delete snapshot", err)
 	}
 	return nil
@@ -442,6 +471,9 @@ func (m *Manager) Archive(ctx context.Context, ref string) error {
 	if err != nil {
 		return err
 	}
+	if !m.caps.Can(CapWorkspaceArchive) {
+		return aopRejection(ErrorKindForbidden, "workspace archive not permitted", "capability", "law6.lifecycle_gate", CapWorkspaceArchive, nil)
+	}
 	if ws.Status == StatusArchived {
 		return conflictError("workspace already archived")
 	}
@@ -463,6 +495,9 @@ func (m *Manager) Unarchive(ctx context.Context, ref string) error {
 	ws, err := m.ResolveWorkspaceRef(ctx, ref)
 	if err != nil {
 		return err
+	}
+	if !m.caps.Can(CapWorkspaceUnarchive) {
+		return aopRejection(ErrorKindForbidden, "workspace unarchive not permitted", "capability", "law6.lifecycle_gate", CapWorkspaceUnarchive, nil)
 	}
 	if ws.Status != StatusArchived {
 		return conflictError("workspace is not archived")
@@ -503,6 +538,11 @@ func (m *Manager) Delete(ctx context.Context, ref string) error {
 	if err != nil {
 		return err
 	}
+	if !m.caps.Can(CapWorkspaceDelete) {
+		return aopRejection(ErrorKindForbidden, "workspace delete not permitted", "capability", "law5.capability_check", CapWorkspaceDelete, nil)
+	}
+	// Law 4: emit deleted event before cascade-delete (ephemeral but observable).
+	_, _ = m.appendLifecycleEvent(ctx, ws.ID, EventWorkspaceDeleted, map[string]any{"name": ws.Name})
 	if err := m.backend.DeleteWorkspace(ctx, ws.ID); err != nil {
 		return backendError("delete workspace", err)
 	}

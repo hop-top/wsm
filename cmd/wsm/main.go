@@ -34,6 +34,8 @@ func exitCodeForError(err error) int {
 		return 4
 	case workspace.IsKind(err, workspace.ErrorKindBackend):
 		return 5
+	case workspace.IsKind(err, workspace.ErrorKindForbidden):
+		return 6
 	case isCobraUsageError(err):
 		return 2
 	default:
