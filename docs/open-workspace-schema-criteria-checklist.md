@@ -141,7 +141,7 @@ Assessment scope (current repo):
 - [x] (Conditional: claiming Profile 0+) Provide manifest hash.
 
 ### Profile 1 - Signed Artifact
-- [ ] (Conditional: claiming Profile 1+) Sign manifest.
+- [x] (Conditional: claiming Profile 1+) Sign manifest.
 - [x] (Conditional: claiming Profile 1+) Include producer identity.
 
 ### Profile 2 - Provenance-Grade
