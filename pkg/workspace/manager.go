@@ -297,6 +297,15 @@ func (m *Manager) Snapshot(ctx context.Context, workspaceRef string, opts Snapsh
 		return nil, backendError("list snapshot events", err)
 	}
 
+	// Filter out events that don't affect snapshot state (lifecycle events)
+	var filtered []model.Event
+	for _, ev := range events {
+		if isStateChanging(ev.Type) {
+			filtered = append(filtered, ev)
+		}
+	}
+	events = filtered
+
 	if opts.SessionID != "" {
 		var filtered []model.Event
 		for _, ev := range events {
@@ -398,6 +407,27 @@ func (m *Manager) DeleteSnapshot(ctx context.Context, idOrName string) error {
 		return backendError("delete snapshot", err)
 	}
 	return nil
+}
+
+func isStateChanging(t model.EventType) bool {
+	switch t {
+	case model.EventWorkspaceCreated,
+		model.EventWorkspaceUpdated,
+		model.EventInteractionMessage,
+		model.EventInteractionToolCall,
+		model.EventInteractionToolDone,
+		model.EventMutationFilePatch,
+		model.EventMutationArtifact,
+		model.EventDeviceAttached,
+		model.EventDeviceDetached,
+		model.EventWorkspaceArchived,
+		model.EventWorkspaceUnarchived,
+		model.EventTopologySpaceCreate,
+		model.EventTopologySpaceDestroy:
+		return true
+	default:
+		return false
+	}
 }
 
 func applyEventsToSnapshot(base model.Snapshot, events []model.Event) model.Snapshot {
