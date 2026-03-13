@@ -1,6 +1,9 @@
 package owsf
 
-import "testing"
+import (
+	"crypto/ed25519"
+	"testing"
+)
 
 func TestAssurance_Profile0_ContentHash(t *testing.T) {
 	blob := []byte(`{"event":"data"}`)
@@ -25,17 +28,22 @@ func TestAssurance_Profile0_ManifestHash(t *testing.T) {
 }
 
 func TestAssurance_Profile1_SignedManifest(t *testing.T) {
+	dir := t.TempDir()
+	priv, err := LoadOrCreateSigningKey(dir)
+	if err != nil {
+		t.Fatalf("load key: %v", err)
+	}
 	manifest := ManifestHash([]string{"h1", "h2"})
-	sig := SignedManifest{
-		ManifestHash: manifest,
-		ProducerID:   "wsm/0.1.0",
-		Signature:    "placeholder",
+	sm, err := NewSignedManifest(priv, manifest, "wsm/0.1.0")
+	if err != nil {
+		t.Fatalf("new signed manifest: %v", err)
 	}
-	if sig.ProducerID == "" {
-		t.Fatal("producer identity required")
+	if sm.Signature == "" || sm.Signature == "placeholder" {
+		t.Fatal("expected real signature, got placeholder or empty")
 	}
-	if sig.ManifestHash == "" {
-		t.Fatal("manifest hash required")
+	pub := priv.Public().(ed25519.PublicKey)
+	if !VerifyManifest(pub, manifest, sm.Signature) {
+		t.Fatal("manifest signature did not verify")
 	}
 }
 

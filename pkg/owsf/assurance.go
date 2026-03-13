@@ -1,6 +1,7 @@
 package owsf
 
 import (
+	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/hex"
 	"strings"
@@ -30,6 +31,19 @@ type SignedManifest struct {
 	ManifestHash string `json:"manifest_hash"`
 	ProducerID   string `json:"producer_id"`
 	Signature    string `json:"signature"`
+}
+
+// NewSignedManifest constructs a SignedManifest with a real ed25519 signature.
+func NewSignedManifest(privKey ed25519.PrivateKey, manifestHash, producerID string) (SignedManifest, error) {
+	sig, err := SignManifest(privKey, manifestHash)
+	if err != nil {
+		return SignedManifest{}, err
+	}
+	return SignedManifest{
+		ManifestHash: manifestHash,
+		ProducerID:   producerID,
+		Signature:    sig,
+	}, nil
 }
 
 // Profile 2: provenance
