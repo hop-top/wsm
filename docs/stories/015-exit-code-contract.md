@@ -17,6 +17,7 @@ As an external client, I want predictable exit codes so that my scripts can hand
 4. **Given** `wsm create duplicate-name` when it already exists, **When** I check the exit code, **Then** it is 4 (conflict).
 5. **Given** a corrupted SQLite database, **When** I run any command, **Then** the exit code is 5 (backend error).
 6. **Given** `wsm archive already-archived`, **When** I check the exit code, **Then** it is 4 (conflict).
+7. **Given** an operation blocked by a capability gate, **When** I check the exit code, **Then** it is 6 (forbidden).
 
 ## Tests
 
