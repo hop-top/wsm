@@ -17,6 +17,7 @@ import (
 	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
 
+	"hop.top/upgrade"
 	"hop.top/wsm/pkg/backend"
 	backendsqlite "hop.top/wsm/pkg/backend/sqlite"
 	pkgcli "hop.top/wsm/pkg/cli"
@@ -175,7 +176,16 @@ func newRootCmd() *cobra.Command {
 		newConfigCmd(&opts),
 		newCompletionCmd(root, &opts),
 		newTUICmd(&opts),
+		newUpgradeCmd(),
+		newVersionCmd(),
 	)
+
+	root.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
+		if cmd.Name() != "upgrade" {
+			upgrade.NotifyIfAvailable(cmd.Context(), newChecker(), os.Stderr)
+		}
+		return nil
+	}
 
 	registerWorkspaceCompletion(root, &opts)
 	return root
