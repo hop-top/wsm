@@ -134,7 +134,67 @@ Using `references/framework-selector.md`, determine which layers to add:
 
 ---
 
-### Step 6: Route and Hand Off
+### Step 6: Identity Diagnostic (Q6–Q8)
+
+After tier classification, gather identity requirements. These determine
+how agent profiles, facets, and secrets are scaffolded.
+
+Ask these one at a time. Skip any already answered by prior context.
+
+**Q6 — Which platforms will these agents operate on?**
+
+Present as a checklist:
+- [ ] GitHub (code, issues, PRs)
+- [ ] X / Twitter (posts, DMs)
+- [ ] Slack (messages, channels)
+- [ ] Email (send, reply, monitor)
+- [ ] LinkedIn (outreach, posting)
+- [ ] Custom / internal systems
+- [ ] Other: ___
+
+(Each selected platform drives handle fields in the agent's facets.
+An agent on GitHub needs a username + signing key; an agent on email
+needs an address + SMTP credentials; etc.)
+
+**Q7 — Will any agent manage someone else's account?**
+
+Present as:
+- **No** — each agent acts as itself (→ principal capacity only)
+- **Yes** — one or more agents will post/act on behalf of another
+  person or entity (→ delegate capacity needed; audit trail required)
+
+(If yes, note which agents are delegates and for whom. This determines
+capacity bindings in the workspace config and triggers audit labeling.)
+
+**Q8 — How many distinct operational contexts will agents need?**
+
+Present as:
+- **1** — agents operate in a single context (→ single facet per profile)
+- **2–3** — agents switch between a few contexts, e.g., OSS vs. internal
+  vs. client-facing (→ multi-facet profiles; each facet gets its own
+  email, avatar, tone, signing keys)
+- **4+** — many contexts (→ multi-facet with governance rules per facet)
+
+(Operational context = a distinct environment where the agent presents
+differently. Same agent, different email/handle/tone/credentials.)
+
+**Recording identity answers:**
+
+Capture Q6–Q8 answers as structured data for the identity scaffold:
+```
+identity:
+  platforms: [github, email, slack]    # from Q6
+  delegation: false                     # from Q7
+  delegates: []                         # [{agent: X, for: Y}] if Q7=yes
+  contexts: 1                           # from Q8
+  context_names: [default]              # named contexts from Q8
+```
+
+This feeds Step 8 (Identity Scaffold) after routing.
+
+---
+
+### Step 7: Route and Hand Off
 
 **Tier 0 → Produce Agent Brief**
 
@@ -171,6 +231,7 @@ Use these to calibrate your routing:
 → Profile 0: Assistant
 → Tier 0: Agent Brief
 → Strategy: Event-Driven, In-Context, CoT, Solo
+→ Identity: platforms=[email], delegation=no, contexts=1
 → Output: Agent Brief with email drafting role, approval gate before send
 
 **"We want to automate our lead gen — find leads, enrich them, score them, and
@@ -178,6 +239,8 @@ push qualified ones to our CRM"**
 → Profiles: 1 (Researcher) + 2 (Executor) + 3 (Orchestrator)
 → Tier 1: Squad Topologies
 → Augmentation: DDD (lead data model shared across squads)
+→ Identity: platforms=[email, linkedin, custom], delegation=yes (posts as
+  company brand), contexts=2 (prospecting vs. nurturing)
 → Hand off to Squad Topologies Architect
 
 **"I need something to monitor our agent outputs for hallucinations and flag
@@ -204,6 +267,8 @@ outreach email, schedule follow-ups, handle replies, and flag hot leads to
 account managers — all coordinated"**
 → Profiles: 1 + 0 + 2 + 5 + 3
 → Tier 1: Squad Topologies + DDD
+→ Identity: platforms=[email, linkedin, slack, custom], delegation=yes
+  (outreach as sales reps), contexts=3 (research, outreach, internal)
 → This is the full sales development platform archetype
 → Hand off to Squad Topologies Architect
 
@@ -246,6 +311,9 @@ Before routing, confirm you can answer:
 - [ ] What tier: 0 or 1?
 - [ ] If Tier 1: which augmentation framework(s) apply?
 - [ ] Is there a compliance/safety requirement that changes the design?
+- [ ] Which platforms do agents operate on? (Q6)
+- [ ] Is delegate capacity needed? (Q7)
+- [ ] How many operational contexts / facets? (Q8)
 - [ ] Does the user understand what they're getting and why?
 
 Never route to a more complex solution than the problem requires.
