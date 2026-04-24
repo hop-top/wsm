@@ -13,7 +13,8 @@ import (
 // MemberConfig is the workspace-local member configuration file
 // stored at .wsm/members.yaml (or .hop/wsm/members.yaml).
 type MemberConfig struct {
-	Members []model.Member `json:"members" yaml:"members"`
+	Members  []model.Member               `json:"members" yaml:"members"`
+	Browsers map[string]*BrowserProfile    `json:"browsers,omitempty" yaml:"browsers,omitempty"`
 }
 
 // LoadMemberConfig reads members.yaml from the same directory as
@@ -88,4 +89,35 @@ func (mc *MemberConfig) ActiveCapacity(profileID string) model.Capacity {
 		return model.CapacityPrincipal
 	}
 	return m.Capacity
+}
+
+// BrowserProfileFor returns the browser config for a member, or nil.
+func (mc *MemberConfig) BrowserProfileFor(profileID string) *BrowserProfile {
+	if mc.Browsers == nil {
+		return nil
+	}
+	return mc.Browsers[profileID]
+}
+
+// ProvisionBrowser creates the browser profile directory for a member
+// and returns the env vars to inject. Returns nil env if no browser
+// config exists.
+func (mc *MemberConfig) ProvisionBrowser(profileID string) (map[string]string, error) {
+	bp := mc.BrowserProfileFor(profileID)
+	if bp == nil {
+		return nil, nil
+	}
+	if _, err := bp.Provision(); err != nil {
+		return nil, fmt.Errorf("provision browser for %q: %w", profileID, err)
+	}
+	return bp.EnvVars(), nil
+}
+
+// TeardownBrowser removes the browser profile directory for a member.
+func (mc *MemberConfig) TeardownBrowser(profileID string) error {
+	bp := mc.BrowserProfileFor(profileID)
+	if bp == nil {
+		return nil
+	}
+	return bp.Teardown()
 }
