@@ -27,6 +27,7 @@ Read these references before starting any session:
 → `references/agent-strategies.md` — the 4 strategy layers and 7 agent profiles
 → `references/framework-selector.md` — when to apply which framework layer
 → `references/agent-brief-format.md` — output format for Tier 0 cases
+→ `references/identity-scaffold-format.md` — identity scaffold output spec
 
 ---
 
@@ -220,6 +221,55 @@ process), informed by the profile and framework decisions already made.
 
 At the end of the Squad Topologies session, layer in any augmentation frameworks
 (DDD, SAFe, unFIX, Spotify) as additive passes.
+
+---
+
+### Step 8: Emit Identity Scaffold
+
+After routing (and after Squad Topologies design for Tier 1), generate
+the identity scaffold. This is the bridge between design and
+implementation — it produces the files agents need to exist.
+
+Use the identity answers from Step 6 (Q6–Q8) combined with the
+profile/tier/topology decisions to generate scaffold files.
+
+See `references/identity-scaffold-format.md` for the full output spec.
+
+**For each agent identified in the design:**
+
+1. **Profile file** — `profiles/<id>/profile.yaml`
+   Character traits, expertise areas, communication style, avatar stub.
+   One per agent, regardless of how many facets they have.
+
+2. **Facet files** — `profiles/<id>/facets/<context>.yaml`
+   One per operational context (from Q8). Contains: display name,
+   email, handles per platform (from Q6), signing keys, tone defaults,
+   governance rules.
+
+3. **Secrets config** — `profiles/<id>/secrets.yaml`
+   Adapter configuration (age/env/sops/1password) and scope stubs
+   for each facet. No actual secrets — just the schema.
+
+4. **Workspace config snippet** — wsm workspace member block
+   Facet binding, capacity (principal/delegate from Q7), audit label
+   if delegate, secrets scope reference.
+
+5. **README** — `profiles/<id>/README.md`
+   Three-tier documentation links:
+   - **Technical**: architecture diagrams, xray maps, data flows
+   - **Contrib/Dev**: adopted patterns, ADRs, future plans, stories
+   - **User Manual**: setup, quick wins, example usage, troubleshooting
+
+**Tier 0 (single agent):** scaffold produces one profile with one
+facet. Minimal but complete — the agent can be instantiated immediately.
+
+**Tier 1 (multi-squad):** scaffold produces one profile per squad
+member agent. Shared platform agents get broader facet coverage.
+Orchestrator profiles get delegate capacity if they act on behalf
+of other agents.
+
+Present the scaffold to the user as a file tree with key fields
+filled in. Ask for confirmation before finalizing.
 
 ---
 
