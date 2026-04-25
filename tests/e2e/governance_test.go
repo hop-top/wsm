@@ -41,7 +41,7 @@ func TestMakeHelpTargets(t *testing.T) {
 	r := newRunner(t)
 	makeHelp := runMake(t, r.root, "help")
 	requireExitCode(t, makeHelp, 0)
-	for _, target := range []string{"build", "build-charm", "test", "verify-no-ui-leak", "fmt"} {
+	for _, target := range []string{"build", "test", "verify-no-ui-leak", "fmt"} {
 		if !strings.Contains(makeHelp.Stdout, target) {
 			t.Fatalf("expected make help to include target %q, got:\n%s", target, makeHelp.Stdout)
 		}

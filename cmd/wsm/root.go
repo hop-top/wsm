@@ -17,6 +17,7 @@ import (
 	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
 
+	"hop.top/kit/cli"
 	"hop.top/upgrade"
 	"hop.top/wsm/pkg/backend"
 	backendsqlite "hop.top/wsm/pkg/backend/sqlite"
@@ -121,9 +122,16 @@ func shouldJSON(opts globalOptions) bool {
 }
 
 func newRootCmd() *cobra.Command {
+	return newRoot().Cmd
+}
+
+// newRoot wires the wsm CLI on top of kit/cli.New(). Fang provides
+// --version, --quiet, --no-color, completion subcommand, and styled
+// help/errors for free; we add wsm-specific persistent flags and
+// subcommands.
+func newRoot() *cli.Root {
 	opts := globalOptions{}
 
-	// Set version from build info if not injected at build time
 	if Version == "" {
 		if info, ok := debug.ReadBuildInfo(); ok && info.Main.Sum != "" {
 			Version = info.Main.Version
@@ -131,30 +139,44 @@ func newRootCmd() *cobra.Command {
 			Version = "unknown (built from source)"
 		}
 	}
-
-	root := &cobra.Command{
-		Use:           "wsm",
-		Short:         "Workspace & Session Manager",
-		Long:          "Workspace & Session Manager (wsm) for IDE-agnostic session storage.",
-		Version:       Version,
-		SilenceUsage:  true,
-		SilenceErrors: true,
-	}
-
-	// Enhance version template with commit SHA if available
+	versionString := Version
 	if len(CommitSHA) >= 7 {
-		vt := root.VersionTemplate()
-		root.SetVersionTemplate(vt[:len(vt)-1] + " (" + CommitSHA[0:7] + ")\n")
+		versionString = Version + " (" + CommitSHA[0:7] + ")"
 	}
+
+	r := cli.New(cli.Config{
+		Name:    "wsm",
+		Version: versionString,
+		Short:   "Workspace & Session Manager",
+		Accent:  "#7C7CFF",
+		// Suppress kit's --quiet so we can register -q/--quiet (legacy
+		// shorthand expected by e2e tests + scripts).
+		Disable: cli.Disable{Quiet: true},
+	})
+	root := r.Cmd
+	root.Long = "Workspace & Session Manager (wsm) for IDE-agnostic session storage."
+	root.SilenceUsage = true
+	root.SilenceErrors = true
+	// kit/cli.New() sets Args: cobra.NoArgs; relax for legacy quick-start RunE.
+	root.Args = nil
 
 	root.PersistentFlags().StringVar(&opts.Backend, "backend", "", "Backend: sqlite")
 	root.PersistentFlags().StringVar(&opts.DataDir, "data-dir", "", "Data directory")
 	root.PersistentFlags().StringVar(&opts.BackendURL, "backend-url", "", "Backend URL (reserved for future backends)")
 	root.PersistentFlags().BoolVar(&opts.JSON, "json", false, "Output JSON")
 	root.PersistentFlags().BoolVarP(&opts.Quiet, "quiet", "q", false, "Minimal output")
-	root.PersistentFlags().BoolVar(&opts.NoColor, "no-color", false, "Disable styled output")
 	root.PersistentFlags().StringVar(&opts.SessionID, "session-id", "", "Session ID for event tracking")
 	root.PersistentFlags().StringVar(&opts.AgentID, "agent-id", "user", "Agent ID for event tracking")
+	// --no-color is provided by kit/cli; mirror into opts via PreRun.
+	root.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
+		if nc, err := cmd.Flags().GetBool("no-color"); err == nil {
+			opts.NoColor = nc
+		}
+		if cmd.Name() != "upgrade" {
+			upgrade.NotifyIfAvailable(cmd.Context(), newChecker(), os.Stderr)
+		}
+		return nil
+	}
 
 	root.RunE = func(cmd *cobra.Command, _ []string) error {
 		cmd.Printf("Workspace & Session Manager\n\n")
@@ -174,21 +196,17 @@ func newRootCmd() *cobra.Command {
 		newDeviceGroupCmd(&opts),
 		newSnapshotGroupCmd(&opts),
 		newConfigCmd(&opts),
-		newCompletionCmd(root, &opts),
 		newTUICmd(&opts),
 		newUpgradeCmd(),
-		newVersionCmd(),
 	)
 
-	root.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
-		if cmd.Name() != "upgrade" {
-			upgrade.NotifyIfAvailable(cmd.Context(), newChecker(), os.Stderr)
-		}
-		return nil
-	}
+	// Register cobra's default completion subcommand here (kit also calls
+	// this in Execute, but we register early so it's available without
+	// going through fang's wrapped arg parsing).
+	root.InitDefaultCompletionCmd()
 
 	registerWorkspaceCompletion(root, &opts)
-	return root
+	return r
 }
 
 func withApp(opts *globalOptions, fn func(ctx context.Context, app *appContext) error) error {
@@ -1554,30 +1572,7 @@ func newWorkspaceConfigCmd(opts *globalOptions) *cobra.Command {
 	return cmd
 }
 
-func newCompletionCmd(root *cobra.Command, _ *globalOptions) *cobra.Command {
-	cmd := &cobra.Command{
-		Use:       "completion [bash|zsh|fish|powershell]",
-		Short:     "Generate shell completion scripts",
-		ValidArgs: []string{"bash", "zsh", "fish", "powershell"},
-		Args:      cobra.ExactArgs(1),
-		RunE: func(_ *cobra.Command, args []string) error {
-			shell := args[0]
-			switch shell {
-			case "bash":
-				return root.GenBashCompletion(os.Stdout)
-			case "zsh":
-				return root.GenZshCompletion(os.Stdout)
-			case "fish":
-				return root.GenFishCompletion(os.Stdout, true)
-			case "powershell":
-				return root.GenPowerShellCompletionWithDesc(os.Stdout)
-			default:
-				return workspace.NewErrorUsage("unsupported shell")
-			}
-		},
-	}
-	return cmd
-}
+// completion subcommand provided by kit/cli (fang); see newRoot().
 
 func newTUICmd(opts *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
