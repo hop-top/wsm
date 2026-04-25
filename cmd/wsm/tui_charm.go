@@ -1,5 +1,3 @@
-//go:build charmui
-
 package main
 
 import (
@@ -10,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"hop.top/wsm/pkg/backend"
 	uitui "hop.top/wsm/pkg/tui"
@@ -91,6 +89,7 @@ func (m tuiModel) loadSelectedDetailCmd() tea.Cmd {
 }
 
 func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// v2 emits KeyPressMsg/KeyReleaseMsg; treat both as the legacy KeyMsg.
 	switch msg := msg.(type) {
 	case loadedMsg:
 		if msg.err != nil {
@@ -132,7 +131,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.loadCmd()
 		}
 		return m, nil
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		s := msg.String()
 		switch s {
 		case "ctrl+c", "q":
@@ -199,7 +198,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m tuiModel) View() string {
+func (m tuiModel) View() tea.View {
 	var b strings.Builder
 	b.WriteString("wsm TUI\n")
 	b.WriteString("--------\n")
@@ -219,7 +218,14 @@ func (m tuiModel) View() string {
 	if m.status != "" {
 		b.WriteString("\nStatus: " + m.status + "\n")
 	}
-	return b.String()
+	return tea.NewView(b.String())
+}
+
+// viewString renders the model's View as a plain string (used by the
+// scripted TUI runner for non-interactive smoke tests).
+func (m tuiModel) viewString() string {
+	v := m.View()
+	return v.Content
 }
 
 func renderTwoPane(left, right []string) string {
@@ -279,9 +285,11 @@ func runTUIScript(ctx context.Context, manager *workspace.Manager, script string
 	m = applyTUICmd(m, m.Init())
 
 	for _, ch := range script {
-		key := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{ch}}
+		var key tea.KeyPressMsg
 		if ch == '\n' {
-			key = tea.KeyMsg{Type: tea.KeyEnter}
+			key = tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter})
+		} else {
+			key = tea.KeyPressMsg(tea.Key{Text: string(ch), Code: ch})
 		}
 		next, cmd := m.Update(key)
 		typed, ok := next.(tuiModel)
@@ -294,7 +302,7 @@ func runTUIScript(ctx context.Context, manager *workspace.Manager, script string
 		}
 	}
 
-	_, _ = fmt.Fprint(os.Stdout, m.View())
+	_, _ = fmt.Fprint(os.Stdout, m.viewString())
 	return nil
 }
 
