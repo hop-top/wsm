@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -14,7 +15,7 @@ var (
 )
 
 func main() {
-	if err := newRootCmd().Execute(); err != nil {
+	if err := newRoot().Execute(context.Background()); err != nil {
 		fmt.Fprintln(os.Stderr, "Error:", err)
 		if workspace.IsKind(err, workspace.ErrorKindNotFound) {
 			fmt.Fprintln(os.Stderr)

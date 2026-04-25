@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hop.top/kit/tui/parity.json",
+  "description": "Cross-language TUI parity constants. All language implementations MUST load values from here.",
+
+  "status": {
+    "description": "Prefix symbols for status lines. Mirrors Go's InfoType constants in tui/status.go.",
+    "symbols": {
+      "info":    "ℹ",
+      "success": "✓",
+      "error":   "●",
+      "warn":    "▲"
+    }
+  },
+
+  "spinner": {
+    "description": "Braille dot spinner frames and timing.",
+    "frames":      ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"],
+    "interval_ms": 80
+  },
+
+  "anim": {
+    "description": "Gradient character-scramble animation constants.",
+    "runes":        "0123456789abcdefABCDEF~!@#$%^&*()+=_",
+    "interval_ms":  100,
+    "default_width": 10
+  },
+
+  "help": {
+    "description": "Root --help layout contract. Fang is canonical; TS and Python mirror it.",
+    "section_order": ["commands", "flags"],
+    "sections": {
+      "usage":        { "title": "USAGE" },
+      "commands":     { "title": "COMMANDS" },
+      "flags":        { "title": "FLAGS" },
+      "global flags": { "title": "GLOBAL FLAGS" },
+      "arguments":    { "title": "ARGUMENTS" },
+      "aliases":      { "title": "ALIASES" },
+      "examples":     { "title": "EXAMPLES" }
+    }
+  }
+}
