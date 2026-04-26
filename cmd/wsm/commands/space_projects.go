@@ -1,7 +1,7 @@
 package commands
 
 import (
-	"errors"
+	"hop.top/kit/go/core/projects"
 )
 
 // projectsEntry is the wsm-local view of a single rux project entry.
@@ -24,32 +24,31 @@ const (
 	projectsSourceManual projectsSource = "manual"
 )
 
-// errProjectsPkgUnavailable is returned by the default writer until
-// the kit projects package implementation lands. wsm callers handle
-// it by emitting a warning and exiting 0 — DB write already
-// succeeded; recovery path is `wsm space sync`.
-var errProjectsPkgUnavailable = errors.New("kit projects package not yet available; rerun `wsm space sync` once kit upgrades")
-
 // writeProjectsEntry persists a single project entry into the rux
-// projects.yaml registry. It is a package-level var so tests can
-// inject a fake implementation, and so the call site in space.go
-// stays trivial when kit/go/core/projects lands.
-//
-// Default implementation:
-//   - Once kit/go/core/projects.Write is callable, replace the body
-//     with a one-liner that converts projectsEntry → projects.Entry
-//     and forwards. (Keep the var indirection for the test seam.)
+// projects.yaml registry via the kit projects package. Package-level
+// var so tests can inject fakes.
 var writeProjectsEntry = func(name string, e projectsEntry) error {
-	// Stub: kit/go/core/projects only exposes types today; the writer
-	// lives in projects.go which is being authored in parallel. Return
-	// a sentinel so wsm builds and the warn-then-exit-0 path is
-	// exercised end-to-end. Replace the body with the kit call once
-	// the parallel slice merges:
-	//
-	//   return projects.Write(name, projects.Entry{
-	//       Path: e.Path, StartupCmd: e.StartupCmd, Source: projects.Source(e.Source),
-	//   })
-	_ = name
-	_ = e
-	return errProjectsPkgUnavailable
+	return projects.Write(name, projects.Entry{
+		Path:       e.Path,
+		StartupCmd: e.StartupCmd,
+		Source:     projects.Source(e.Source),
+	})
+}
+
+// readExistingStartupCmds returns name→StartupCmd from the current
+// projects.yaml. Used by `wsm space sync` to preserve user-set
+// startup commands (wsm DB doesn't store them). Returns an empty
+// map on any read error — sync degrades gracefully.
+var readExistingStartupCmds = func() map[string]string {
+	out := map[string]string{}
+	f, err := projects.Read()
+	if err != nil {
+		return out
+	}
+	for name, e := range f.Projects {
+		if e.StartupCmd != "" {
+			out[name] = e.StartupCmd
+		}
+	}
+	return out
 }

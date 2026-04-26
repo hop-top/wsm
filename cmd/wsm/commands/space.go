@@ -220,12 +220,17 @@ func newSpaceSyncCmd(opts *globalOptions) *cobra.Command {
 				if err != nil {
 					return err
 				}
+				// Read current entries to preserve StartupCmd values
+				// (wsm DB doesn't store them; the rux config is the
+				// source of truth for that field).
+				existing := readExistingStartupCmds()
 				var written, failed int
 				var firstErr error
 				for _, s := range spaces {
 					werr := writeProjectsEntry(s.ID, projectsEntry{
-						Path:   s.Boundary,
-						Source: projectsSourceWSM,
+						Path:       s.Boundary,
+						StartupCmd: existing[s.ID],
+						Source:     projectsSourceWSM,
 					})
 					if werr != nil {
 						failed++
