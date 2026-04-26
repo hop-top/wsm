@@ -1,6 +1,6 @@
 export GOFLAGS ?= -buildvcs=false
 
-.PHONY: help build build-charm test test-e2e test-e2e-charm test-ubuntu-docker verify-no-ui-leak fmt setup-aps-wsm
+.PHONY: help build build-charm test test-e2e test-e2e-charm test-integration test-ubuntu-docker verify-no-ui-leak fmt setup-aps-wsm
 
 help:
 	@echo "Targets:"
@@ -9,6 +9,7 @@ help:
 	@echo "  test                Run unit + default E2E tests"
 	@echo "  test-e2e            Run default E2E tests only"
 	@echo "  test-e2e-charm      Run charm-tagged E2E tests (TUI + charm UI path)"
+	@echo "  test-integration    Run integration_wsm-tagged tests (cross-tool e2e: rux/kit)"
 	@echo "  test-ubuntu-docker  Run full test matrix inside Ubuntu Docker image"
 	@echo "  verify-no-ui-leak   Ensure pkg/* does not depend on charmbracelet"
 	@echo "  fmt                 Run gofmt on Go files"
@@ -34,6 +35,10 @@ test-e2e:
 test-e2e-charm:
 	@mkdir -p .tmp/gocache
 	GOCACHE=$$(pwd)/.tmp/gocache go test -tags charmui -modfile=go.charm.mod ./tests/e2e -run 'TestTUI|TestUIModeSelection_CharmBuild' -count=1
+
+test-integration:
+	@mkdir -p .tmp/gocache
+	GOCACHE=$$(pwd)/.tmp/gocache go test -tags integration_wsm ./... -count=1
 
 test-ubuntu-docker:
 	./scripts/run-tests-ubuntu-docker.sh

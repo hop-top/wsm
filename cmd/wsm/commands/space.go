@@ -1,0 +1,255 @@
+package commands
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"strings"
+	"text/tabwriter"
+
+	"github.com/spf13/cobra"
+
+	"hop.top/wsm/pkg/detector"
+	"hop.top/wsm/pkg/workspace"
+)
+
+func newSpaceGroupCmd(opts *globalOptions) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "space",
+		Short: "OWSF Space management",
+	}
+	cmd.AddCommand(
+		newSpaceAddCmd(opts),
+		newSpaceListCmd(opts),
+		newSpaceShowCmd(opts),
+		newSpaceRemoveCmd(opts),
+		newSpaceSyncCmd(opts),
+	)
+	return cmd
+}
+
+func newSpaceAddCmd(opts *globalOptions) *cobra.Command {
+	var typ, path, trustLevel, startupCmd string
+	var capabilities []string
+	var autoDetect bool
+	cmd := &cobra.Command{
+		Use:   "add <workspace> <id>",
+		Short: "Associate a compute/storage space with a workspace",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(_ *cobra.Command, args []string) error {
+			return withApp(opts, func(ctx context.Context, app *appContext) error {
+				s := workspace.Space{
+					ID:           args[1],
+					Type:         workspace.SpaceType(typ),
+					Boundary:     path,
+					Capabilities: capabilities,
+					TrustLevel:   workspace.TrustLevel(trustLevel),
+				}
+
+				if autoDetect {
+					d := detector.NewRegistry()
+					detector.RegisterBuiltins(d)
+					results, err := d.RunAll(ctx, path)
+					if err != nil {
+						return fmt.Errorf("auto-detection failed: %w", err)
+					}
+					// Apply results to space (simple logic for now: first successful detection)
+					for _, res := range results {
+						if res.Detected {
+							// NOTE: Space model doesn't have Kind/Metadata fields directly yet
+							// but we can add them to the manager's CreateSpace logic if needed.
+							// For now, we just log that we found something.
+							if !opts.Quiet {
+								fmt.Fprintf(os.Stderr, "Detected %s (%s) with confidence %.2f\n", res.DetectorName, res.Kind, res.Confidence)
+							}
+						}
+					}
+				}
+
+				created, err := app.manager.AddSpaceToWorkspace(ctx, args[0], s)
+				if err != nil {
+					return err
+				}
+
+				// Write-through to rux projects.yaml. Failures here are
+				// non-fatal: the wsm DB write already succeeded; recovery
+				// path is `wsm space sync`.
+				werr := writeProjectsEntry(created.ID, projectsEntry{
+					Path:       path,
+					StartupCmd: startupCmd,
+					Source:     projectsSourceWSM,
+				})
+				if werr != nil {
+					fmt.Fprintf(os.Stderr,
+						"warning: wrote space %q to wsm DB but failed to update projects.yaml: %v\nhint: run `wsm space sync` to retry\n",
+						created.ID, werr)
+				}
+
+				if shouldJSON(*opts) {
+					return writeJSON(os.Stdout, created)
+				}
+				fmt.Fprintf(os.Stdout, "Added space %s to workspace %s\n", created.ID, args[0])
+				return nil
+			})
+		},
+	}
+	cmd.Flags().StringVar(&typ, "type", string(workspace.SpaceFilesystem), "Space type (filesystem|container|vm|api|database|machine|remote)")
+	cmd.Flags().StringVar(&path, "path", "", "Resource path (filesystem path, URL, etc.)")
+	cmd.Flags().StringVar(&startupCmd, "startup-cmd", "", "Default command rux runs when connecting (empty = $SHELL)")
+	cmd.Flags().StringSliceVar(&capabilities, "cap", nil, "Space capabilities (OASF URI, repeatble)")
+	cmd.Flags().StringVar(&trustLevel, "trust", string(workspace.TrustLocal), "Trust level (local|verified|external|untrusted)")
+	cmd.Flags().BoolVar(&autoDetect, "auto", false, "Attempt to auto-detect space attributes from path")
+	return cmd
+}
+
+func newSpaceListCmd(opts *globalOptions) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "list <workspace>",
+		Short: "List spaces associated with a workspace",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			return withApp(opts, func(ctx context.Context, app *appContext) error {
+				spaces, err := app.manager.ListWorkspaceSpaces(ctx, args[0])
+				if err != nil {
+					return err
+				}
+
+				if shouldJSON(*opts) {
+					return writeJSON(os.Stdout, spaces)
+				}
+
+				if len(spaces) == 0 {
+					if !opts.Quiet {
+						fmt.Fprintln(os.Stdout, "No spaces associated with this workspace.")
+					}
+					return nil
+				}
+
+				tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+				fmt.Fprintln(tw, "ID\tTYPE\tTRUST\tBOUNDARY")
+				for _, s := range spaces {
+					fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n",
+						s.ID, s.Type, s.TrustLevel, s.Boundary)
+				}
+				_ = tw.Flush()
+				return nil
+			})
+		},
+	}
+	return cmd
+}
+
+func newSpaceShowCmd(opts *globalOptions) *cobra.Command {
+	return &cobra.Command{
+		Use:   "show <space-id>",
+		Short: "Show space details",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			return withApp(opts, func(ctx context.Context, app *appContext) error {
+				s, err := app.manager.GetSpace(ctx, args[0])
+				if err != nil {
+					return err
+				}
+
+				if shouldJSON(*opts) {
+					return writeJSON(os.Stdout, s)
+				}
+
+				fmt.Fprintf(os.Stdout, "Space %s\n", s.ID)
+				fmt.Fprintf(os.Stdout, "  Type:         %s\n", s.Type)
+				fmt.Fprintf(os.Stdout, "  Trust Level:  %s\n", s.TrustLevel)
+				fmt.Fprintf(os.Stdout, "  Boundary:     %s\n", s.Boundary)
+				if s.Parent != "" {
+					fmt.Fprintf(os.Stdout, "  Parent:       %s\n", s.Parent)
+				}
+				if len(s.Capabilities) > 0 {
+					fmt.Fprintf(os.Stdout, "  Capabilities: %s\n", strings.Join(s.Capabilities, ", "))
+				}
+				if len(s.Observables) > 0 {
+					fmt.Fprintln(os.Stdout, "  Observables:")
+					for _, o := range s.Observables {
+						fmt.Fprintf(os.Stdout, "    - %s: %s\n", o.Type, o.Value)
+					}
+				}
+				return nil
+			})
+		},
+	}
+}
+
+func newSpaceRemoveCmd(opts *globalOptions) *cobra.Command {
+	var force bool
+	cmd := &cobra.Command{
+		Use:   "remove <workspace> <space-id>",
+		Short: "Dissociate a space from a workspace",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(_ *cobra.Command, args []string) error {
+			return withApp(opts, func(ctx context.Context, app *appContext) error {
+				if err := app.manager.RemoveSpace(ctx, args[0], args[1], force); err != nil {
+					return err
+				}
+				if shouldJSON(*opts) {
+					return writeJSON(os.Stdout, map[string]any{"space_id": args[1], "removed": true})
+				}
+				fmt.Fprintf(os.Stdout, "Removed space %s\n", args[1])
+				return nil
+			})
+		},
+	}
+	cmd.Flags().BoolVarP(&force, "force", "f", false, "Force removal (cascade child spaces)")
+	return cmd
+}
+
+// newSpaceSyncCmd rebuilds rux/projects.yaml from the wsm DB. Useful
+// after a partial-write failure (warning printed by `wsm space add`),
+// after a fresh checkout where projects.yaml is missing, or to recover
+// from drift. Manual entries written by hand or future
+// `rux project add` are preserved by the kit projects.Write contract.
+//
+// Note: ListSpaces returns root spaces only. wsm currently does not
+// surface nested spaces in CLI add flows — if/when nested spaces need
+// to be synced, recurse via parent ID.
+func newSpaceSyncCmd(opts *globalOptions) *cobra.Command {
+	return &cobra.Command{
+		Use:   "sync",
+		Short: "Rewrite rux projects.yaml from wsm DB (recovery)",
+		Args:  cobra.NoArgs,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			return withApp(opts, func(ctx context.Context, app *appContext) error {
+				spaces, err := app.manager.ListSpaces(ctx, "")
+				if err != nil {
+					return err
+				}
+				var written, failed int
+				var firstErr error
+				for _, s := range spaces {
+					werr := writeProjectsEntry(s.ID, projectsEntry{
+						Path:   s.Boundary,
+						Source: projectsSourceWSM,
+					})
+					if werr != nil {
+						failed++
+						if firstErr == nil {
+							firstErr = werr
+						}
+						fmt.Fprintf(os.Stderr, "warning: failed to write %q to projects.yaml: %v\n", s.ID, werr)
+						continue
+					}
+					written++
+				}
+				if shouldJSON(*opts) {
+					return writeJSON(os.Stdout, map[string]any{
+						"written": written,
+						"failed":  failed,
+					})
+				}
+				fmt.Fprintf(os.Stdout, "synced %d spaces to projects.yaml", written)
+				if failed > 0 {
+					fmt.Fprintf(os.Stdout, " (%d failed)", failed)
+				}
+				fmt.Fprintln(os.Stdout)
+				return nil
+			})
+		},
+	}
+}
