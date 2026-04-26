@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 
+	"hop.top/wsm/cmd/wsm/commands"
 	"hop.top/wsm/pkg/workspace"
 )
 
@@ -14,7 +15,10 @@ var (
 )
 
 func main() {
-	if err := newRootCmd().Execute(); err != nil {
+	commands.Version = Version
+	commands.CommitSHA = CommitSHA
+
+	if err := commands.NewRootCmd().Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, "Error:", err)
 		if workspace.IsKind(err, workspace.ErrorKindNotFound) {
 			fmt.Fprintln(os.Stderr)

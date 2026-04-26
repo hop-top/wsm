@@ -409,6 +409,37 @@ func (m *Manager) DeleteSnapshot(ctx context.Context, idOrName string) error {
 	return nil
 }
 
+// GetLatestSnapshot retrieves the most recent snapshot for a workspace.
+func (m *Manager) GetLatestSnapshot(ctx context.Context, workspaceID string) (*Snapshot, error) {
+	snap, err := m.backend.GetLatestSnapshot(ctx, workspaceID)
+	if err != nil {
+		return nil, backendError("get latest snapshot", err)
+	}
+	if snap == nil {
+		return nil, nil
+	}
+	out := Snapshot(*snap)
+	return &out, nil
+}
+
+// GenerateMarkdownContext produces a markdown summary of the workspace state.
+func (m *Manager) GenerateMarkdownContext(ctx context.Context, workspaceID string) (string, error) {
+	snap, err := m.backend.GetLatestSnapshot(ctx, workspaceID)
+	if err != nil {
+		return "", backendError("get latest snapshot for context", err)
+	}
+	if snap == nil {
+		return "", notFoundError("no snapshot found for workspace")
+	}
+
+	events, err := m.backend.ListEvents(ctx, workspaceID, backend.EventListOptions{AfterSeqNum: snap.AtSeqNum})
+	if err != nil {
+		return "", backendError("list events for context", err)
+	}
+
+	return FormatContext(snap, events, ContextOptions{RecentEvents: 5}), nil
+}
+
 func isStateChanging(t model.EventType) bool {
 	switch t {
 	case model.EventWorkspaceCreated,

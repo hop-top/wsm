@@ -11,6 +11,7 @@ type (
 	MessageData    = model.MessageData
 	ToolCallData   = model.ToolCallData
 	FileChangeData = model.FileChangeData
+	ArtifactData   = model.ArtifactData
 	DeviceData     = model.DeviceData
 	Snapshot            = model.Snapshot
 	SnapshotEventData   = model.SnapshotEventData
