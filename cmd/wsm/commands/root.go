@@ -27,6 +27,32 @@ var (
 	kitRootInstance *cli.Root
 )
 
+// commandGroups maps top-level subcommand name to its kit group ID per
+// CLI conventions §4. management is auto-hidden by kit unless --help-all.
+var commandGroups = map[string]string{
+	"init":       "interact",
+	"tui":        "interact",
+	"workspace":  "organize",
+	"space":      "organize",
+	"device":     "organize",
+	"config":     "management",
+	"event":      "capture",
+	"snapshot":   "capture",
+	"completion": "management",
+	"version":    "management",
+	"upgrade":    "management",
+}
+
+// applyCommandGroups assigns GroupID to each top-level subcommand based
+// on the commandGroups map. Call after all root.AddCommand invocations.
+func applyCommandGroups(root *cobra.Command) {
+	for _, c := range root.Commands() {
+		if g, ok := commandGroups[c.Name()]; ok {
+			c.GroupID = g
+		}
+	}
+}
+
 type globalOptions struct {
 	Backend    string
 	DataDir    string
@@ -120,6 +146,13 @@ func NewRootCmd() *cobra.Command {
 		Short:   "Workspace & Session Manager",
 		Help: cli.HelpConfig{
 			Disclaimer: "Workspace & Session Manager (wsm) for IDE-agnostic session storage.",
+			// management is pre-registered + auto-hidden by cli.New;
+			// adding it here would duplicate the rendered section.
+			Groups: []cli.GroupConfig{
+				{ID: "organize", Title: "ORGANIZE"},
+				{ID: "capture", Title: "CAPTURE"},
+				{ID: "interact", Title: "INTERACT"},
+			},
 		},
 		Globals: []cli.Flag{
 			{Name: "backend", Usage: "Backend: sqlite"},
@@ -183,6 +216,7 @@ func NewRootCmd() *cobra.Command {
 		newVersionCmd(),
 	)
 
+	applyCommandGroups(root)
 	registerWorkspaceCompletion(root, &opts)
 	kitRootInstance = r
 	return root

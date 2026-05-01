@@ -54,3 +54,20 @@ func TestHelpAll(t *testing.T) {
 		t.Fatalf("--help-all output missing program name; got: %s", out)
 	}
 }
+
+// TestCommandGroupsApplied verifies every top-level subcommand named in
+// commandGroups has its GroupID set to the mapped value. Commands not in
+// the map are intentionally ungrouped and skipped.
+func TestCommandGroupsApplied(t *testing.T) {
+	root := NewRootCmd()
+	for _, c := range root.Commands() {
+		wantGroup, expected := commandGroups[c.Name()]
+		if !expected {
+			continue
+		}
+		if c.GroupID != wantGroup {
+			t.Errorf("command %q: GroupID=%q, want %q",
+				c.Name(), c.GroupID, wantGroup)
+		}
+	}
+}
