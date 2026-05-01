@@ -78,10 +78,13 @@ func newWorkspaceAddCmd(opts *globalOptions) *cobra.Command {
 					return nil
 				}
 
-				asJSON := shouldJSON(*opts) || !stdoutIsTTY()
-				if asJSON {
+				if opts.Format == output.JSON || opts.Format == output.YAML || !stdoutIsTTY() {
+					format := opts.Format
+					if format == "" || format == output.Table {
+						format = output.JSON
+					}
 					payload := map[string]any{"id": ws.ID, "created_at": ws.CreatedAt}
-					return writeJSON(os.Stdout, payload)
+					return output.Render(os.Stdout, format, payload)
 				}
 				// §6.3: ack message (non-data) → stderr.
 				fmt.Fprintf(os.Stderr, "Created workspace %q (%s)\n", ws.Name, ws.ID)
@@ -305,8 +308,13 @@ func newWorkspaceArchiveCmd(opts *globalOptions) *cobra.Command {
 				if opts.Quiet {
 					return nil
 				}
-				if shouldJSON(*opts) || !stdoutIsTTY() {
-					return writeJSON(os.Stdout, map[string]any{"id": ws.ID, "status": "archived"})
+				if opts.Format == output.JSON || opts.Format == output.YAML || !stdoutIsTTY() {
+					format := opts.Format
+					if format == "" || format == output.Table {
+						format = output.JSON
+					}
+					return output.Render(os.Stdout, format,
+						map[string]any{"id": ws.ID, "status": "archived"})
 				}
 				// §6.3: ack message (non-data) → stderr.
 				fmt.Fprintf(os.Stderr, "Archived workspace %q\n", ws.Name)
@@ -334,8 +342,13 @@ func newWorkspaceUnarchiveCmd(opts *globalOptions) *cobra.Command {
 				if opts.Quiet {
 					return nil
 				}
-				if shouldJSON(*opts) || !stdoutIsTTY() {
-					return writeJSON(os.Stdout, map[string]any{"id": ws.ID, "status": "active"})
+				if opts.Format == output.JSON || opts.Format == output.YAML || !stdoutIsTTY() {
+					format := opts.Format
+					if format == "" || format == output.Table {
+						format = output.JSON
+					}
+					return output.Render(os.Stdout, format,
+						map[string]any{"id": ws.ID, "status": "active"})
 				}
 				// §6.3: ack message (non-data) → stderr.
 				fmt.Fprintf(os.Stderr, "Unarchived workspace %q\n", ws.Name)
@@ -360,8 +373,9 @@ func newWorkspaceDeleteCmd(opts *globalOptions) *cobra.Command {
 				}
 
 				if dryRun {
-					if shouldJSON(*opts) {
-						return writeJSON(os.Stdout, map[string]any{"dry_run": true, "preview": preview})
+					if opts.Format == output.JSON || opts.Format == output.YAML {
+						return output.Render(os.Stdout, opts.Format,
+							map[string]any{"dry_run": true, "preview": preview})
 					}
 					fmt.Fprintf(os.Stdout, "Would remove workspace %q (%s):\n", preview.WorkspaceName, preview.WorkspaceID)
 					fmt.Fprintf(os.Stdout, "  - %d events\n", preview.EventCount)
@@ -397,8 +411,13 @@ func newWorkspaceDeleteCmd(opts *globalOptions) *cobra.Command {
 				if opts.Quiet {
 					return nil
 				}
-				if shouldJSON(*opts) || !stdoutIsTTY() {
-					return writeJSON(os.Stdout, map[string]any{"id": preview.WorkspaceID, "deleted": true})
+				if opts.Format == output.JSON || opts.Format == output.YAML || !stdoutIsTTY() {
+					format := opts.Format
+					if format == "" || format == output.Table {
+						format = output.JSON
+					}
+					return output.Render(os.Stdout, format,
+						map[string]any{"id": preview.WorkspaceID, "deleted": true})
 				}
 				// §6.3: ack message (non-data) → stderr.
 				fmt.Fprintf(os.Stderr, "Removed workspace %q\n", preview.WorkspaceName)
@@ -421,8 +440,8 @@ func newWorkspaceConfigCmd(opts *globalOptions) *cobra.Command {
 			if err != nil {
 				return workspace.NewErrorBackend("load config", err)
 			}
-			if shouldJSON(*opts) {
-				return writeJSON(os.Stdout, cfg)
+			if opts.Format == output.JSON || opts.Format == output.YAML {
+				return output.Render(os.Stdout, opts.Format, cfg)
 			}
 			fmt.Fprintf(os.Stdout, "backend:     %s\n", cfg.Backend)
 			fmt.Fprintf(os.Stdout, "data_dir:    %s\n", cfg.DataDir)

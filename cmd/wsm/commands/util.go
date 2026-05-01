@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"hop.top/kit/go/console/output"
 	"hop.top/wsm/pkg/backend"
 	pkgcli "hop.top/wsm/pkg/cli"
 	"hop.top/wsm/pkg/config"
@@ -65,8 +66,8 @@ func newConfigCmd(opts *globalOptions) *cobra.Command {
 			if err != nil {
 				return workspace.NewErrorBackend("load config", err)
 			}
-			if shouldJSON(*opts) {
-				return writeJSON(os.Stdout, cfg)
+			if opts.Format == output.JSON || opts.Format == output.YAML {
+				return output.Render(os.Stdout, opts.Format, cfg)
 			}
 			fmt.Fprintf(os.Stdout, "backend:     %s\n", cfg.Backend)
 			fmt.Fprintf(os.Stdout, "data_dir:    %s\n", cfg.DataDir)

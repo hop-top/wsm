@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -23,24 +22,6 @@ func noColor(opts globalOptions) bool {
 	}
 	v := strings.TrimSpace(os.Getenv("NO_COLOR"))
 	return v != ""
-}
-
-func shouldJSON(opts globalOptions) bool {
-	// kit/cli registers --format (table|json|yaml). Treat both
-	// json + yaml as machine-readable for the structured-output
-	// branches; YAML callers still get JSON output today since
-	// per-command yaml rendering is owned by T-0079/T-0080.
-	switch opts.Format {
-	case "json", "yaml":
-		return true
-	}
-	return false
-}
-
-func writeJSON(out *os.File, value any) error {
-	enc := json.NewEncoder(out)
-	enc.SetIndent("", "  ")
-	return enc.Encode(value)
 }
 
 func shortID(id string) string {
