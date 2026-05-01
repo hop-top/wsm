@@ -56,7 +56,12 @@ func newConfigCmd(opts *globalOptions) *cobra.Command {
 		Use:   "show",
 		Short: "Show resolved configuration",
 		RunE: func(_ *cobra.Command, _ []string) error {
-			cfg, err := config.Load(config.LoadOptions{FlagBackend: opts.Backend, FlagDataDir: opts.DataDir, FlagBackendURL: opts.BackendURL})
+			cfg, err := config.Load(config.LoadOptions{
+				FlagBackend:    opts.Backend,
+				FlagDataDir:    opts.DataDir,
+				FlagBackendURL: opts.BackendURL,
+				FlagConfig:     opts.ConfigFile,
+			})
 			if err != nil {
 				return workspace.NewErrorBackend("load config", err)
 			}

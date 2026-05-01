@@ -59,6 +59,7 @@ type globalOptions struct {
 	Backend    string
 	DataDir    string
 	BackendURL string
+	ConfigFile string
 	Format     string // from kit's --format (table|json|yaml)
 	Quiet      bool
 	NoColor    bool
@@ -84,6 +85,7 @@ func newAppContext(opts globalOptions) (*appContext, error) {
 		FlagBackend:    opts.Backend,
 		FlagDataDir:    opts.DataDir,
 		FlagBackendURL: opts.BackendURL,
+		FlagConfig:     opts.ConfigFile,
 	})
 	if err != nil {
 		return nil, workspace.NewErrorBackend("load config", err)
@@ -159,6 +161,7 @@ func NewRootCmd() *cobra.Command {
 		Globals: []cli.Flag{
 			{Name: "backend", Usage: "Backend: sqlite"},
 			{Name: "backend-url", Usage: "Backend URL (reserved for future backends)"},
+			{Name: "config", Usage: "Path to config file (overrides XDG location)"},
 			{Name: "data-dir", Usage: "Data directory"},
 			{Name: "session-id", Usage: "Session ID for event tracking"},
 			{Name: "agent-id", Default: "user", Usage: "Agent ID for event tracking"},
@@ -178,6 +181,7 @@ func NewRootCmd() *cobra.Command {
 		}
 		opts.Backend, _ = cmd.Flags().GetString("backend")
 		opts.BackendURL, _ = cmd.Flags().GetString("backend-url")
+		opts.ConfigFile, _ = cmd.Flags().GetString("config")
 		opts.DataDir, _ = cmd.Flags().GetString("data-dir")
 		opts.SessionID, _ = cmd.Flags().GetString("session-id")
 		opts.AgentID, _ = cmd.Flags().GetString("agent-id")
