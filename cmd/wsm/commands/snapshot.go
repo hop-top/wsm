@@ -6,14 +6,25 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"text/tabwriter"
 	"time"
 
 	"github.com/spf13/cobra"
 
+	"hop.top/kit/go/console/output"
 	"hop.top/wsm/pkg/backend"
 	"hop.top/wsm/pkg/workspace"
 )
+
+// snapshotRow is the table projection for `snapshot list`. Pre-truncates
+// ID + WorkspaceID via shortID and pre-formats GeneratedAt via humanAgo
+// for table mode (JSON/YAML go through the model.Snapshot directly).
+type snapshotRow struct {
+	ID        string `table:"ID,priority=9"        json:"id"`
+	Name      string `table:"NAME,priority=7"      json:"name"`
+	Workspace string `table:"WORKSPACE,priority=8" json:"workspace"`
+	Seq       uint64 `table:"SEQ,priority=6"       json:"seq"`
+	Generated string `table:"GENERATED,priority=4" json:"generated"`
+}
 
 func newSnapshotGroupCmd(opts *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
@@ -78,8 +89,8 @@ func newSnapshotListCmd(opts *globalOptions) *cobra.Command {
 					return err
 				}
 
-				if shouldJSON(*opts) {
-					return writeJSON(os.Stdout, snaps)
+				if opts.Format == output.JSON || opts.Format == output.YAML {
+					return output.Render(os.Stdout, opts.Format, snaps)
 				}
 
 				if len(snaps) == 0 {
@@ -90,14 +101,17 @@ func newSnapshotListCmd(opts *globalOptions) *cobra.Command {
 					return nil
 				}
 
-				tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-				fmt.Fprintln(tw, "ID\tWORKSPACE\tSEQ\tNAME\tGENERATED")
-				for _, s := range snaps {
-					fmt.Fprintf(tw, "%s\t%s\t%d\t%s\t%s\n",
-						shortID(s.ID), shortID(s.WorkspaceID), s.AtSeqNum, s.Name, humanAgo(s.GeneratedAt))
+				rows := make([]snapshotRow, len(snaps))
+				for i, s := range snaps {
+					rows[i] = snapshotRow{
+						ID:        shortID(s.ID),
+						Name:      s.Name,
+						Workspace: shortID(s.WorkspaceID),
+						Seq:       s.AtSeqNum,
+						Generated: humanAgo(s.GeneratedAt),
+					}
 				}
-				_ = tw.Flush()
-				return nil
+				return output.Render(os.Stdout, output.Table, rows)
 			})
 		},
 	}
@@ -155,8 +169,8 @@ func newSnapshotGenerateCmd(opts *globalOptions) *cobra.Command {
 					fmt.Fprintln(os.Stdout, snap.ID)
 					return nil
 				}
-				if shouldJSON(*opts) {
-					return writeJSON(os.Stdout, snap)
+				if opts.Format == output.JSON || opts.Format == output.YAML {
+					return output.Render(os.Stdout, opts.Format, snap)
 				}
 				fmt.Fprintf(os.Stdout, "Snapshot %s\n", snap.ID)
 				if snap.Name != "" {
@@ -201,8 +215,8 @@ func newSnapshotShowCmd(opts *globalOptions) *cobra.Command {
 				if snap == nil {
 					return workspace.NewErrorNotFound("no snapshots for this workspace")
 				}
-				if shouldJSON(*opts) {
-					return writeJSON(os.Stdout, snap)
+				if opts.Format == output.JSON || opts.Format == output.YAML {
+					return output.Render(os.Stdout, opts.Format, snap)
 				}
 				fmt.Fprintf(os.Stdout, "Snapshot: %s (at seq %d)\n", snap.ID, snap.AtSeqNum)
 				fmt.Fprintf(os.Stdout, "  Generated: %s\n", snap.GeneratedAt.Format(time.RFC3339))
@@ -267,8 +281,8 @@ func newSnapshotUpdateCmd(opts *globalOptions) *cobra.Command {
 					fmt.Fprintln(os.Stdout, snap.ID)
 					return nil
 				}
-				if shouldJSON(*opts) {
-					return writeJSON(os.Stdout, snap)
+				if opts.Format == output.JSON || opts.Format == output.YAML {
+					return output.Render(os.Stdout, opts.Format, snap)
 				}
 				fmt.Fprintf(os.Stdout, "Updated snapshot %s\n", snap.ID)
 				if snap.Name != "" {
@@ -317,8 +331,13 @@ func newSnapshotDeleteCmd(opts *globalOptions) *cobra.Command {
 				if opts.Quiet {
 					return nil
 				}
-				if shouldJSON(*opts) || !stdoutIsTTY() {
-					return writeJSON(os.Stdout, map[string]any{"id": args[0], "deleted": true})
+				if opts.Format == output.JSON || opts.Format == output.YAML || !stdoutIsTTY() {
+					format := opts.Format
+					if format == "" || format == output.Table {
+						format = output.JSON
+					}
+					return output.Render(os.Stdout, format,
+						map[string]any{"id": args[0], "deleted": true})
 				}
 				// §6.3: ack message (non-data) → stderr.
 				fmt.Fprintf(os.Stderr, "Removed snapshot %q\n", args[0])
