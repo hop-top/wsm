@@ -18,6 +18,23 @@ import (
 	"hop.top/wsm/pkg/workspace"
 )
 
+// groupOnlyRunE makes a group command (parent of subcommands) error on
+// unknown args while still showing help for bare invocation.
+//
+// Why a RunE + manual arg check (not cobra.NoArgs alone): without a
+// RunE, cobra short-circuits to flag.ErrHelp before Args validation
+// (cobra/command.go: !c.Runnable() → ErrHelp) — so the bug repros even
+// with cobra.NoArgs set. Returning the unknown-command error as
+// workspace.NewErrorUsage routes through main's exitCodeForError to
+// produce exit 2, per CLI conventions §8.1.
+func groupOnlyRunE(cmd *cobra.Command, args []string) error {
+	if len(args) > 0 {
+		return workspace.NewErrorUsage(
+			fmt.Sprintf("unknown command %q for %q", args[0], cmd.CommandPath()))
+	}
+	return cmd.Help()
+}
+
 // workspaceRow is the table projection for `workspace list`. The model
 // Workspace tags don't include event/snapshot counts (computed per-row),
 // so we build a row struct here.
@@ -46,6 +63,7 @@ func newWorkspaceGroupCmd(opts *globalOptions) *cobra.Command {
 		Use:     "workspace",
 		Aliases: []string{"ws", "w"},
 		Short:   "Workspace operations",
+		RunE:    groupOnlyRunE,
 	}
 	cmd.AddCommand(
 		newWorkspaceAddCmd(opts),
@@ -458,6 +476,7 @@ func newWorkspaceConfigCmd(opts *globalOptions) *cobra.Command {
 		Use:     "config",
 		Aliases: []string{"cfg"},
 		Short:   "Workspace configuration",
+		RunE:    groupOnlyRunE,
 	}
 	cmd.AddCommand(showCmd)
 	return cmd

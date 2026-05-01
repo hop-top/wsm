@@ -31,6 +31,7 @@ func newEventGroupCmd(opts *globalOptions) *cobra.Command {
 		Use:     "event",
 		Aliases: []string{"events", "ev", "e"},
 		Short:   "Event operations",
+		RunE:    groupOnlyRunE,
 	}
 	cmd.AddCommand(
 		newEventListCmd(opts),

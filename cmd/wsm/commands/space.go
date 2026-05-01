@@ -17,6 +17,7 @@ func newSpaceGroupCmd(opts *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "space",
 		Short: "OWSF Space management",
+		RunE:  groupOnlyRunE,
 	}
 	cmd.AddCommand(
 		newSpaceAddCmd(opts),

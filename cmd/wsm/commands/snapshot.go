@@ -31,6 +31,7 @@ func newSnapshotGroupCmd(opts *globalOptions) *cobra.Command {
 		Use:     "snapshot",
 		Short:   "Snapshot operations",
 		Aliases: []string{"snap", "s"},
+		RunE:    groupOnlyRunE,
 	}
 	cmd.AddCommand(
 		newSnapshotListCmd(opts),

@@ -71,3 +71,28 @@ func TestCommandGroupsApplied(t *testing.T) {
 		}
 	}
 }
+
+// TestGroupCmdUnknownSubcommandErrors regression-tests T-0096: a group
+// command (workspace, space, snapshot, event, device) invoked with an
+// unknown subcommand must return a usage error, not silently print help
+// with exit 0. CLI conventions §8.1.
+func TestGroupCmdUnknownSubcommandErrors(t *testing.T) {
+	groups := []string{"workspace", "space", "snapshot", "event", "device"}
+	for _, grp := range groups {
+		t.Run(grp+"/unknown", func(t *testing.T) {
+			_, err := executeCommand(t, grp, "bogus_subcommand_xyz")
+			if err == nil {
+				t.Fatalf("%s: expected error for unknown subcommand, got nil", grp)
+			}
+			if !strings.Contains(err.Error(), "unknown command") {
+				t.Fatalf("%s: error %q missing 'unknown command'", grp, err.Error())
+			}
+		})
+		t.Run(grp+"/bare", func(t *testing.T) {
+			_, err := executeCommand(t, grp)
+			if err != nil {
+				t.Fatalf("%s: bare invocation should not error, got %v", grp, err)
+			}
+		})
+	}
+}

@@ -37,6 +37,7 @@ func newDeviceGroupCmd(opts *globalOptions) *cobra.Command {
 		Use:     "device",
 		Aliases: []string{"devices", "dev", "d"},
 		Short:   "Device registry operations",
+		RunE:    groupOnlyRunE,
 	}
 	cmd.AddCommand(
 		newDeviceListCmd(opts),
