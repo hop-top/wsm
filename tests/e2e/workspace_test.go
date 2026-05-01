@@ -70,11 +70,11 @@ func TestWorkspaceList_Empty(t *testing.T) {
 	r := newRunner(t)
 	res := r.run("workspace", "list")
 	requireExitCode(t, res, 0)
-	if !strings.Contains(res.Stdout, "No workspaces yet.") {
-		t.Fatalf("expected empty-state copy, got: %s", res.Stdout)
+	if !strings.Contains(res.Stderr, "No workspaces yet.") {
+		t.Fatalf("expected empty-state copy in stderr, got: %s", res.Stderr)
 	}
-	if !strings.Contains(res.Stdout, "wsm workspace add my-project") {
-		t.Fatalf("expected create hint in empty-state copy, got: %s", res.Stdout)
+	if !strings.Contains(res.Stderr, "wsm workspace add my-project") {
+		t.Fatalf("expected create hint in stderr, got: %s", res.Stderr)
 	}
 }
 
