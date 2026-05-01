@@ -10,6 +10,9 @@ The format is based on Keep a Changelog, and this project aims to follow Semanti
 - Removed `--json` flag. Use `--format json` instead.
 - Renamed `event add --format` (payload format) to `--content-format` to free
   the `--format` name for the global output selector provided by kit/cli.
+- Renamed `wsm workspace remove` → `wsm workspace delete`
+- Renamed `wsm space remove` → `wsm space delete`
+- Renamed `wsm snapshot remove` → `wsm snapshot delete`
 
 ### Added
 - Initial project docs and story pack expansion (`001-026`).

@@ -30,7 +30,7 @@ func newWorkspaceGroupCmd(opts *globalOptions) *cobra.Command {
 		newWorkspaceShowCmd(opts),
 		newWorkspaceArchiveCmd(opts),
 		newWorkspaceUnarchiveCmd(opts),
-		newWorkspaceRemoveCmd(opts),
+		newWorkspaceDeleteCmd(opts),
 		newWorkspaceConfigCmd(opts),
 	)
 	return cmd
@@ -314,11 +314,11 @@ func newWorkspaceUnarchiveCmd(opts *globalOptions) *cobra.Command {
 	}
 }
 
-func newWorkspaceRemoveCmd(opts *globalOptions) *cobra.Command {
+func newWorkspaceDeleteCmd(opts *globalOptions) *cobra.Command {
 	var force, dryRun bool
 	cmd := &cobra.Command{
-		Use:     "remove <workspace>",
-		Aliases: []string{"rm", "delete", "del"},
+		Use:     "delete <workspace>",
+		Aliases: []string{"rm", "del"},
 		Short:   "Permanently delete a workspace and its history",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {

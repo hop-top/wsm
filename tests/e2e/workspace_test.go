@@ -234,9 +234,9 @@ func TestWorkspaceRemove(t *testing.T) {
 
 	var res commandResult
 	if runtime.GOOS == "darwin" {
-		res = r.runWithEnv(map[string]string{"WSM_DELETE_CONFIRM": "yes"}, "workspace", "remove", "old-work", "--format", "json")
+		res = r.runWithEnv(map[string]string{"WSM_DELETE_CONFIRM": "yes"}, "workspace", "delete", "old-work", "--format", "json")
 	} else {
-		res = r.runTTYWithInput("y\n", "workspace", "remove", "old-work")
+		res = r.runTTYWithInput("y\n", "workspace", "delete", "old-work")
 	}
 	requireExitCode(t, res, 0)
 	if runtime.GOOS == "darwin" {
@@ -257,7 +257,7 @@ func TestWorkspaceRemove_Force(t *testing.T) {
 	r := newRunner(t)
 	r.mustCreateWorkspace("old-work")
 
-	res := r.run("workspace", "remove", "old-work", "--force", "--format", "json")
+	res := r.run("workspace", "delete", "old-work", "--force", "--format", "json")
 	requireExitCode(t, res, 0)
 	var payload map[string]any
 	mustUnmarshalJSON(t, res.Stdout, &payload)
@@ -283,7 +283,7 @@ func TestWorkspaceRemove_DryRun(t *testing.T) {
 		t.Fatalf("snapshot: %v", err)
 	}
 
-	res := r.run("workspace", "remove", "dry-run-work", "--dry-run", "--format", "json")
+	res := r.run("workspace", "delete", "dry-run-work", "--dry-run", "--format", "json")
 	requireExitCode(t, res, 0)
 	var payload struct {
 		DryRun  bool `json:"dry_run"`
@@ -329,7 +329,7 @@ func TestWorkspaceFullLifecycle(t *testing.T) {
 	}
 
 	requireExitCode(t, r.run("workspace", "unarchive", id), 0)
-	requireExitCode(t, r.run("workspace", "remove", id, "--force"), 0)
+	requireExitCode(t, r.run("workspace", "delete", id, "--force"), 0)
 
 	deletedShow := r.run("workspace", "show", id)
 	requireExitCode(t, deletedShow, 3)
@@ -407,7 +407,7 @@ func TestRefResolution_ByNameAndID(t *testing.T) {
 		t.Fatalf("expected active status using name ref, got %s", active.Workspace.Status)
 	}
 
-	requireExitCode(t, r.run("workspace", "remove", "ref-work", "--force"), 0)
+	requireExitCode(t, r.run("workspace", "delete", "ref-work", "--force"), 0)
 	notFound := r.run("workspace", "show", id)
 	requireExitCode(t, notFound, 3)
 	if !strings.Contains(notFound.Stderr, "Run 'wsm workspace list'") {

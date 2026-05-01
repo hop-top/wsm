@@ -26,7 +26,7 @@ func newSnapshotGroupCmd(opts *globalOptions) *cobra.Command {
 		newSnapshotGenerateCmd(opts),
 		newSnapshotShowCmd(opts),
 		newSnapshotUpdateCmd(opts),
-		newSnapshotRemoveCmd(opts),
+		newSnapshotDeleteCmd(opts),
 		newSnapshotContextCmd(opts),
 	)
 	return cmd
@@ -283,12 +283,12 @@ func newSnapshotUpdateCmd(opts *globalOptions) *cobra.Command {
 	return cmd
 }
 
-func newSnapshotRemoveCmd(opts *globalOptions) *cobra.Command {
+func newSnapshotDeleteCmd(opts *globalOptions) *cobra.Command {
 	var force bool
 	cmd := &cobra.Command{
-		Use:     "remove <snapshot-id-or-name>",
-		Short:   "Remove a snapshot",
-		Aliases: []string{"delete", "rm", "del"},
+		Use:     "delete <snapshot-id-or-name>",
+		Short:   "Delete a snapshot",
+		Aliases: []string{"rm", "del"},
 		Args:    cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {

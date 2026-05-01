@@ -255,7 +255,7 @@ func TestSnapshotRemove(t *testing.T) {
 		t.Fatalf("expected 1 snapshot before remove, got %d", len(before))
 	}
 
-	rmRes := r.run("snapshot", "remove", snap.ID, "--force")
+	rmRes := r.run("snapshot", "delete", snap.ID, "--force")
 	requireExitCode(t, rmRes, 0)
 
 	listAfter := r.run("snapshot", "list", "-w", wsID, "--format", "json")
@@ -266,7 +266,7 @@ func TestSnapshotRemove(t *testing.T) {
 		t.Fatalf("expected 0 snapshots after remove, got %d", len(after))
 	}
 
-	rmByNameRes := r.run("snapshot", "remove", "nonexistent", "--force")
+	rmByNameRes := r.run("snapshot", "delete", "nonexistent", "--force")
 	requireExitCode(t, rmByNameRes, 3)
 }
 

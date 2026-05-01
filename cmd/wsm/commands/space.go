@@ -22,7 +22,7 @@ func newSpaceGroupCmd(opts *globalOptions) *cobra.Command {
 		newSpaceAddCmd(opts),
 		newSpaceListCmd(opts),
 		newSpaceShowCmd(opts),
-		newSpaceRemoveCmd(opts),
+		newSpaceDeleteCmd(opts),
 		newSpaceSyncCmd(opts),
 	)
 	return cmd
@@ -177,10 +177,10 @@ func newSpaceShowCmd(opts *globalOptions) *cobra.Command {
 	}
 }
 
-func newSpaceRemoveCmd(opts *globalOptions) *cobra.Command {
+func newSpaceDeleteCmd(opts *globalOptions) *cobra.Command {
 	var force bool
 	cmd := &cobra.Command{
-		Use:   "remove <workspace> <space-id>",
+		Use:   "delete <workspace> <space-id>",
 		Short: "Dissociate a space from a workspace",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(_ *cobra.Command, args []string) error {

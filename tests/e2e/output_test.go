@@ -104,10 +104,10 @@ func TestPipe_RemoveRequiresForce(t *testing.T) {
 	r := newRunner(t)
 	r.mustCreateWorkspace("pipe-remove")
 
-	res := r.run("workspace", "remove", "pipe-remove")
+	res := r.run("workspace", "delete", "pipe-remove")
 	requireExitCode(t, res, 2)
 	if !strings.Contains(strings.ToLower(res.Stderr), "requires --force") {
-		t.Fatalf("expected non-tty remove usage guidance, got: %s", res.Stderr)
+		t.Fatalf("expected non-tty delete usage guidance, got: %s", res.Stderr)
 	}
 }
 
