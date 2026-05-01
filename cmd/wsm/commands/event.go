@@ -7,13 +7,24 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"text/tabwriter"
 
 	"github.com/spf13/cobra"
 
+	"hop.top/kit/go/console/output"
 	"hop.top/wsm/pkg/backend"
 	"hop.top/wsm/pkg/workspace"
 )
+
+// eventListRow is the table projection for `event list`. Pre-truncates
+// device/session UUIDs via shortID for table mode (JSON/YAML use the full
+// model.Event).
+type eventListRow struct {
+	Seq       uint64 `table:"SEQ,priority=9"       json:"seq"`
+	Type      string `table:"TYPE,priority=8"      json:"type"`
+	Timestamp string `table:"TIMESTAMP,priority=6" json:"timestamp"`
+	Device    string `table:"DEVICE,priority=4"    json:"device"`
+	Session   string `table:"SESSION,priority=3"   json:"session"`
+}
 
 func newEventGroupCmd(opts *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
@@ -59,23 +70,25 @@ func newEventListCmd(opts *globalOptions) *cobra.Command {
 					return err
 				}
 
-				if shouldJSON(*opts) {
-					return writeJSON(os.Stdout, events)
+				if opts.Format == output.JSON || opts.Format == output.YAML {
+					return output.Render(os.Stdout, opts.Format, events)
 				}
 
 				if len(events) == 0 {
 					return workspace.NewErrorUsage("No events found.")
 				}
 
-				tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-				fmt.Fprintln(tw, "SEQ\tTYPE\tTIMESTAMP\tDEVICE\tSESSION")
-				for _, ev := range events {
-					fmt.Fprintf(tw, "%d\t%s\t%s\t%s\t%s\n",
-						ev.SeqNum, ev.Type, ev.Timestamp.Format("2006-01-02 15:04:05"),
-						shortID(ev.DeviceID), shortID(ev.SessionID))
+				rows := make([]eventListRow, len(events))
+				for i, ev := range events {
+					rows[i] = eventListRow{
+						Seq:       ev.SeqNum,
+						Type:      string(ev.Type),
+						Timestamp: ev.Timestamp.Format("2006-01-02 15:04:05"),
+						Device:    shortID(ev.DeviceID),
+						Session:   shortID(ev.SessionID),
+					}
 				}
-				_ = tw.Flush()
-				return nil
+				return output.Render(os.Stdout, output.Table, rows)
 			})
 		},
 	}
@@ -99,8 +112,8 @@ func newEventShowCmd(opts *globalOptions) *cobra.Command {
 					return err
 				}
 
-				if shouldJSON(*opts) {
-					return writeJSON(os.Stdout, ev)
+				if opts.Format == output.JSON || opts.Format == output.YAML {
+					return output.Render(os.Stdout, opts.Format, ev)
 				}
 
 				fmt.Fprintf(os.Stdout, "Event %s (Seq: %d)\n", ev.ID, ev.SeqNum)
@@ -181,8 +194,8 @@ func newEventAddCmd(opts *globalOptions) *cobra.Command {
 					fmt.Fprintln(os.Stdout, ev.SeqNum)
 					return nil
 				}
-				if shouldJSON(*opts) {
-					return writeJSON(os.Stdout, ev)
+				if opts.Format == output.JSON || opts.Format == output.YAML {
+					return output.Render(os.Stdout, opts.Format, ev)
 				}
 				// §6.3: ack message (non-data) → stderr.
 				fmt.Fprintf(os.Stderr, "Recorded %s seq=%d id=%s\n", ev.Type, ev.SeqNum, ev.ID)
