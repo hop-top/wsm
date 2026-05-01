@@ -51,10 +51,10 @@ wsm workspace show <name-or-id> --json            # full JSON
 wsm workspace archive <name-or-id>        # freeze; stays queryable
 wsm workspace unarchive <name-or-id>
 
-# Remove
-wsm workspace remove <name-or-id>         # prompts for confirmation
-wsm workspace remove <name-or-id> --dry-run   # preview without deleting
-wsm workspace remove <name-or-id> --force     # skip confirmation
+# Delete
+wsm workspace delete <name-or-id>         # prompts for confirmation
+wsm workspace delete <name-or-id> --dry-run   # preview without deleting
+wsm workspace delete <name-or-id> --force     # skip confirmation
 ```
 
 Aliases: `ws` for `workspace`; `add|create|new|a|+`, `list|ls|all`, `show|inspect|info|get|s`
@@ -70,8 +70,8 @@ wsm space add <workspace> /path --capability read,write
 
 wsm space list <workspace>
 wsm space show <workspace> <space-id>
-wsm space remove <workspace> <space-id>
-wsm space remove <workspace> <space-id> --force   # cascade child spaces
+wsm space delete <workspace> <space-id>
+wsm space delete <workspace> <space-id> --force   # cascade child spaces
 ```
 
 Space types: `filesystem` | `container` | `vm` | `api` | `database` | `machine` | `remote`
@@ -132,9 +132,9 @@ wsm snapshot context <workspace> --events 10
 # Update metadata
 wsm snapshot update <snap-id> --name "v2" --seed
 
-# Remove
-wsm snapshot remove <snap-id>             # prompts
-wsm snapshot remove <snap-id> --force     # skip confirmation
+# Delete
+wsm snapshot delete <snap-id>             # prompts
+wsm snapshot delete <snap-id> --force     # skip confirmation
 ```
 
 ---
@@ -206,7 +206,7 @@ wsm workspace config show --json
 
 | Symptom                          | Fix                                          |
 |----------------------------------|----------------------------------------------|
-| "remove in non-TTY requires..."  | Add `--force` in scripts                     |
+| "delete in non-TTY requires..."  | Add `--force` in scripts                     |
 | Workspace not found              | Use `wsm workspace list` to verify name/ID   |
 | Events not appearing in snapshot | Run `wsm snapshot generate <workspace>`      |
 | Wrong data directory             | Check `wsm workspace config show`            |

@@ -59,9 +59,9 @@ wsm workspace show <name-or-id> --events-all --json    # + all events
 wsm workspace archive <name-or-id>
 wsm workspace unarchive <name-or-id>
 
-# Remove (non-interactive)
-wsm workspace remove <name-or-id> --force --json
-wsm workspace remove <name-or-id> --dry-run --json    # preview
+# Delete (non-interactive)
+wsm workspace delete <name-or-id> --force --json
+wsm workspace delete <name-or-id> --dry-run --json    # preview
 ```
 
 ---
@@ -124,8 +124,8 @@ wsm snapshot context <ws> --events 10  # more events in brief
 # Update
 wsm snapshot update <snap-id> --name "v2" --seed --json
 
-# Remove (non-interactive)
-wsm snapshot remove <snap-id> --force
+# Delete (non-interactive)
+wsm snapshot delete <snap-id> --force
 ```
 
 ---
@@ -137,7 +137,7 @@ wsm space add <ws> /path/to/dir --json
 wsm space add <ws> /path --type filesystem --trust-level local --json
 wsm space list <ws> --json
 wsm space show <ws> <space-id> --json
-wsm space remove <ws> <space-id> --force
+wsm space delete <ws> <space-id> --force
 ```
 
 ---
@@ -228,7 +228,7 @@ for direct injection into agent context.
 |---------------------------------------|------------------------------------------------|
 | Workspace not found (exit 3)          | `wsm workspace list --json` to verify names    |
 | Conflict on create (exit 4)           | Use existing or rename; check `list` output    |
-| Non-TTY remove without `--force`      | Always pass `--force` in scripts               |
+| Non-TTY delete without `--force`      | Always pass `--force` in scripts               |
 | Ambiguous device reference            | Use longer ID prefix; `device list --json`     |
 | Backend error (exit 5)               | Check `wsm workspace config show --json`       |
 | Snapshot stale after events recorded  | `wsm snapshot generate <ws>` before handoff    |
