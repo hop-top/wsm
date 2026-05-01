@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -34,13 +35,13 @@ func TestConfig_Defaults(t *testing.T) {
 	if cfg.DataDir == "" {
 		t.Fatal("expected default data dir")
 	}
-	wantCache := filepath.Join(root, ".cache", "wsm")
-	if cfg.CacheDir != wantCache {
-		t.Fatalf("expected default cache dir %q, got %q", wantCache, cfg.CacheDir)
+	// kit/xdg uses OS-native fallbacks (HIG on macOS, XDG on Linux);
+	// assert contract: path lives under HOME and ends in /wsm.
+	if !strings.HasPrefix(cfg.CacheDir, root) || !strings.HasSuffix(cfg.CacheDir, "wsm") {
+		t.Fatalf("cache dir %q must be under %q and end with /wsm", cfg.CacheDir, root)
 	}
-	wantState := filepath.Join(root, ".local", "state", "wsm")
-	if cfg.StateDir != wantState {
-		t.Fatalf("expected default state dir %q, got %q", wantState, cfg.StateDir)
+	if !strings.HasPrefix(cfg.StateDir, root) || !strings.HasSuffix(cfg.StateDir, "wsm") {
+		t.Fatalf("state dir %q must be under %q and end with /wsm", cfg.StateDir, root)
 	}
 }
 

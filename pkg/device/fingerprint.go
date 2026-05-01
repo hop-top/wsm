@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"hop.top/kit/go/core/xdg"
 )
 
 const machineIDFile = "machine-id"
@@ -67,10 +69,10 @@ func PersistMachineID(dataDir, id string) error {
 	return os.WriteFile(p, []byte(id+"\n"), 0o600)
 }
 
-// defaultDataDir returns $XDG_DATA_HOME/wsm or ~/.local/share/wsm.
+// defaultDataDir returns $XDG_DATA_HOME/wsm via kit/xdg.
 func defaultDataDir() string {
-	if xdg := os.Getenv("XDG_DATA_HOME"); xdg != "" {
-		return filepath.Join(xdg, "wsm")
+	if p, err := xdg.DataDir("wsm"); err == nil {
+		return p
 	}
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".local", "share", "wsm")

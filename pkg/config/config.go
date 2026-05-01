@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"gopkg.in/yaml.v3"
+	"hop.top/kit/go/core/xdg"
 )
 
 // Config is resolved runtime configuration.
@@ -31,47 +32,31 @@ type LoadOptions struct {
 }
 
 func defaultDataDir() string {
-	if xdg := os.Getenv("XDG_DATA_HOME"); xdg != "" {
-		return filepath.Join(xdg, "wsm")
+	if p, err := xdg.DataDir("wsm"); err == nil {
+		return p
 	}
-	home, err := os.UserHomeDir()
-	if err != nil || home == "" {
-		return ".wsm"
-	}
-	return filepath.Join(home, ".local", "share", "wsm")
+	return ".wsm"
 }
 
 func defaultCacheDir() string {
-	if xdg := os.Getenv("XDG_CACHE_HOME"); xdg != "" {
-		return filepath.Join(xdg, "wsm")
+	if p, err := xdg.CacheDir("wsm"); err == nil {
+		return p
 	}
-	home, err := os.UserHomeDir()
-	if err != nil || home == "" {
-		return filepath.Join(".cache", "wsm")
-	}
-	return filepath.Join(home, ".cache", "wsm")
+	return filepath.Join(".cache", "wsm")
 }
 
 func defaultStateDir() string {
-	if xdg := os.Getenv("XDG_STATE_HOME"); xdg != "" {
-		return filepath.Join(xdg, "wsm")
+	if p, err := xdg.StateDir("wsm"); err == nil {
+		return p
 	}
-	home, err := os.UserHomeDir()
-	if err != nil || home == "" {
-		return filepath.Join(".local", "state", "wsm")
-	}
-	return filepath.Join(home, ".local", "state", "wsm")
+	return filepath.Join(".local", "state", "wsm")
 }
 
 func resolveConfigFile() string {
-	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
-		return filepath.Join(xdg, "wsm", "config.yaml")
+	if p, err := xdg.ConfigDir("wsm"); err == nil {
+		return filepath.Join(p, "config.yaml")
 	}
-	home, err := os.UserHomeDir()
-	if err != nil || home == "" {
-		return filepath.Join(".", "config", "wsm", "config.yaml")
-	}
-	return filepath.Join(home, ".config", "wsm", "config.yaml")
+	return filepath.Join(".", "config", "wsm", "config.yaml")
 }
 
 // Load resolves configuration with precedence flags > env > file > defaults.
