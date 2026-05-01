@@ -62,12 +62,12 @@ type ListOptions struct {
 // DeviceSession summarizes a session on a device.
 type DeviceSession struct {
 	DeviceID      string    `json:"device_id"`
-	SessionID     string    `json:"session_id"`
-	AgentID       string    `json:"agent_id"`
+	SessionID     string    `json:"session_id" table:"SESSION,priority=8"`
+	AgentID       string    `json:"agent_id" table:"AGENT,priority=6"`
 	WorkspaceID   string    `json:"workspace_id"`
-	WorkspaceName string    `json:"workspace_name"`
-	EventCount    int       `json:"event_count"`
-	LastEventAt   time.Time `json:"last_event_at"`
+	WorkspaceName string    `json:"workspace_name" table:"WORKSPACE,priority=7"`
+	EventCount    int       `json:"event_count" table:"EVENTS,priority=5"`
+	LastEventAt   time.Time `json:"last_event_at" table:"LAST ACTIVITY,priority=4"`
 }
 
 // EventListOptions controls event filtering.

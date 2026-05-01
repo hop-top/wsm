@@ -11,13 +11,13 @@ import (
 
 // Device describes event-producing host identity.
 type Device struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
+	ID        string    `json:"id" table:"ID,priority=9"`
+	Name      string    `json:"name" table:"NAME,priority=8"`
 	Hostname  string    `json:"hostname"`
-	OS        string    `json:"os"`
-	Arch      string    `json:"arch"`
-	FirstSeen time.Time `json:"first_seen"`
-	LastSeen  time.Time `json:"last_seen"`
+	OS        string    `json:"os" table:"OS,priority=5"`
+	Arch      string    `json:"arch" table:"ARCH,priority=5"`
+	FirstSeen time.Time `json:"first_seen" table:"FIRST SEEN,priority=3"`
+	LastSeen  time.Time `json:"last_seen" table:"LAST SEEN,priority=4"`
 }
 
 // Current returns a deterministic local-machine identity payload.

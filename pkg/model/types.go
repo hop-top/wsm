@@ -15,14 +15,14 @@ const (
 
 // Workspace is a session container.
 type Workspace struct {
-	ID          string            `json:"id"`
-	Name        string            `json:"name"`
-	Status      Status            `json:"status"`
+	ID          string            `json:"id" table:"ID,priority=9"`
+	Name        string            `json:"name" table:"NAME,priority=9"`
+	Status      Status            `json:"status" table:"STATUS,priority=7"`
 	Description string            `json:"description,omitempty"`
 	Tags        []string          `json:"tags,omitempty"`
 	Metadata    map[string]string `json:"metadata,omitempty"`
 	CreatedAt   time.Time         `json:"created_at"`
-	UpdatedAt   time.Time         `json:"updated_at"`
+	UpdatedAt   time.Time         `json:"updated_at" table:"UPDATED,priority=4"`
 	ArchivedAt  *time.Time        `json:"archived_at,omitempty"`
 }
 
@@ -57,18 +57,18 @@ const (
 type Event struct {
 	ID           string          `json:"id"`
 	WorkspaceID  string          `json:"workspace_id"`
-	Type         EventType       `json:"type"`
-	DeviceID     string          `json:"device_id,omitempty"`
-	SessionID    string          `json:"session_id,omitempty"`
+	Type         EventType       `json:"type" table:"TYPE,priority=8"`
+	DeviceID     string          `json:"device_id,omitempty" table:"DEVICE,priority=4"`
+	SessionID    string          `json:"session_id,omitempty" table:"SESSION,priority=3"`
 	AgentID      string          `json:"agent_id,omitempty"`
 	WriterID     string          `json:"writer_id,omitempty"`
 	WriterSeq    uint64          `json:"writer_seq,omitempty"`
 	LamportClock uint64          `json:"lamport_clock,omitempty"`
 	SpaceID      string          `json:"space_id,omitempty"`
 	CausalDeps   []string        `json:"causal_deps,omitempty"`
-	Timestamp    time.Time       `json:"timestamp"`
+	Timestamp    time.Time       `json:"timestamp" table:"TIMESTAMP,priority=6"`
 	Data         json.RawMessage `json:"data"`
-	SeqNum       uint64          `json:"seq_num"`
+	SeqNum       uint64          `json:"seq_num" table:"SEQ,priority=9"`
 }
 
 // MessageData payload for EventInteractionMessage.
@@ -118,10 +118,10 @@ type SnapshotEventData struct {
 
 // Snapshot is a point-in-time materialized workspace view.
 type Snapshot struct {
-	ID           string    `json:"id"`
-	Name         string    `json:"name"`
-	WorkspaceID  string    `json:"workspace_id"`
-	AtSeqNum     uint64    `json:"at_seq_num"`
+	ID           string    `json:"id" table:"ID,priority=9"`
+	Name         string    `json:"name" table:"NAME,priority=7"`
+	WorkspaceID  string    `json:"workspace_id" table:"WORKSPACE,priority=8"`
+	AtSeqNum     uint64    `json:"at_seq_num" table:"SEQ,priority=6"`
 	AtTimestamp  time.Time `json:"at_timestamp"`
 	Workspace    Workspace `json:"workspace"`
 	MessageCount int       `json:"message_count"`
@@ -130,5 +130,5 @@ type Snapshot struct {
 	Devices      []string  `json:"devices"`
 	Sessions     []string  `json:"sessions"`
 	IsSeed       bool      `json:"is_seed"`
-	GeneratedAt  time.Time `json:"generated_at"`
+	GeneratedAt  time.Time `json:"generated_at" table:"GENERATED,priority=4"`
 }
