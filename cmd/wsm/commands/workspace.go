@@ -7,16 +7,39 @@ import (
 	"os"
 	"runtime"
 	"strings"
-	"text/tabwriter"
 	"time"
 
 	"github.com/spf13/cobra"
 
+	"hop.top/kit/go/console/output"
 	"hop.top/wsm/pkg/backend"
 	"hop.top/wsm/pkg/config"
 	"hop.top/wsm/pkg/model"
 	"hop.top/wsm/pkg/workspace"
 )
+
+// workspaceRow is the table projection for `workspace list`. The model
+// Workspace tags don't include event/snapshot counts (computed per-row),
+// so we build a row struct here.
+type workspaceRow struct {
+	ID           string `table:"ID,priority=9"           json:"id"`
+	Name         string `table:"NAME,priority=9"         json:"name"`
+	Status       string `table:"STATUS,priority=7"       json:"status"`
+	Events       uint64 `table:"EVENTS,priority=5"       json:"events"`
+	Snaps        uint64 `table:"SNAPS,priority=4"        json:"snaps"`
+	LastActivity string `table:"LAST ACTIVITY,priority=4" json:"last_activity"`
+}
+
+// eventRow is the table projection for `workspace show --events` and
+// `event list`. Mirrors model.Event's table-relevant fields with shortID
+// applied to DeviceID/SessionID for table mode.
+type eventRow struct {
+	SeqNum    uint64 `table:"SEQ,priority=9"       json:"seq_num"`
+	Type      string `table:"TYPE,priority=8"      json:"type"`
+	Timestamp string `table:"TIMESTAMP,priority=6" json:"timestamp"`
+	Device    string `table:"DEVICE,priority=4"    json:"device"`
+	Session   string `table:"SESSION,priority=3"   json:"session"`
+}
 
 func newWorkspaceGroupCmd(opts *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
@@ -96,8 +119,8 @@ func newWorkspaceListCmd(opts *globalOptions) *cobra.Command {
 					return err
 				}
 
-				if shouldJSON(*opts) {
-					return writeJSON(os.Stdout, items)
+				if opts.Format == output.JSON || opts.Format == output.YAML {
+					return output.Render(os.Stdout, opts.Format, items)
 				}
 
 				if len(items) == 0 {
@@ -118,8 +141,20 @@ func newWorkspaceListCmd(opts *globalOptions) *cobra.Command {
 					return nil
 				}
 
-				printWorkspaceTable(ctx, app, items)
-				return nil
+				rows := make([]workspaceRow, len(items))
+				for i, ws := range items {
+					ec, _ := app.manager.EventCount(ctx, ws.ID)
+					sc, _ := app.manager.SnapshotCount(ctx, ws.ID)
+					rows[i] = workspaceRow{
+						ID:           shortID(ws.ID),
+						Name:         ws.Name,
+						Status:       string(ws.Status),
+						Events:       ec,
+						Snaps:        sc,
+						LastActivity: humanAgo(ws.UpdatedAt),
+					}
+				}
+				return output.Render(os.Stdout, output.Table, rows)
 			})
 		},
 	}
@@ -132,18 +167,6 @@ func newWorkspaceListCmd(opts *globalOptions) *cobra.Command {
 		return []string{"created", "updated", "name"}, cobra.ShellCompDirectiveNoFileComp
 	})
 	return cmd
-}
-
-func printWorkspaceTable(ctx context.Context, app *appContext, items []workspace.Workspace) {
-	tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tNAME\tSTATUS\tEVENTS\tSNAPS\tLAST ACTIVITY")
-	for _, ws := range items {
-		ec, _ := app.manager.EventCount(ctx, ws.ID)
-		sc, _ := app.manager.SnapshotCount(ctx, ws.ID)
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%d\t%s\n",
-			shortID(ws.ID), ws.Name, ws.Status, ec, sc, humanAgo(ws.UpdatedAt))
-	}
-	_ = tw.Flush()
 }
 
 func newWorkspaceShowCmd(opts *globalOptions) *cobra.Command {
@@ -167,7 +190,7 @@ func newWorkspaceShowCmd(opts *globalOptions) *cobra.Command {
 				events, _ := app.manager.Events(ctx, ws.ID, backend.EventListOptions{Limit: limit})
 				latestSnap, _ := app.backend.GetLatestSnapshot(ctx, ws.ID)
 
-				if shouldJSON(*opts) {
+				if opts.Format == output.JSON || opts.Format == output.YAML {
 					ec, _ := app.manager.EventCount(ctx, ws.ID)
 					sc, _ := app.manager.SnapshotCount(ctx, ws.ID)
 					payload := map[string]any{
@@ -177,7 +200,7 @@ func newWorkspaceShowCmd(opts *globalOptions) *cobra.Command {
 						"events":         events,
 						"snapshot":       latestSnap,
 					}
-					return writeJSON(os.Stdout, payload)
+					return output.Render(os.Stdout, opts.Format, payload)
 				}
 
 				fmt.Fprintf(os.Stdout, "Workspace: %s\n", ws.Name)
@@ -236,17 +259,21 @@ func newWorkspaceShowCmd(opts *globalOptions) *cobra.Command {
 
 				if len(events) > 0 {
 					fmt.Fprintf(os.Stdout, "\nEVENTS:\n")
-					tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-					fmt.Fprintln(tw, "SEQ\tTYPE\tTIMESTAMP\tDEVICE")
-					for _, ev := range events {
+					rows := make([]eventRow, len(events))
+					for i, ev := range events {
 						devID := ev.DeviceID
 						if devID == "" {
 							devID = "unknown"
 						}
-						fmt.Fprintf(tw, "%d\t%s\t%s\t%s\n",
-							ev.SeqNum, ev.Type, ev.Timestamp.Format("15:04:05"), devID)
+						rows[i] = eventRow{
+							SeqNum:    ev.SeqNum,
+							Type:      string(ev.Type),
+							Timestamp: ev.Timestamp.Format("15:04:05"),
+							Device:    shortID(devID),
+							Session:   shortID(ev.SessionID),
+						}
 					}
-					_ = tw.Flush()
+					_ = output.Render(os.Stdout, output.Table, rows)
 				}
 
 				return nil
