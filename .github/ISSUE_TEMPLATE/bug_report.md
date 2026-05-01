@@ -20,4 +20,3 @@ labels: bug
 
 - OS:
 - Go version:
-- Build mode: (default / charmui)
