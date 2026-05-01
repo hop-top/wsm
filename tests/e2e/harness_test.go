@@ -165,7 +165,7 @@ func (r *e2eRunner) openManager() (*workspace.Manager, func()) {
 
 func (r *e2eRunner) mustCreateWorkspace(name string) string {
 	r.t.Helper()
-	res := r.run("workspace", "add", name, "--json")
+	res := r.run("workspace", "add", name, "--format", "json")
 	requireExitCode(r.t, res, 0)
 	var payload struct {
 		ID        string `json:"id"`

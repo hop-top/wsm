@@ -9,7 +9,7 @@ import (
 )
 
 func newVersionCmd() *cobra.Command {
-	var jsonOut, short bool
+	var short bool
 
 	cmd := &cobra.Command{
 		Use:   "version",
@@ -26,7 +26,9 @@ func newVersionCmd() *cobra.Command {
 				commit = commit[:7]
 			}
 
-			if jsonOut {
+			// Read the persistent --format flag (registered by kit/cli).
+			format, _ := cmd.Flags().GetString("format")
+			if format == "json" || format == "yaml" {
 				info := map[string]string{
 					"version":   Version,
 					"commit":    CommitSHA,
@@ -47,7 +49,6 @@ func newVersionCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().BoolVar(&jsonOut, "json", false, "Output version info as JSON")
 	cmd.Flags().BoolVar(&short, "short", false, "Output only the version number")
 	return cmd
 }

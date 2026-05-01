@@ -9,10 +9,10 @@ import (
 func TestDeviceList(t *testing.T) {
 	r := newRunner(t)
 	wsID := r.mustCreateWorkspace("device-list-test")
-	addRes := r.run("event", "add", wsID, "interaction.message", "--content=hello", "--json")
+	addRes := r.run("event", "add", wsID, "interaction.message", "--content=hello", "--format", "json")
 	requireExitCode(t, addRes, 0)
 
-	res := r.run("device", "list", "--json")
+	res := r.run("device", "list", "--format", "json")
 	requireExitCode(t, res, 0)
 
 	var devices []device.Device
@@ -26,9 +26,9 @@ func TestDeviceShow(t *testing.T) {
 	r := newRunner(t)
 	wsID := r.mustCreateWorkspace("device-show-test")
 	r.run("event", "add", wsID, "interaction.message", "--content=hello",
-		"--session-id=dev-sess-1", "--agent-id=claude", "--json")
+		"--session-id=dev-sess-1", "--agent-id=claude", "--format", "json")
 
-	listRes := r.run("device", "list", "--json")
+	listRes := r.run("device", "list", "--format", "json")
 	requireExitCode(t, listRes, 0)
 	var devices []device.Device
 	mustUnmarshalJSON(t, listRes.Stdout, &devices)
@@ -36,7 +36,7 @@ func TestDeviceShow(t *testing.T) {
 		t.Fatal("no devices found")
 	}
 
-	showRes := r.run("device", "show", devices[0].ID, "--json")
+	showRes := r.run("device", "show", devices[0].ID, "--format", "json")
 	requireExitCode(t, showRes, 0)
 	if showRes.StdoutTrim() == "" {
 		t.Fatal("expected non-empty show output")
@@ -52,9 +52,9 @@ func TestDeviceShow_NotFound(t *testing.T) {
 func TestDeviceAlias(t *testing.T) {
 	r := newRunner(t)
 	wsID := r.mustCreateWorkspace("device-alias-test")
-	r.run("event", "add", wsID, "interaction.message", "--content=hello", "--json")
+	r.run("event", "add", wsID, "interaction.message", "--content=hello", "--format", "json")
 
-	res := r.run("devices", "list", "--json")
+	res := r.run("devices", "list", "--format", "json")
 	requireExitCode(t, res, 0)
 
 	var devices []device.Device
@@ -67,9 +67,9 @@ func TestDeviceAlias(t *testing.T) {
 func TestDeviceShow_PartialID(t *testing.T) {
 	r := newRunner(t)
 	wsID := r.mustCreateWorkspace("device-partial-id-test")
-	r.run("event", "add", wsID, "interaction.message", "--content=hello", "--json")
+	r.run("event", "add", wsID, "interaction.message", "--content=hello", "--format", "json")
 
-	listRes := r.run("device", "list", "--json")
+	listRes := r.run("device", "list", "--format", "json")
 	requireExitCode(t, listRes, 0)
 	var devices []device.Device
 	mustUnmarshalJSON(t, listRes.Stdout, &devices)
@@ -80,7 +80,7 @@ func TestDeviceShow_PartialID(t *testing.T) {
 	fullID := devices[0].ID
 	partialID := fullID[:7]
 
-	showRes := r.run("device", "show", partialID, "--json")
+	showRes := r.run("device", "show", partialID, "--format", "json")
 	requireExitCode(t, showRes, 0)
 	if showRes.StdoutTrim() == "" {
 		t.Fatal("expected non-empty show output")
@@ -90,9 +90,9 @@ func TestDeviceShow_PartialID(t *testing.T) {
 func TestDeviceShow_PartialID_MinChars(t *testing.T) {
 	r := newRunner(t)
 	wsID := r.mustCreateWorkspace("device-partial-id-min-test")
-	r.run("event", "add", wsID, "interaction.message", "--content=hello", "--json")
+	r.run("event", "add", wsID, "interaction.message", "--content=hello", "--format", "json")
 
-	listRes := r.run("device", "list", "--json")
+	listRes := r.run("device", "list", "--format", "json")
 	requireExitCode(t, listRes, 0)
 	var devices []device.Device
 	mustUnmarshalJSON(t, listRes.Stdout, &devices)
@@ -103,7 +103,7 @@ func TestDeviceShow_PartialID_MinChars(t *testing.T) {
 	fullID := devices[0].ID
 	partialID := fullID[:4]
 
-	showRes := r.run("device", "show", partialID, "--json")
+	showRes := r.run("device", "show", partialID, "--format", "json")
 	requireExitCode(t, showRes, 0)
 	if showRes.StdoutTrim() == "" {
 		t.Fatal("expected non-empty show output")
@@ -113,9 +113,9 @@ func TestDeviceShow_PartialID_MinChars(t *testing.T) {
 func TestDeviceShow_PartialName(t *testing.T) {
 	r := newRunner(t)
 	wsID := r.mustCreateWorkspace("device-partial-name-test")
-	r.run("event", "add", wsID, "interaction.message", "--content=hello", "--json")
+	r.run("event", "add", wsID, "interaction.message", "--content=hello", "--format", "json")
 
-	listRes := r.run("device", "list", "--json")
+	listRes := r.run("device", "list", "--format", "json")
 	requireExitCode(t, listRes, 0)
 	var devices []device.Device
 	mustUnmarshalJSON(t, listRes.Stdout, &devices)
@@ -129,7 +129,7 @@ func TestDeviceShow_PartialName(t *testing.T) {
 	}
 	partialName := deviceName[:3]
 
-	showRes := r.run("device", "show", partialName, "--json")
+	showRes := r.run("device", "show", partialName, "--format", "json")
 	requireExitCode(t, showRes, 0)
 	if showRes.StdoutTrim() == "" {
 		t.Fatal("expected non-empty show output")
@@ -138,10 +138,10 @@ func TestDeviceShow_PartialName(t *testing.T) {
 
 func TestDeviceShow_AmbiguousID(t *testing.T) {
 	r := newRunner(t)
-	r.run("workspace", "add", "ambig-test-1", "--json")
-	r.run("workspace", "add", "ambig-test-2", "--json")
+	r.run("workspace", "add", "ambig-test-1", "--format", "json")
+	r.run("workspace", "add", "ambig-test-2", "--format", "json")
 
-	listRes := r.run("device", "list", "--json")
+	listRes := r.run("device", "list", "--format", "json")
 	requireExitCode(t, listRes, 0)
 	var devices []device.Device
 	mustUnmarshalJSON(t, listRes.Stdout, &devices)
@@ -169,9 +169,9 @@ func TestDeviceShow_AmbiguousID(t *testing.T) {
 func TestDeviceShow_AmbiguousName(t *testing.T) {
 	r := newRunner(t)
 	wsID := r.mustCreateWorkspace("device-ambig-name-test")
-	r.run("event", "add", wsID, "interaction.message", "--content=hello", "--json")
+	r.run("event", "add", wsID, "interaction.message", "--content=hello", "--format", "json")
 
-	listRes := r.run("device", "list", "--json")
+	listRes := r.run("device", "list", "--format", "json")
 	requireExitCode(t, listRes, 0)
 	var devices []device.Device
 	mustUnmarshalJSON(t, listRes.Stdout, &devices)
@@ -199,9 +199,9 @@ func TestDeviceShow_AmbiguousName(t *testing.T) {
 func TestDeviceShow_AmbiguousJSON(t *testing.T) {
 	r := newRunner(t)
 	wsID := r.mustCreateWorkspace("device-ambig-json-test")
-	r.run("event", "add", wsID, "interaction.message", "--content=hello", "--json")
+	r.run("event", "add", wsID, "interaction.message", "--content=hello", "--format", "json")
 
-	listRes := r.run("device", "list", "--json")
+	listRes := r.run("device", "list", "--format", "json")
 	requireExitCode(t, listRes, 0)
 	var devices []device.Device
 	mustUnmarshalJSON(t, listRes.Stdout, &devices)
@@ -215,7 +215,7 @@ func TestDeviceShow_AmbiguousJSON(t *testing.T) {
 	}
 	partialID := fullID[:4]
 
-	showRes := r.run("device", "show", partialID, "--json")
+	showRes := r.run("device", "show", partialID, "--format", "json")
 	if len(devices) == 1 {
 		requireExitCode(t, showRes, 0)
 	} else {

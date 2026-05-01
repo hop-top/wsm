@@ -21,7 +21,7 @@ func TestEventRecording(t *testing.T) {
 		t.Fatalf("create workspace: %v", err)
 	}
 
-	addMessage := r.run("event", "add", ws.ID, "interaction.message", "--content=hello", "--json")
+	addMessage := r.run("event", "add", ws.ID, "interaction.message", "--content=hello", "--format", "json")
 	requireExitCode(t, addMessage, 0)
 	var messageEvent workspace.Event
 	mustUnmarshalJSON(t, addMessage.Stdout, &messageEvent)
@@ -33,7 +33,7 @@ func TestEventRecording(t *testing.T) {
 		"event", "add", ws.ID, "interaction.tool_call",
 		"--tool-name=grep",
 		"--input={\"pattern\":\"foo\"}",
-		"--json",
+		"--format", "json",
 	)
 	requireExitCode(t, addTool, 0)
 	var toolEvent workspace.Event
@@ -46,7 +46,7 @@ func TestEventRecording(t *testing.T) {
 		"event", "add", ws.ID, "mutation.file_patch",
 		"--path=README.md",
 		"--operation=modify",
-		"--json",
+		"--format", "json",
 	)
 	requireExitCode(t, addFile, 0)
 	var fileEvent workspace.Event
@@ -55,7 +55,7 @@ func TestEventRecording(t *testing.T) {
 		t.Fatalf("expected increasing seq_num for file event, got tool=%d file=%d", toolEvent.SeqNum, fileEvent.SeqNum)
 	}
 
-	res := r.run("event", "list", ws.ID, "--json")
+	res := r.run("event", "list", ws.ID, "--format", "json")
 	requireExitCode(t, res, 0)
 	events := mustUnmarshalJSONArray[workspace.Event](t, res.Stdout)
 	if len(events) < 2 {
@@ -94,7 +94,7 @@ func TestEventListing(t *testing.T) {
 		t.Fatalf("record second message event: %v", err)
 	}
 
-	allRes := r.run("event", "list", ws.ID, "--json")
+	allRes := r.run("event", "list", ws.ID, "--format", "json")
 	requireExitCode(t, allRes, 0)
 	all := mustUnmarshalJSONArray[workspace.Event](t, allRes.Stdout)
 	if len(all) < 4 {
@@ -106,7 +106,7 @@ func TestEventListing(t *testing.T) {
 		}
 	}
 
-	filteredRes := r.run("event", "list", ws.ID, "--type=interaction.message", "--json")
+	filteredRes := r.run("event", "list", ws.ID, "--type=interaction.message", "--format", "json")
 	requireExitCode(t, filteredRes, 0)
 	filtered := mustUnmarshalJSONArray[workspace.Event](t, filteredRes.Stdout)
 	if len(filtered) != 2 {
@@ -147,7 +147,7 @@ func TestEventFilteringCLI(t *testing.T) {
 		"--after-seq=20",
 		"--before-seq=40",
 		"--limit=25",
-		"--json",
+		"--format", "json",
 	)
 	requireExitCode(t, res, 0)
 	filtered := mustUnmarshalJSONArray[workspace.Event](t, res.Stdout)
@@ -191,7 +191,7 @@ func TestEventIntegrity_LargeVolume(t *testing.T) {
 		}
 	}
 
-	res := r.run("event", "list", ws.ID, "--type=interaction.message", "--json")
+	res := r.run("event", "list", ws.ID, "--type=interaction.message", "--format", "json")
 	requireExitCode(t, res, 0)
 	events := mustUnmarshalJSONArray[workspace.Event](t, res.Stdout)
 	if len(events) != 1000 {
@@ -221,7 +221,7 @@ func TestEventRecording_SessionAgentID(t *testing.T) {
 		"--content=hello-session",
 		"--session-id=e2e-sess-1",
 		"--agent-id=e2e-agent-1",
-		"--json",
+		"--format", "json",
 	)
 	requireExitCode(t, addRes, 0)
 
@@ -234,7 +234,7 @@ func TestEventRecording_SessionAgentID(t *testing.T) {
 		t.Fatalf("expected agent_id=e2e-agent-1, got %q", ev.AgentID)
 	}
 
-	listRes := r.run("event", "list", wsID, "--json")
+	listRes := r.run("event", "list", wsID, "--format", "json")
 	requireExitCode(t, listRes, 0)
 	events := mustUnmarshalJSONArray[workspace.Event](t, listRes.Stdout)
 
@@ -254,12 +254,12 @@ func TestEventShow(t *testing.T) {
 	r := newRunner(t)
 	wsID := r.mustCreateWorkspace("event-show-e2e")
 
-	addRes := r.run("event", "add", wsID, "interaction.message", "--content=show-me", "--json")
+	addRes := r.run("event", "add", wsID, "interaction.message", "--content=show-me", "--format", "json")
 	requireExitCode(t, addRes, 0)
 	var added workspace.Event
 	mustUnmarshalJSON(t, addRes.Stdout, &added)
 
-	bySeq := r.run("event", "show", wsID, fmt.Sprintf("%d", added.SeqNum), "--json")
+	bySeq := r.run("event", "show", wsID, fmt.Sprintf("%d", added.SeqNum), "--format", "json")
 	requireExitCode(t, bySeq, 0)
 	var showedBySeq workspace.Event
 	mustUnmarshalJSON(t, bySeq.Stdout, &showedBySeq)
@@ -267,7 +267,7 @@ func TestEventShow(t *testing.T) {
 		t.Fatalf("expected event id %s from show by seq, got %s", added.ID, showedBySeq.ID)
 	}
 
-	byID := r.run("event", "show", wsID, added.ID, "--json")
+	byID := r.run("event", "show", wsID, added.ID, "--format", "json")
 	requireExitCode(t, byID, 0)
 	var showedByID workspace.Event
 	mustUnmarshalJSON(t, byID.Stdout, &showedByID)
@@ -283,10 +283,10 @@ func TestEventAlias(t *testing.T) {
 	r := newRunner(t)
 	wsID := r.mustCreateWorkspace("event-alias-e2e")
 
-	addRes := r.run("events", "add", wsID, "interaction.message", "--content=alias-test", "--json")
+	addRes := r.run("events", "add", wsID, "interaction.message", "--content=alias-test", "--format", "json")
 	requireExitCode(t, addRes, 0)
 
-	listRes := r.run("events", "list", wsID, "--json")
+	listRes := r.run("events", "list", wsID, "--format", "json")
 	requireExitCode(t, listRes, 0)
 	events := mustUnmarshalJSONArray[workspace.Event](t, listRes.Stdout)
 	if len(events) < 1 {

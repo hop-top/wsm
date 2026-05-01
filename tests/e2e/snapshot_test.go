@@ -36,7 +36,7 @@ func TestSnapshotGeneration(t *testing.T) {
 	mustRecord(workspace.EventDeviceAttached, workspace.DeviceData{DeviceID: "dev-2", DeviceName: "CI"})
 	mustRecord(workspace.EventDeviceDetached, workspace.DeviceData{DeviceID: "dev-2", DeviceName: "CI"})
 
-	firstSnapshotRes := r.run("snapshot", "generate", ws.ID, "--json")
+	firstSnapshotRes := r.run("snapshot", "generate", ws.ID, "--format", "json")
 	requireExitCode(t, firstSnapshotRes, 0)
 	var snap1 workspace.Snapshot
 	mustUnmarshalJSON(t, firstSnapshotRes.Stdout, &snap1)
@@ -57,7 +57,7 @@ func TestSnapshotGeneration(t *testing.T) {
 	mustRecord(workspace.EventInteractionMessage, workspace.MessageData{Role: "assistant", Content: "m2"})
 	mustRecord(workspace.EventMutationFilePatch, workspace.FileChangeData{Path: "c.txt", Operation: "create"})
 
-	secondSnapshotRes := r.run("snapshot", "generate", ws.ID, "--json")
+	secondSnapshotRes := r.run("snapshot", "generate", ws.ID, "--format", "json")
 	requireExitCode(t, secondSnapshotRes, 0)
 	var snap2 workspace.Snapshot
 	mustUnmarshalJSON(t, secondSnapshotRes.Stdout, &snap2)
@@ -72,7 +72,7 @@ func TestSnapshotGeneration(t *testing.T) {
 		t.Fatalf("expected 3 deduplicated files in incremental snapshot, got %v", snap2.FilesChanged)
 	}
 
-	inspectRes := r.run("workspace", "show", ws.ID, "--json")
+	inspectRes := r.run("workspace", "show", ws.ID, "--format", "json")
 	requireExitCode(t, inspectRes, 0)
 	var inspectPayload inspectJSON
 	mustUnmarshalJSON(t, inspectRes.Stdout, &inspectPayload)
@@ -98,7 +98,7 @@ func TestSnapshotGeneration(t *testing.T) {
 		t.Fatalf("expected empty files/devices for empty workspace snapshot, got files=%v devices=%v", emptySnap.FilesChanged, emptySnap.Devices)
 	}
 
-	implicitRes := r.run("snapshot", "generate", "--json")
+	implicitRes := r.run("snapshot", "generate", "--format", "json")
 	requireExitCode(t, implicitRes, 0)
 	var implicit workspace.Snapshot
 	mustUnmarshalJSON(t, implicitRes.Stdout, &implicit)
@@ -112,7 +112,7 @@ func TestSnapshotContext(t *testing.T) {
 	wsID := r.mustCreateWorkspace("snap-context-test")
 	r.run("event", "add", wsID, "interaction.message", "--content=context-test")
 
-	genRes := r.run("snapshot", "generate", wsID, "--json")
+	genRes := r.run("snapshot", "generate", wsID, "--format", "json")
 	requireExitCode(t, genRes, 0)
 
 	ctxRes := r.run("snapshot", "context", wsID)
@@ -133,7 +133,7 @@ func TestSnapshotGenerate_Session(t *testing.T) {
 	r.run("event", "add", wsID, "interaction.message", "--content=m2", "--session-id=sess-2")
 	r.run("event", "add", wsID, "interaction.message", "--content=m3", "--session-id=sess-1")
 
-	allRes := r.run("snapshot", "generate", wsID, "--json")
+	allRes := r.run("snapshot", "generate", wsID, "--format", "json")
 	requireExitCode(t, allRes, 0)
 	var allSnap workspace.Snapshot
 	mustUnmarshalJSON(t, allRes.Stdout, &allSnap)
@@ -147,7 +147,7 @@ func TestSnapshotGenerate_Session(t *testing.T) {
 		t.Fatal("expected snapshot to have an ID")
 	}
 
-	sess1Res := r.run("snapshot", "generate", wsID, "-s", "sess-1", "--json")
+	sess1Res := r.run("snapshot", "generate", wsID, "-s", "sess-1", "--format", "json")
 	requireExitCode(t, sess1Res, 0)
 	var sess1Snap workspace.Snapshot
 	mustUnmarshalJSON(t, sess1Res.Stdout, &sess1Snap)
@@ -158,7 +158,7 @@ func TestSnapshotGenerate_Session(t *testing.T) {
 		t.Fatalf("expected only sess-1 in sessions, got %v", sess1Snap.Sessions)
 	}
 
-	sess2Res := r.run("snapshot", "generate", wsID, "-s", "sess-2", "--json")
+	sess2Res := r.run("snapshot", "generate", wsID, "-s", "sess-2", "--format", "json")
 	requireExitCode(t, sess2Res, 0)
 	var sess2Snap workspace.Snapshot
 	mustUnmarshalJSON(t, sess2Res.Stdout, &sess2Snap)
@@ -173,7 +173,7 @@ func TestSnapshotGenerate_NameAndSeed(t *testing.T) {
 
 	r.run("event", "add", wsID, "interaction.message", "--content=m1")
 
-	namedRes := r.run("snapshot", "generate", wsID, "-n", "baseline", "--seed", "--json")
+	namedRes := r.run("snapshot", "generate", wsID, "-n", "baseline", "--seed", "--format", "json")
 	requireExitCode(t, namedRes, 0)
 	var namedSnap workspace.Snapshot
 	mustUnmarshalJSON(t, namedRes.Stdout, &namedSnap)
@@ -184,7 +184,7 @@ func TestSnapshotGenerate_NameAndSeed(t *testing.T) {
 		t.Fatal("expected is_seed=true")
 	}
 
-	getRes := r.run("snapshot", "generate", wsID, "-n", "baseline", "--json")
+	getRes := r.run("snapshot", "generate", wsID, "-n", "baseline", "--format", "json")
 	requireExitCode(t, getRes, 0)
 	var getSnap workspace.Snapshot
 	mustUnmarshalJSON(t, getRes.Stdout, &getSnap)
@@ -192,7 +192,7 @@ func TestSnapshotGenerate_NameAndSeed(t *testing.T) {
 		t.Fatalf("expected same snapshot when using name, got %s vs %s", getSnap.ID, namedSnap.ID)
 	}
 
-	listRes := r.run("snapshot", "list", "-w", wsID, "--json")
+	listRes := r.run("snapshot", "list", "-w", wsID, "--format", "json")
 	requireExitCode(t, listRes, 0)
 	var snaps []workspace.Snapshot
 	mustUnmarshalJSON(t, listRes.Stdout, &snaps)
@@ -212,12 +212,12 @@ func TestSnapshotUpdate(t *testing.T) {
 	wsID := r.mustCreateWorkspace("snap-update-test")
 
 	r.run("event", "add", wsID, "interaction.message", "--content=m1")
-	genRes := r.run("snapshot", "generate", wsID, "--json")
+	genRes := r.run("snapshot", "generate", wsID, "--format", "json")
 	requireExitCode(t, genRes, 0)
 	var snap workspace.Snapshot
 	mustUnmarshalJSON(t, genRes.Stdout, &snap)
 
-	updateRes := r.run("snapshot", "update", snap.ID, "-n", "renamed", "--seed", "--json")
+	updateRes := r.run("snapshot", "update", snap.ID, "-n", "renamed", "--seed", "--format", "json")
 	requireExitCode(t, updateRes, 0)
 	var updated workspace.Snapshot
 	mustUnmarshalJSON(t, updateRes.Stdout, &updated)
@@ -228,7 +228,7 @@ func TestSnapshotUpdate(t *testing.T) {
 		t.Fatal("expected is_seed=true")
 	}
 
-	byNameRes := r.run("snapshot", "update", "renamed", "-n", "final", "--json")
+	byNameRes := r.run("snapshot", "update", "renamed", "-n", "final", "--format", "json")
 	requireExitCode(t, byNameRes, 0)
 	var byName workspace.Snapshot
 	mustUnmarshalJSON(t, byNameRes.Stdout, &byName)
@@ -242,12 +242,12 @@ func TestSnapshotRemove(t *testing.T) {
 	wsID := r.mustCreateWorkspace("snap-remove-test")
 
 	r.run("event", "add", wsID, "interaction.message", "--content=m1")
-	genRes := r.run("snapshot", "generate", wsID, "-n", "to-remove", "--json")
+	genRes := r.run("snapshot", "generate", wsID, "-n", "to-remove", "--format", "json")
 	requireExitCode(t, genRes, 0)
 	var snap workspace.Snapshot
 	mustUnmarshalJSON(t, genRes.Stdout, &snap)
 
-	listBefore := r.run("snapshot", "list", "-w", wsID, "--json")
+	listBefore := r.run("snapshot", "list", "-w", wsID, "--format", "json")
 	requireExitCode(t, listBefore, 0)
 	var before []workspace.Snapshot
 	mustUnmarshalJSON(t, listBefore.Stdout, &before)
@@ -258,7 +258,7 @@ func TestSnapshotRemove(t *testing.T) {
 	rmRes := r.run("snapshot", "remove", snap.ID, "--force")
 	requireExitCode(t, rmRes, 0)
 
-	listAfter := r.run("snapshot", "list", "-w", wsID, "--json")
+	listAfter := r.run("snapshot", "list", "-w", wsID, "--format", "json")
 	requireExitCode(t, listAfter, 0)
 	var after []workspace.Snapshot
 	mustUnmarshalJSON(t, listAfter.Stdout, &after)
@@ -276,16 +276,16 @@ func TestSnapshotList(t *testing.T) {
 	ws2 := r.mustCreateWorkspace("snap-list-2")
 
 	r.run("event", "add", ws1, "interaction.message", "--content=ws1-m1", "--session-id=sess-a")
-	requireExitCode(t, r.run("snapshot", "generate", ws1, "--json"), 0)
+	requireExitCode(t, r.run("snapshot", "generate", ws1, "--format", "json"), 0)
 
 	r.run("event", "add", ws2, "interaction.message", "--content=ws2-m1", "--session-id=sess-b")
 	r.run("event", "add", ws2, "interaction.message", "--content=ws2-m2", "--session-id=sess-c")
-	requireExitCode(t, r.run("snapshot", "generate", ws2, "--json"), 0)
+	requireExitCode(t, r.run("snapshot", "generate", ws2, "--format", "json"), 0)
 
 	r.run("event", "add", ws1, "interaction.message", "--content=ws1-m2", "--session-id=sess-a")
-	requireExitCode(t, r.run("snapshot", "generate", ws1, "--json"), 0)
+	requireExitCode(t, r.run("snapshot", "generate", ws1, "--format", "json"), 0)
 
-	allRes := r.run("snapshot", "list", "--json")
+	allRes := r.run("snapshot", "list", "--format", "json")
 	requireExitCode(t, allRes, 0)
 	var all []workspace.Snapshot
 	mustUnmarshalJSON(t, allRes.Stdout, &all)
@@ -293,7 +293,7 @@ func TestSnapshotList(t *testing.T) {
 		t.Fatalf("expected 3 total snapshots, got %d", len(all))
 	}
 
-	ws1Res := r.run("snapshot", "list", "-w", ws1, "--json")
+	ws1Res := r.run("snapshot", "list", "-w", ws1, "--format", "json")
 	requireExitCode(t, ws1Res, 0)
 	var ws1Snaps []workspace.Snapshot
 	mustUnmarshalJSON(t, ws1Res.Stdout, &ws1Snaps)
@@ -301,7 +301,7 @@ func TestSnapshotList(t *testing.T) {
 		t.Fatalf("expected 2 snapshots for ws1, got %d", len(ws1Snaps))
 	}
 
-	ws2Res := r.run("snapshot", "list", "-w", "snap-list-2", "--json")
+	ws2Res := r.run("snapshot", "list", "-w", "snap-list-2", "--format", "json")
 	requireExitCode(t, ws2Res, 0)
 	var ws2Snaps []workspace.Snapshot
 	mustUnmarshalJSON(t, ws2Res.Stdout, &ws2Snaps)
@@ -321,7 +321,7 @@ func TestSnapshotList(t *testing.T) {
 		t.Fatalf("expected table headers in plain output, got:\n%s", plainRes.Stdout)
 	}
 
-	multiRes := r.run("snapshot", "list", "-w", ws1, "-w", "snap-list-2", "--json")
+	multiRes := r.run("snapshot", "list", "-w", ws1, "-w", "snap-list-2", "--format", "json")
 	requireExitCode(t, multiRes, 0)
 	var multiSnaps []workspace.Snapshot
 	mustUnmarshalJSON(t, multiRes.Stdout, &multiSnaps)
@@ -329,7 +329,7 @@ func TestSnapshotList(t *testing.T) {
 		t.Fatalf("expected 3 snapshots for multi-workspace filter, got %d", len(multiSnaps))
 	}
 
-	sessRes := r.run("snapshot", "list", "-s", "sess-b", "--json")
+	sessRes := r.run("snapshot", "list", "-s", "sess-b", "--format", "json")
 	requireExitCode(t, sessRes, 0)
 	var sessSnaps []workspace.Snapshot
 	mustUnmarshalJSON(t, sessRes.Stdout, &sessSnaps)
@@ -340,7 +340,7 @@ func TestSnapshotList(t *testing.T) {
 		t.Fatalf("expected sess-b snapshot to be from ws2")
 	}
 
-	sessMultiRes := r.run("snapshot", "list", "-s", "sess-a", "-s", "sess-c", "--json")
+	sessMultiRes := r.run("snapshot", "list", "-s", "sess-a", "-s", "sess-c", "--format", "json")
 	requireExitCode(t, sessMultiRes, 0)
 	var sessMultiSnaps []workspace.Snapshot
 	mustUnmarshalJSON(t, sessMultiRes.Stdout, &sessMultiSnaps)

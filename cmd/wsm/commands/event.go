@@ -132,7 +132,7 @@ func newEventShowCmd(opts *globalOptions) *cobra.Command {
 
 func newEventAddCmd(opts *globalOptions) *cobra.Command {
 	var rawData string
-	var role, content, format string
+	var role, content, contentFormat string
 	var toolName, toolInput, toolOutput, toolStatus string
 	var durationMS int64
 	var path, operation, diff string
@@ -157,7 +157,7 @@ func newEventAddCmd(opts *globalOptions) *cobra.Command {
 					rawData:    rawData,
 					role:       role,
 					content:    content,
-					format:     format,
+					format:     contentFormat,
 					toolName:   toolName,
 					toolInput:  toolInput,
 					toolOutput: toolOutput,
@@ -194,7 +194,8 @@ func newEventAddCmd(opts *globalOptions) *cobra.Command {
 
 	cmd.Flags().StringVar(&role, "role", "", "interaction.message: role (user|assistant|system)")
 	cmd.Flags().StringVar(&content, "content", "", "interaction.message: content text")
-	cmd.Flags().StringVar(&format, "format", "", "interaction.message: optional format")
+	cmd.Flags().StringVar(&contentFormat, "content-format", "",
+		"interaction.message: optional content format")
 
 	cmd.Flags().StringVar(&toolName, "tool-name", "", "interaction.tool_*: tool name")
 	cmd.Flags().StringVar(&toolInput, "input", "", "interaction.tool_*: tool input as JSON")

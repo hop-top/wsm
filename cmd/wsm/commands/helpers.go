@@ -26,7 +26,12 @@ func noColor(opts globalOptions) bool {
 }
 
 func shouldJSON(opts globalOptions) bool {
-	if opts.JSON {
+	// kit/cli registers --format (table|json|yaml). Treat both
+	// json + yaml as machine-readable for the structured-output
+	// branches; YAML callers still get JSON output today since
+	// per-command yaml rendering is owned by T-0079/T-0080.
+	switch opts.Format {
+	case "json", "yaml":
 		return true
 	}
 	return false

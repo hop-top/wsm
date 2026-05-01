@@ -36,7 +36,7 @@ func TestWorkspaceCreate(t *testing.T) {
 	res = r.run("workspace", "add", "my-meta", "-d", "Auth refactor", "-t", "backend", "-t", "auth")
 	requireExitCode(t, res, 0)
 
-	res = r.run("workspace", "show", "my-meta", "--json")
+	res = r.run("workspace", "show", "my-meta", "--format", "json")
 	requireExitCode(t, res, 0)
 	var inspected inspectJSON
 	mustUnmarshalJSON(t, res.Stdout, &inspected)
@@ -94,7 +94,7 @@ func TestWorkspaceList(t *testing.T) {
 		t.Fatalf("expected name sort order alpha before bravo:\n%s", res.Stdout)
 	}
 
-	jsonRes := r.run("workspace", "list", "--json")
+	jsonRes := r.run("workspace", "list", "--format", "json")
 	requireExitCode(t, jsonRes, 0)
 	workspaces := mustUnmarshalJSONArray[workspace.Workspace](t, jsonRes.Stdout)
 	if len(workspaces) != 2 {
@@ -115,14 +115,14 @@ func TestWorkspaceList_Filter(t *testing.T) {
 	r.mustCreateWorkspace("archived-work")
 	requireExitCode(t, r.run("workspace", "archive", "archived-work"), 0)
 
-	activeRes := r.run("workspace", "list", "--status=active", "--json")
+	activeRes := r.run("workspace", "list", "--status=active", "--format", "json")
 	requireExitCode(t, activeRes, 0)
 	active := mustUnmarshalJSONArray[workspace.Workspace](t, activeRes.Stdout)
 	if len(active) != 1 || active[0].Name != "active-work" {
 		t.Fatalf("unexpected active list: %+v", active)
 	}
 
-	archivedRes := r.run("workspace", "list", "--status=archived", "--json")
+	archivedRes := r.run("workspace", "list", "--status=archived", "--format", "json")
 	requireExitCode(t, archivedRes, 0)
 	archived := mustUnmarshalJSONArray[workspace.Workspace](t, archivedRes.Stdout)
 	if len(archived) != 1 || archived[0].Name != "archived-work" {
@@ -158,7 +158,7 @@ func TestWorkspaceShow(t *testing.T) {
 		t.Fatalf("expected events table in show output:\n%s", eventsRes.Stdout)
 	}
 
-	jsonRes := r.run("workspace", "show", "my-project", "--events-all", "--json")
+	jsonRes := r.run("workspace", "show", "my-project", "--events-all", "--format", "json")
 	requireExitCode(t, jsonRes, 0)
 	var inspectAll inspectJSON
 	mustUnmarshalJSON(t, jsonRes.Stdout, &inspectAll)
@@ -186,7 +186,7 @@ func TestWorkspaceArchive(t *testing.T) {
 	r := newRunner(t)
 	r.mustCreateWorkspace("to-archive")
 
-	res := r.run("workspace", "archive", "to-archive", "--json")
+	res := r.run("workspace", "archive", "to-archive", "--format", "json")
 	requireExitCode(t, res, 0)
 	var payload map[string]any
 	mustUnmarshalJSON(t, res.Stdout, &payload)
@@ -194,7 +194,7 @@ func TestWorkspaceArchive(t *testing.T) {
 		t.Fatalf("expected archive json payload with id and archived_at: %s", res.Stdout)
 	}
 
-	showRes := r.run("workspace", "show", "to-archive", "--json")
+	showRes := r.run("workspace", "show", "to-archive", "--format", "json")
 	requireExitCode(t, showRes, 0)
 	var got inspectJSON
 	mustUnmarshalJSON(t, showRes.Stdout, &got)
@@ -211,7 +211,7 @@ func TestWorkspaceUnarchive(t *testing.T) {
 	r.mustCreateWorkspace("to-unarchive")
 	requireExitCode(t, r.run("workspace", "archive", "to-unarchive"), 0)
 
-	res := r.run("workspace", "unarchive", "to-unarchive", "--json")
+	res := r.run("workspace", "unarchive", "to-unarchive", "--format", "json")
 	requireExitCode(t, res, 0)
 	var payload map[string]any
 	mustUnmarshalJSON(t, res.Stdout, &payload)
@@ -219,7 +219,7 @@ func TestWorkspaceUnarchive(t *testing.T) {
 		t.Fatalf("expected unarchive status=active payload, got: %s", res.Stdout)
 	}
 
-	showRes := r.run("workspace", "show", "to-unarchive", "--json")
+	showRes := r.run("workspace", "show", "to-unarchive", "--format", "json")
 	requireExitCode(t, showRes, 0)
 	var got inspectJSON
 	mustUnmarshalJSON(t, showRes.Stdout, &got)
@@ -234,7 +234,7 @@ func TestWorkspaceRemove(t *testing.T) {
 
 	var res commandResult
 	if runtime.GOOS == "darwin" {
-		res = r.runWithEnv(map[string]string{"WSM_DELETE_CONFIRM": "yes"}, "workspace", "remove", "old-work", "--json")
+		res = r.runWithEnv(map[string]string{"WSM_DELETE_CONFIRM": "yes"}, "workspace", "remove", "old-work", "--format", "json")
 	} else {
 		res = r.runTTYWithInput("y\n", "workspace", "remove", "old-work")
 	}
@@ -257,7 +257,7 @@ func TestWorkspaceRemove_Force(t *testing.T) {
 	r := newRunner(t)
 	r.mustCreateWorkspace("old-work")
 
-	res := r.run("workspace", "remove", "old-work", "--force", "--json")
+	res := r.run("workspace", "remove", "old-work", "--force", "--format", "json")
 	requireExitCode(t, res, 0)
 	var payload map[string]any
 	mustUnmarshalJSON(t, res.Stdout, &payload)
@@ -283,7 +283,7 @@ func TestWorkspaceRemove_DryRun(t *testing.T) {
 		t.Fatalf("snapshot: %v", err)
 	}
 
-	res := r.run("workspace", "remove", "dry-run-work", "--dry-run", "--json")
+	res := r.run("workspace", "remove", "dry-run-work", "--dry-run", "--format", "json")
 	requireExitCode(t, res, 0)
 	var payload struct {
 		DryRun  bool `json:"dry_run"`
@@ -320,7 +320,7 @@ func TestWorkspaceFullLifecycle(t *testing.T) {
 	requireExitCode(t, showRes, 0)
 
 	requireExitCode(t, r.run("workspace", "archive", id), 0)
-	archivedShow := r.run("workspace", "show", id, "--json")
+	archivedShow := r.run("workspace", "show", id, "--format", "json")
 	requireExitCode(t, archivedShow, 0)
 	var archived inspectJSON
 	mustUnmarshalJSON(t, archivedShow.Stdout, &archived)
@@ -376,9 +376,9 @@ func TestRefResolution_ByNameAndID(t *testing.T) {
 	r := newRunner(t)
 	id := r.mustCreateWorkspace("ref-work")
 
-	nameShow := r.run("workspace", "show", "ref-work", "--json")
+	nameShow := r.run("workspace", "show", "ref-work", "--format", "json")
 	requireExitCode(t, nameShow, 0)
-	idShow := r.run("workspace", "show", id, "--json")
+	idShow := r.run("workspace", "show", id, "--format", "json")
 	requireExitCode(t, idShow, 0)
 
 	var byName inspectJSON
@@ -390,7 +390,7 @@ func TestRefResolution_ByNameAndID(t *testing.T) {
 	}
 
 	requireExitCode(t, r.run("workspace", "archive", "ref-work"), 0)
-	archived := r.run("workspace", "show", id, "--json")
+	archived := r.run("workspace", "show", id, "--format", "json")
 	requireExitCode(t, archived, 0)
 	var archivedPayload inspectJSON
 	mustUnmarshalJSON(t, archived.Stdout, &archivedPayload)
@@ -399,7 +399,7 @@ func TestRefResolution_ByNameAndID(t *testing.T) {
 	}
 
 	requireExitCode(t, r.run("workspace", "unarchive", id), 0)
-	unarchived := r.run("workspace", "show", "ref-work", "--json")
+	unarchived := r.run("workspace", "show", "ref-work", "--format", "json")
 	requireExitCode(t, unarchived, 0)
 	var active inspectJSON
 	mustUnmarshalJSON(t, unarchived.Stdout, &active)
@@ -429,7 +429,7 @@ func TestWorkspaceShow_EventsAllJSONIsValid(t *testing.T) {
 		t.Fatalf("record event: %v", err)
 	}
 
-	res := r.run("workspace", "show", id, "--events-all", "--json")
+	res := r.run("workspace", "show", id, "--events-all", "--format", "json")
 	requireExitCode(t, res, 0)
 	var payload map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(strings.TrimSpace(res.Stdout)), &payload); err != nil {

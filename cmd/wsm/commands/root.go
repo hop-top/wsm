@@ -57,7 +57,7 @@ type globalOptions struct {
 	Backend    string
 	DataDir    string
 	BackendURL string
-	JSON       bool
+	Format     string // from kit's --format (table|json|yaml)
 	Quiet      bool
 	NoColor    bool
 	SessionID  string
@@ -164,9 +164,6 @@ func NewRootCmd() *cobra.Command {
 	})
 	root := r.Cmd
 
-	// --json kept for now; T-0077 retires it in favor of kit's --format.
-	root.PersistentFlags().BoolVar(&opts.JSON, "json", false, "Output JSON")
-
 	// Bridge kit-bound globals into opts so subcommands keep reading
 	// opts.X. Existing PersistentPreRunE chain (set by cli.New for
 	// chdir + identity) is preserved.
@@ -182,6 +179,7 @@ func NewRootCmd() *cobra.Command {
 		opts.DataDir, _ = cmd.Flags().GetString("data-dir")
 		opts.SessionID, _ = cmd.Flags().GetString("session-id")
 		opts.AgentID, _ = cmd.Flags().GetString("agent-id")
+		opts.Format = r.Viper.GetString("format")
 		opts.Quiet = r.Viper.GetBool("quiet")
 		opts.NoColor = r.Viper.GetBool("no-color")
 		if cmd.Name() != "upgrade" {

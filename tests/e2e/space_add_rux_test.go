@@ -51,7 +51,7 @@ func TestE2E_SpaceAdd_WritesProjectsYaml(t *testing.T) {
 	tmp2 := t.TempDir()
 
 	// Workspace must exist before space add.
-	addWS := r.run("workspace", "add", "ic-ops", "--json")
+	addWS := r.run("workspace", "add", "ic-ops", "--format", "json")
 	requireExitCode(t, addWS, 0)
 
 	// First space write-through.

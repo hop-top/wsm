@@ -9,7 +9,7 @@ import (
 
 func TestJSON_Create(t *testing.T) {
 	r := newRunner(t)
-	res := r.run("workspace", "add", "json-create", "--json")
+	res := r.run("workspace", "add", "json-create", "--format", "json")
 	requireExitCode(t, res, 0)
 	var payload map[string]any
 	mustUnmarshalJSON(t, res.Stdout, &payload)
@@ -21,7 +21,7 @@ func TestJSON_Create(t *testing.T) {
 func TestJSON_List(t *testing.T) {
 	r := newRunner(t)
 	r.mustCreateWorkspace("json-list")
-	res := r.run("workspace", "list", "--json")
+	res := r.run("workspace", "list", "--format", "json")
 	requireExitCode(t, res, 0)
 	items := mustUnmarshalJSONArray[workspace.Workspace](t, res.Stdout)
 	if len(items) != 1 || items[0].Name != "json-list" {
@@ -32,7 +32,7 @@ func TestJSON_List(t *testing.T) {
 func TestJSON_Show(t *testing.T) {
 	r := newRunner(t)
 	id := r.mustCreateWorkspace("json-show")
-	res := r.run("workspace", "show", id, "--json")
+	res := r.run("workspace", "show", id, "--format", "json")
 	requireExitCode(t, res, 0)
 	var payload inspectJSON
 	mustUnmarshalJSON(t, res.Stdout, &payload)
@@ -47,7 +47,7 @@ func TestJSON_Show(t *testing.T) {
 func TestJSON_Archive(t *testing.T) {
 	r := newRunner(t)
 	id := r.mustCreateWorkspace("json-archive")
-	res := r.run("workspace", "archive", id, "--json")
+	res := r.run("workspace", "archive", id, "--format", "json")
 	requireExitCode(t, res, 0)
 	var payload map[string]any
 	mustUnmarshalJSON(t, res.Stdout, &payload)
@@ -61,7 +61,7 @@ func TestJSON_Archive(t *testing.T) {
 
 func TestJSON_ErrorIsolation(t *testing.T) {
 	r := newRunner(t)
-	res := r.run("workspace", "show", "missing-workspace", "--json")
+	res := r.run("workspace", "show", "missing-workspace", "--format", "json")
 	requireExitCode(t, res, 3)
 	if strings.TrimSpace(res.Stdout) != "" {
 		t.Fatalf("expected stdout to stay empty on json error, got: %q", res.Stdout)

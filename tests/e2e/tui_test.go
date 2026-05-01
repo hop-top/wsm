@@ -40,7 +40,7 @@ func TestTUIWorkspaceLifecycle(t *testing.T) {
 		t.Fatalf("expected detail pane content after create flow, got:\n%s", createFromTUI.Stdout)
 	}
 
-	list := r.run("workspace", "list", "--json")
+	list := r.run("workspace", "list", "--format", "json")
 	requireExitCode(t, list, 0)
 	items := mustUnmarshalJSONArray[workspace.Workspace](t, list.Stdout)
 	if len(items) != 1 {
@@ -50,7 +50,7 @@ func TestTUIWorkspaceLifecycle(t *testing.T) {
 
 	archive := runTUICommand(t, r, "aq")
 	requireExitCode(t, archive, 0)
-	showArchived := r.run("workspace", "show", id, "--json")
+	showArchived := r.run("workspace", "show", id, "--format", "json")
 	requireExitCode(t, showArchived, 0)
 	var archived inspectJSON
 	mustUnmarshalJSON(t, showArchived.Stdout, &archived)
@@ -60,7 +60,7 @@ func TestTUIWorkspaceLifecycle(t *testing.T) {
 
 	unarchive := runTUICommand(t, r, "aq")
 	requireExitCode(t, unarchive, 0)
-	showActive := r.run("workspace", "show", id, "--json")
+	showActive := r.run("workspace", "show", id, "--format", "json")
 	requireExitCode(t, showActive, 0)
 	var active inspectJSON
 	mustUnmarshalJSON(t, showActive.Stdout, &active)

@@ -55,7 +55,7 @@ func newWorkspaceAddCmd(opts *globalOptions) *cobra.Command {
 					return nil
 				}
 
-				asJSON := shouldJSON(*opts) || (!stdoutIsTTY() && !opts.JSON)
+				asJSON := shouldJSON(*opts) || !stdoutIsTTY()
 				if asJSON {
 					payload := map[string]any{"id": ws.ID, "created_at": ws.CreatedAt}
 					return writeJSON(os.Stdout, payload)

@@ -6,6 +6,11 @@ The format is based on Keep a Changelog, and this project aims to follow Semanti
 
 ## [Unreleased]
 
+### Breaking
+- Removed `--json` flag. Use `--format json` instead.
+- Renamed `event add --format` (payload format) to `--content-format` to free
+  the `--format` name for the global output selector provided by kit/cli.
+
 ### Added
 - Initial project docs and story pack expansion (`001-026`).
 - Decomposed implementation plans (`01a-01h`).
