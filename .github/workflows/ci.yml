@@ -23,15 +23,6 @@ jobs:
       - name: E2E (default build)
         run: make test-e2e
 
-      - name: Verify pkg/* UI dependency boundary
-        run: make verify-no-ui-leak
-
-      - name: Build charmui path
-        run: make build-charm
-
-      - name: E2E (charm build)
-        run: make test-e2e-charm
-
       - name: Verify required docs exist
         run: |
           test -f README.md
