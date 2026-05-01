@@ -86,7 +86,7 @@ func TestPipe_QuietIds(t *testing.T) {
 	idA := r.mustCreateWorkspace("pipe-a")
 	idB := r.mustCreateWorkspace("pipe-b")
 
-	res := r.run("workspace", "list", "-q")
+	res := r.run("workspace", "list", "--quiet")
 	requireExitCode(t, res, 0)
 	lines := sortedLines(res.Stdout)
 	if len(lines) != 2 {

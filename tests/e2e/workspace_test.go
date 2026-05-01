@@ -47,7 +47,7 @@ func TestWorkspaceCreate(t *testing.T) {
 		t.Fatalf("expected 2 tags, got %d", len(inspected.Workspace.Tags))
 	}
 
-	res = r.run("workspace", "add", "quiet-project", "-q")
+	res = r.run("workspace", "add", "quiet-project", "--quiet")
 	requireExitCode(t, res, 0)
 	quiet := strings.TrimSpace(res.Stdout)
 	if quiet == "" || strings.Contains(quiet, "{") || strings.Contains(quiet, "\n") {
@@ -101,7 +101,7 @@ func TestWorkspaceList(t *testing.T) {
 		t.Fatalf("expected 2 workspaces, got %d", len(workspaces))
 	}
 
-	quietRes := r.run("workspace", "list", "-q")
+	quietRes := r.run("workspace", "list", "--quiet")
 	requireExitCode(t, quietRes, 0)
 	lines := sortedLines(quietRes.Stdout)
 	if len(lines) != 2 {

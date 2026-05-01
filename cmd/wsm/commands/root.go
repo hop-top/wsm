@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"hop.top/kit/go/console/cli"
 	"hop.top/upgrade"
 	"hop.top/wsm/pkg/backend"
 	backendsqlite "hop.top/wsm/pkg/backend/sqlite"
@@ -20,6 +21,10 @@ var (
 	Version = ""
 	// CommitSHA is the git commit SHA.
 	CommitSHA = ""
+
+	// kitRootInstance holds the kit Root constructed by NewRootCmd so
+	// Execute() can route through fang and apply group visibility.
+	kitRootInstance *cli.Root
 )
 
 type globalOptions struct {
@@ -96,7 +101,7 @@ func newAppContext(opts globalOptions) (*appContext, error) {
 	return &appContext{cfg: cfg, backend: b, manager: mgr}, nil
 }
 
-// NewRootCmd creates the root command for wsm.
+// NewRootCmd creates the root command for wsm via kit/cli.
 func NewRootCmd() *cobra.Command {
 	opts := globalOptions{}
 
@@ -109,29 +114,48 @@ func NewRootCmd() *cobra.Command {
 		}
 	}
 
-	root := &cobra.Command{
-		Use:           "wsm",
-		Short:         "Workspace & Session Manager",
-		Long:          "Workspace & Session Manager (wsm) for IDE-agnostic session storage.",
-		Version:       Version,
-		SilenceUsage:  true,
-		SilenceErrors: true,
-	}
+	r := cli.New(cli.Config{
+		Name:    "wsm",
+		Version: Version,
+		Short:   "Workspace & Session Manager",
+		Help: cli.HelpConfig{
+			Disclaimer: "Workspace & Session Manager (wsm) for IDE-agnostic session storage.",
+		},
+		Globals: []cli.Flag{
+			{Name: "backend", Usage: "Backend: sqlite"},
+			{Name: "backend-url", Usage: "Backend URL (reserved for future backends)"},
+			{Name: "data-dir", Usage: "Data directory"},
+			{Name: "session-id", Usage: "Session ID for event tracking"},
+			{Name: "agent-id", Default: "user", Usage: "Agent ID for event tracking"},
+		},
+	})
+	root := r.Cmd
 
-	// Enhance version template with commit SHA if available
-	if len(CommitSHA) >= 7 {
-		vt := root.VersionTemplate()
-		root.SetVersionTemplate(vt[:len(vt)-1] + " (" + CommitSHA[0:7] + ")\n")
-	}
-
-	root.PersistentFlags().StringVar(&opts.Backend, "backend", "", "Backend: sqlite")
-	root.PersistentFlags().StringVar(&opts.DataDir, "data-dir", "", "Data directory")
-	root.PersistentFlags().StringVar(&opts.BackendURL, "backend-url", "", "Backend URL (reserved for future backends)")
+	// --json kept for now; T-0077 retires it in favor of kit's --format.
 	root.PersistentFlags().BoolVar(&opts.JSON, "json", false, "Output JSON")
-	root.PersistentFlags().BoolVarP(&opts.Quiet, "quiet", "q", false, "Minimal output")
-	root.PersistentFlags().BoolVar(&opts.NoColor, "no-color", false, "Disable styled output")
-	root.PersistentFlags().StringVar(&opts.SessionID, "session-id", "", "Session ID for event tracking")
-	root.PersistentFlags().StringVar(&opts.AgentID, "agent-id", "user", "Agent ID for event tracking")
+
+	// Bridge kit-bound globals into opts so subcommands keep reading
+	// opts.X. Existing PersistentPreRunE chain (set by cli.New for
+	// chdir + identity) is preserved.
+	prev := root.PersistentPreRunE
+	root.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
+		if prev != nil {
+			if err := prev(cmd, args); err != nil {
+				return err
+			}
+		}
+		opts.Backend, _ = cmd.Flags().GetString("backend")
+		opts.BackendURL, _ = cmd.Flags().GetString("backend-url")
+		opts.DataDir, _ = cmd.Flags().GetString("data-dir")
+		opts.SessionID, _ = cmd.Flags().GetString("session-id")
+		opts.AgentID, _ = cmd.Flags().GetString("agent-id")
+		opts.Quiet = r.Viper.GetBool("quiet")
+		opts.NoColor = r.Viper.GetBool("no-color")
+		if cmd.Name() != "upgrade" {
+			upgrade.NotifyIfAvailable(cmd.Context(), newChecker(), os.Stderr)
+		}
+		return nil
+	}
 
 	root.RunE = func(cmd *cobra.Command, _ []string) error {
 		cmd.Printf("Workspace & Session Manager\n\n")
@@ -142,6 +166,8 @@ func NewRootCmd() *cobra.Command {
 		cmd.Printf("\nRun 'wsm --help' for full command reference.\n")
 		return nil
 	}
+	// cli.New sets Args: cobra.NoArgs; relax for the bare-invocation hint.
+	root.Args = cobra.NoArgs
 
 	root.AddCommand(
 		newInitCmd(&opts),
@@ -157,15 +183,19 @@ func NewRootCmd() *cobra.Command {
 		newVersionCmd(),
 	)
 
-	root.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
-		if cmd.Name() != "upgrade" {
-			upgrade.NotifyIfAvailable(cmd.Context(), newChecker(), os.Stderr)
-		}
-		return nil
-	}
-
 	registerWorkspaceCompletion(root, &opts)
+	kitRootInstance = r
 	return root
+}
+
+// Execute runs the root command through kit/cli (fang-styled help, version,
+// and group visibility for --help-all). Falls back to plain cobra Execute
+// when NewRootCmd has not yet been invoked.
+func Execute(ctx context.Context) error {
+	if kitRootInstance == nil {
+		return NewRootCmd().Execute()
+	}
+	return kitRootInstance.Execute(ctx)
 }
 
 func withApp(opts *globalOptions, fn func(ctx context.Context, app *appContext) error) error {

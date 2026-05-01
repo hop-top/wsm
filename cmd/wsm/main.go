@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -18,7 +19,10 @@ func main() {
 	commands.Version = Version
 	commands.CommitSHA = CommitSHA
 
-	if err := commands.NewRootCmd().Execute(); err != nil {
+	// Construct the root once so kit's Execute path can find the
+	// instance; commands.Execute then routes through fang.
+	_ = commands.NewRootCmd()
+	if err := commands.Execute(context.Background()); err != nil {
 		fmt.Fprintln(os.Stderr, "Error:", err)
 		if workspace.IsKind(err, workspace.ErrorKindNotFound) {
 			fmt.Fprintln(os.Stderr)
