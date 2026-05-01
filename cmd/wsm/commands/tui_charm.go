@@ -86,6 +86,13 @@ func newTUIModel(ctx context.Context, manager *workspace.Manager) tuiModel {
 
 // defaultTheme builds a Theme from the kit Neon palette so all kit/tui
 // components share consistent styling without depending on cli.Root state.
+//
+// Raw lipgloss is unavoidable here: cli.Theme is the input type to
+// styles.NewStyles() and its struct fields ARE raw color.Color +
+// lipgloss.Style by design. The kit's internal builder
+// (cli.themeFromPalette) is unexported, so any consumer constructing a
+// Theme literal must use raw lipgloss. All downstream rendering goes
+// through styles.NewStyles(theme) → semantic Accent/Muted/Title/etc.
 func defaultTheme() cli.Theme {
 	white := lipgloss.Color("#FFFFFF")
 	muted := lipgloss.Color("#6B7280")
@@ -350,6 +357,9 @@ func renderTwoPane(left, right []string) string {
 	return b.String()
 }
 
+// truncate / padRight use lipgloss.Width for ANSI-aware visible-width
+// measurement (skips escape sequences). kit/styles offers no equivalent
+// helper, so raw lipgloss.Width is the right tool here.
 func truncate(s string, width int) string {
 	if width <= 0 || lipgloss.Width(s) <= width {
 		return s
