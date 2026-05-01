@@ -18,6 +18,8 @@ type (
 	Space               = model.Space
 	SpaceType      = model.SpaceType
 	TrustLevel     = model.TrustLevel
+	Member         = model.Member
+	Capacity       = model.Capacity
 )
 
 const (
@@ -55,4 +57,7 @@ const (
 	TrustVerified  = model.TrustVerified
 	TrustExternal  = model.TrustExternal
 	TrustUntrusted = model.TrustUntrusted
+
+	CapacityPrincipal = model.CapacityPrincipal
+	CapacityDelegate  = model.CapacityDelegate
 )
