@@ -153,10 +153,10 @@ func registerWorkspaceCompletion(root *cobra.Command, _ *globalOptions) {
 			use := c.Name()
 			parent := cmd.Name()
 
-			// workspace show, archive, unarchive, remove
+			// workspace show, archive, unarchive, delete
 			if parent == "workspace" {
 				switch use {
-				case "show", "archive", "unarchive", "remove":
+				case "show", "archive", "unarchive", "delete":
 					c.ValidArgsFunction = completer
 				}
 			}
