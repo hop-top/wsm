@@ -11,9 +11,8 @@ Repository-specific guidance for future coding sessions in `hop.top/wsm`.
 ## Hard Boundaries
 
 1. `pkg/*` must not import UI/presentation libraries.
-2. Charmbracelet packages (`bubbletea`, `bubbles`, `lipgloss`) are optional and isolated.
-3. Optional UI path is enabled with `-tags charmui` and `-modfile=go.charm.mod`.
-4. CLI/TUI should consume manager/backend APIs; no parallel business logic paths.
+2. TUI/presentation code lives only in `cmd/wsm/` and `pkg/tui/` consumed by the CLI.
+3. CLI/TUI should consume manager/backend APIs; no parallel business logic paths.
 
 ## Story and Plan Workflow
 

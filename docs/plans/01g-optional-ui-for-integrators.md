@@ -1,5 +1,10 @@
 # Plan 01g: Optional UI for Integrators
 
+> **Deprecated 2026-04-30**: charmui retired. The dual-build approach
+> (`-tags charmui` + `go.charm.mod`) was removed in T-0086 / T-0094 /
+> T-0095. The remaining boundary rule (`pkg/*` must not import
+> Charmbracelet) is still enforced by `make verify-no-ui-leak`.
+
 **Goal**: Keep Charmbracelet optional and prevent UI dependencies from leaking into vendored core packages.
 
 ## Dependency Strategy

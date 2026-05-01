@@ -89,12 +89,6 @@ cd wsm
 make build        # → bin/wsm
 ```
 
-Optional Charm TUI build:
-
-```bash
-make build-charm  # → bin/wsm-charm
-```
-
 ## Integration
 
 ### Go Module
@@ -106,8 +100,8 @@ manager, _ := workspace.NewManager(backend)
 ws, _ := manager.Create(ctx, "my-project", workspace.CreateOptions{})
 ```
 
-Import `pkg/` for a UI-free integration surface. Charmbracelet TUI
-is optional and isolated behind a build tag.
+Import `pkg/` for a UI-free integration surface — `pkg/*` carries
+no UI dependencies; presentation lives only in `cmd/`.
 
 ### CLI
 
@@ -200,7 +194,6 @@ to enforce its own access checks without round-tripping.
 
 ```bash
 make build              # CLI binary → bin/wsm
-make build-charm        # Charm TUI binary → bin/wsm-charm
 make test               # Unit + integration
 make test-e2e           # End-to-end (CLI)
 make test-integration   # Cross-tool e2e (build-tag: integration_wsm)
@@ -223,7 +216,6 @@ pkg/                 Core library surface (UI-free)
   scope/             Scope types, assignment, session distinction
   tui/               TUI model and actions
   workspace/         Manager, export/import, context formatting
-internal/ui/charm/   Optional Charmbracelet TUI
 docs/stories/        Story catalog and acceptance criteria
 docs/personas/       Audience personas
 docs/plans/          Implementation plans

@@ -132,7 +132,7 @@ workspace-cli/
 1. **`pkg/` not `internal/`** — the library is the primary deliverable for vendoring.
 2. **SQLite only in Plan 1** — Postgres and Git backends are defined by the interface but implemented later. YAGNI.
 3. **TUI is part of v1** — `wsm tui` is supported with Charmbracelet in this repo.
-4. **UI dependencies are optional for integrators** — keep core `pkg/*` UI-free; Charmbracelet path is enabled via `-tags charmui` and `go.charm.mod`.
+4. **UI dependencies are optional for integrators** — keep core `pkg/*` UI-free; Charmbracelet imports live only in `cmd/` and the opt-in `pkg/tui/` package the CLI wires in.
 5. **Cobra for CLI** — standard, well-known, supports completions natively.
 
 ---
@@ -827,9 +827,9 @@ Plan 1 ships with minimal dependencies:
 | `github.com/mattn/go-sqlite3` | SQLite driver |
 | `github.com/mattn/go-isatty` | TTY detection for output modes |
 | `gopkg.in/yaml.v3` | Config file parsing |
-| `github.com/charmbracelet/bubbletea` | Optional TUI event loop (`charmui` build only) |
-| `github.com/charmbracelet/bubbles` | Optional TUI components (`charmui` build only) |
-| `github.com/charmbracelet/lipgloss` | Optional TUI styling (`charmui` build only) |
+| `github.com/charmbracelet/bubbletea` | TUI event loop (used only by `cmd/` and `pkg/tui/`) |
+| `github.com/charmbracelet/bubbles` | TUI components (used only by `cmd/` and `pkg/tui/`) |
+| `github.com/charmbracelet/lipgloss` | TUI styling (used only by `cmd/` and `pkg/tui/`) |
 
 Core vendoring remains lean: `pkg/*` must not import Charmbracelet packages.
 

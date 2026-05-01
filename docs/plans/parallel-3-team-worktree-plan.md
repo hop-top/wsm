@@ -47,8 +47,8 @@ git hop add team-c-tui-optional
 - `tests/e2e/workspace_test.go`, `tests/e2e/event_test.go`, `tests/e2e/output_test.go`, `tests/e2e/exit_code_test.go`, `tests/e2e/config_test.go`, `tests/e2e/completion_test.go`
 
 **Must not edit**:
-- `internal/ui/charm/**`
-- `go.charm.mod`
+- `pkg/tui/**`
+- `cmd/wsm/tui*.go`
 - `.github/workflows/**` (except via Team A approved changes)
 
 ### Team C — TUI + Optional Dependency Path
@@ -56,10 +56,8 @@ git hop add team-c-tui-optional
 **Primary scope**: `01f`, `01g`
 
 **Owns**:
-- `internal/ui/charm/**`
 - `cmd/wsm/tui*.go`
-- `go.charm.mod`
-- `pkg/tui/**` (if created)
+- `pkg/tui/**`
 - `tests/e2e/tui_test.go`
 
 **May edit with Team B approval**:

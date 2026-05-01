@@ -68,28 +68,6 @@ func newRunner(t *testing.T) *e2eRunner {
 	}
 }
 
-func newCharmRunner(t *testing.T) *e2eRunner {
-	t.Helper()
-	root := findRepoRoot(t)
-	base := t.TempDir()
-	homeDir := filepath.Join(base, "home")
-	xdgConfigHome := filepath.Join(base, "xdg")
-	dataDir := filepath.Join(base, "data")
-
-	mustMkdirAll(t, homeDir)
-	mustMkdirAll(t, xdgConfigHome)
-	mustMkdirAll(t, dataDir)
-
-	return &e2eRunner{
-		t:             t,
-		root:          root,
-		binary:        buildCharmBinary(t),
-		dataDir:       dataDir,
-		homeDir:       homeDir,
-		xdgConfigHome: xdgConfigHome,
-	}
-}
-
 func (r *e2eRunner) run(args ...string) commandResult {
 	global := []string{"--data-dir", r.dataDir}
 	return r.exec(runOptions{Args: append(global, args...)})
@@ -386,10 +364,6 @@ var (
 	buildDefaultOnce sync.Once
 	defaultBinPath   string
 	defaultBuildErr  error
-
-	buildCharmOnce sync.Once
-	charmBinPath   string
-	charmBuildErr  error
 )
 
 func buildDefaultBinary(t *testing.T) string {
@@ -405,21 +379,6 @@ func buildDefaultBinary(t *testing.T) string {
 		t.Fatalf("build default binary: %v", defaultBuildErr)
 	}
 	return defaultBinPath
-}
-
-func buildCharmBinary(t *testing.T) string {
-	t.Helper()
-	buildCharmOnce.Do(func() {
-		root := findRepoRoot(t)
-		binDir := filepath.Join(root, ".tmp", "e2e")
-		mustMkdirAll(t, binDir)
-		charmBinPath = filepath.Join(binDir, binaryName("wsm-charm"))
-		charmBuildErr = goBuild(root, charmBinPath, "-tags", "charmui", "-modfile=go.charm.mod")
-	})
-	if charmBuildErr != nil {
-		t.Fatalf("build charm binary: %v", charmBuildErr)
-	}
-	return charmBinPath
 }
 
 func binaryName(base string) string {

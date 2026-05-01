@@ -29,4 +29,4 @@ WORKDIR /workspace
 
 COPY . /workspace
 
-CMD ["bash", "-lc", "make test && make test-e2e && make test-e2e-charm && make verify-no-ui-leak && make build-charm"]
+CMD ["bash", "-lc", "make test && make test-e2e && make verify-no-ui-leak"]

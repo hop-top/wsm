@@ -31,13 +31,14 @@ Cross-references:
 
 | Container | Path | Role |
 |---|---|---|
-| `wsm` CLI | `cmd/wsm/` | Cobra-based CLI |
-| `wsm-charm` TUI | `cmd/wsm/` (build tag `charmui`) | Optional Bubble Tea v2 dashboard |
+| `wsm` CLI | `cmd/wsm/` | Cobra-based CLI (kit-built) |
+| `wsm tui` dashboard | `cmd/wsm/` + `pkg/tui/` | Bubble Tea v2 TUI subcommand |
 | `pkg/workspace` library | `pkg/workspace/` | Go library imported by aps |
 | SQLite backend | `pkg/backend/sqlite/` | Default persistence layer |
 
 The `verify-no-ui-leak` Make target enforces that `pkg/*` stays
-free of charmbracelet imports — TUI lives only in `cmd/`.
+free of charmbracelet imports — TUI lives only in `cmd/` and the
+opt-in `pkg/tui/` package which `cmd/` wires in.
 
 ## Components
 
@@ -177,7 +178,6 @@ OWSF Profile 1, defined in `pkg/owsf/`:
 | Target | Runs |
 |---|---|
 | `make build` | CLI binary → `bin/wsm` |
-| `make build-charm` | TUI binary → `bin/wsm-charm` (build tag `charmui`) |
 | `make test` | Unit + integration |
 | `make test-e2e` | End-to-end CLI |
 | `make test-ubuntu-docker` | Full suite in clean Ubuntu container |
@@ -187,7 +187,7 @@ OWSF Profile 1, defined in `pkg/owsf/`:
 ### CI (`.github/workflows/ci.yml`)
 
 - Go 1.23.x (now 1.26.x on remote per `c46378c`)
-- `make test`, `test-e2e`, `verify-no-ui-leak`, `build-charm`, `test-e2e-charm`
+- `make test`, `test-e2e`, `verify-no-ui-leak`
 - Required docs verified: README, AGENTS, CONTRIBUTING, SECURITY, CODE_OF_CONDUCT, CHANGELOG, `docs/stories/README.md`
 - Dockerised Ubuntu test matrix
 

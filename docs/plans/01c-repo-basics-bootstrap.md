@@ -17,16 +17,15 @@
 - `.github/pull_request_template.md`
 - `Makefile`
 - `go.mod` (`module hop.top/wsm`, `go 1.23`)
-- `go.charm.mod` for optional Charmbracelet builds
 
 ## Content Requirements
 
 1. README names the project as **Workspace & Session Manager** and links homepage `https://hop.top/wsm`.
-2. AGENTS documents boundaries: core `pkg/*` must remain UI-agnostic; Charm code is optional path.
+2. AGENTS documents boundaries: core `pkg/*` must remain UI-agnostic; presentation lives only in `cmd/`.
 3. Governance docs are coherent and cross-linked.
 4. Makefile includes core build/test/verification targets.
 
 ## Acceptance Criteria
 
 1. New contributors can build/test from README without tribal knowledge.
-2. Integrators can understand optional charm build path from docs alone.
+2. Integrators can vendor `pkg/*` without pulling UI dependencies.

@@ -16,12 +16,6 @@ make test
 make verify-no-ui-leak
 ```
 
-For Charm UI path checks:
-
-```bash
-make build-charm
-```
-
 ## Pull Requests
 
 1. Keep scope aligned to one plan segment where possible.
