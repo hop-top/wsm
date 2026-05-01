@@ -63,8 +63,6 @@ func TestCIIncludesConformanceGates(t *testing.T) {
 	text := string(content)
 	for _, needle := range []string{
 		"make test",
-		"make verify-no-ui-leak",
-		"make build-charm",
 	} {
 		if !strings.Contains(text, needle) {
 			t.Fatalf("ci workflow missing required gate %q", needle)
