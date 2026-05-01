@@ -4,11 +4,33 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"text/tabwriter"
 	"time"
 
 	"github.com/spf13/cobra"
+
+	"hop.top/kit/go/console/output"
 )
+
+// deviceRow is the table projection for `device list`. Pre-truncates the
+// device ID via shortID and formats first/last seen via humanAgo.
+type deviceRow struct {
+	ID        string `table:"ID,priority=9"         json:"id"`
+	Name      string `table:"NAME,priority=8"       json:"name"`
+	OS        string `table:"OS,priority=5"         json:"os"`
+	Arch      string `table:"ARCH,priority=5"       json:"arch"`
+	FirstSeen string `table:"FIRST SEEN,priority=3" json:"first_seen"`
+	LastSeen  string `table:"LAST SEEN,priority=4"  json:"last_seen"`
+}
+
+// deviceSessionRow is the table projection for the SESSIONS section of
+// `device show`. Mirrors backend.DeviceSession with shortened IDs.
+type deviceSessionRow struct {
+	Session       string `table:"SESSION,priority=8"       json:"session"`
+	Agent         string `table:"AGENT,priority=6"         json:"agent"`
+	Workspace     string `table:"WORKSPACE,priority=7"     json:"workspace"`
+	Events        int    `table:"EVENTS,priority=5"        json:"events"`
+	LastActivity  string `table:"LAST ACTIVITY,priority=4" json:"last_activity"`
+}
 
 func newDeviceGroupCmd(opts *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
@@ -35,8 +57,8 @@ func newDeviceListCmd(opts *globalOptions) *cobra.Command {
 					return err
 				}
 
-				if shouldJSON(*opts) {
-					return writeJSON(os.Stdout, devs)
+				if opts.Format == output.JSON || opts.Format == output.YAML {
+					return output.Render(os.Stdout, opts.Format, devs)
 				}
 
 				if len(devs) == 0 {
@@ -47,14 +69,18 @@ func newDeviceListCmd(opts *globalOptions) *cobra.Command {
 					return nil
 				}
 
-				tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-				fmt.Fprintln(tw, "ID\tNAME\tOS/ARCH\tFIRST SEEN\tLAST SEEN")
-				for _, d := range devs {
-					fmt.Fprintf(tw, "%s\t%s\t%s/%s\t%s\t%s\n",
-						shortID(d.ID), d.Name, d.OS, d.Arch, humanAgo(d.FirstSeen), humanAgo(d.LastSeen))
+				rows := make([]deviceRow, len(devs))
+				for i, d := range devs {
+					rows[i] = deviceRow{
+						ID:        shortID(d.ID),
+						Name:      d.Name,
+						OS:        d.OS,
+						Arch:      d.Arch,
+						FirstSeen: humanAgo(d.FirstSeen),
+						LastSeen:  humanAgo(d.LastSeen),
+					}
 				}
-				_ = tw.Flush()
-				return nil
+				return output.Render(os.Stdout, output.Table, rows)
 			})
 		},
 	}
@@ -76,8 +102,8 @@ func newDeviceShowCmd(opts *globalOptions) *cobra.Command {
 
 				sessions, _ := app.manager.DeviceSessions(ctx, dev.ID)
 
-				if shouldJSON(*opts) {
-					return writeJSON(os.Stdout, map[string]any{
+				if opts.Format == output.JSON || opts.Format == output.YAML {
+					return output.Render(os.Stdout, opts.Format, map[string]any{
 						"device":   dev,
 						"sessions": sessions,
 					})
@@ -91,15 +117,17 @@ func newDeviceShowCmd(opts *globalOptions) *cobra.Command {
 				fmt.Fprintf(os.Stdout, "Last Seen:  %s\n", dev.LastSeen.Format(time.RFC3339))
 				if len(sessions) > 0 {
 					fmt.Fprintln(os.Stdout, "\nSESSIONS")
-					tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-					fmt.Fprintln(tw, "SESSION\tAGENT\tWORKSPACE\tEVENTS\tLAST ACTIVITY")
-					for _, s := range sessions {
-						fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%s\n",
-							shortID(s.SessionID), s.AgentID,
-							s.WorkspaceName, s.EventCount,
-							humanAgo(s.LastEventAt))
+					rows := make([]deviceSessionRow, len(sessions))
+					for i, s := range sessions {
+						rows[i] = deviceSessionRow{
+							Session:      shortID(s.SessionID),
+							Agent:        s.AgentID,
+							Workspace:    s.WorkspaceName,
+							Events:       s.EventCount,
+							LastActivity: humanAgo(s.LastEventAt),
+						}
 					}
-					_ = tw.Flush()
+					_ = output.Render(os.Stdout, output.Table, rows)
 				}
 				return nil
 			})
