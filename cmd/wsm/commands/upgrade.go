@@ -5,8 +5,8 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
-	"hop.top/upgrade"
-	"hop.top/upgrade/skill"
+	"hop.top/kit/go/core/upgrade"
+	"hop.top/kit/go/core/upgrade/skill"
 )
 
 const wsmGitHubRepo = "hop-top/wsm"

@@ -9,7 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"hop.top/kit/go/console/cli"
-	"hop.top/upgrade"
+	"hop.top/kit/go/core/upgrade"
 	"hop.top/wsm/pkg/backend"
 	backendsqlite "hop.top/wsm/pkg/backend/sqlite"
 	"hop.top/wsm/pkg/config"

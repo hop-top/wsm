@@ -11,7 +11,6 @@ require (
 	github.com/spf13/cobra v1.10.2
 	gopkg.in/yaml.v3 v3.0.1
 	hop.top/kit v0.0.0-20260421225415-b7474af6a623
-	hop.top/upgrade v0.0.0-20260409004358-208cffa1237c
 )
 
 require (
