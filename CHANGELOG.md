@@ -10,9 +10,14 @@ The format is based on Keep a Changelog, and this project aims to follow Semanti
 - Removed `--json` flag. Use `--format json` instead.
 - Renamed `event add --format` (payload format) to `--content-format` to free
   the `--format` name for the global output selector provided by kit/cli.
-- Renamed `wsm workspace remove` → `wsm workspace delete`
-- Renamed `wsm space remove` → `wsm space delete`
-- Renamed `wsm snapshot remove` → `wsm snapshot delete`
+- Renamed `wsm workspace remove` → `wsm workspace delete` (aliases: `rm`, `del`).
+- Renamed `wsm space remove` → `wsm space delete`.
+- Renamed `wsm snapshot remove` → `wsm snapshot delete` (aliases: `rm`, `del`).
+- Swapped `hop.top/upgrade` for `hop.top/kit/go/core/upgrade`. Behavior parity
+  for end users; agent-facing skill preamble surface preserved via
+  `wsm upgrade preamble`.
+- Migrated TUI to Charmbracelet bubbletea v2 (`charm.land/bubbletea/v2`,
+  `charm.land/lipgloss/v2`). `wsm tui` flow unchanged for users.
 
 ### Added
 - Initial project docs and story pack expansion (`001-026`).
@@ -73,3 +78,17 @@ The format is based on Keep a Changelog, and this project aims to follow Semanti
 ### Changed
 - Plan 1 updated to include TUI in v1 with optional Charmbracelet path.
 - Charm TUI now renders a master/detail layout with a dedicated detail pane that updates with selection.
+- Adopted `hop.top/kit` across the CLI: `kit/console/cli` (`cli.New`,
+  fang-styled help, `--help-all`, `--format`, `-V`, `-C`/`--chdir`),
+  `kit/console/output` (`output.Render`, table/JSON/YAML/CSV/text), `kit/console/log`
+  (slog handler), `kit/core/config.Loader`, `kit/core/xdg`, `kit/core/upgrade`,
+  and `kit/tui` helpers.
+- Help is now grouped: `ORGANIZE` (`workspace`, `space`, `device`),
+  `CAPTURE` (`event`, `snapshot`), `INTERACT` (`init`, `tui`), and
+  `MANAGEMENT` (`config`, `upgrade`, `version`, `completion`).
+  `MANAGEMENT` is hidden by default; surface it with `--help-all` or
+  `--help-management`.
+- Bare `wsm` (no args) prints the quick-start hint to stderr (was stdout) so
+  `wsm | jq` keeps stdout empty.
+- Documentation: added `docs/wsm/api-cli.md` (full subcommand reference) and
+  `docs/wsm/configuration.md` (config keys, env vars, layered loading).
