@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"text/tabwriter"
 
 	"github.com/spf13/cobra"
 
+	"hop.top/kit/go/console/output"
 	"hop.top/wsm/pkg/detector"
 	"hop.top/wsm/pkg/workspace"
 )
@@ -85,8 +85,8 @@ func newSpaceAddCmd(opts *globalOptions) *cobra.Command {
 						created.ID, werr)
 				}
 
-				if shouldJSON(*opts) {
-					return writeJSON(os.Stdout, created)
+				if opts.Format == output.JSON || opts.Format == output.YAML {
+					return output.Render(os.Stdout, opts.Format, created)
 				}
 				// §6.3: ack message (non-data) → stderr.
 				fmt.Fprintf(os.Stderr, "Added space %s to workspace %s\n", created.ID, args[0])
@@ -115,8 +115,8 @@ func newSpaceListCmd(opts *globalOptions) *cobra.Command {
 					return err
 				}
 
-				if shouldJSON(*opts) {
-					return writeJSON(os.Stdout, spaces)
+				if opts.Format == output.JSON || opts.Format == output.YAML {
+					return output.Render(os.Stdout, opts.Format, spaces)
 				}
 
 				if len(spaces) == 0 {
@@ -127,14 +127,7 @@ func newSpaceListCmd(opts *globalOptions) *cobra.Command {
 					return nil
 				}
 
-				tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-				fmt.Fprintln(tw, "ID\tTYPE\tTRUST\tBOUNDARY")
-				for _, s := range spaces {
-					fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n",
-						s.ID, s.Type, s.TrustLevel, s.Boundary)
-				}
-				_ = tw.Flush()
-				return nil
+				return output.Render(os.Stdout, output.Table, spaces)
 			})
 		},
 	}
@@ -153,8 +146,8 @@ func newSpaceShowCmd(opts *globalOptions) *cobra.Command {
 					return err
 				}
 
-				if shouldJSON(*opts) {
-					return writeJSON(os.Stdout, s)
+				if opts.Format == output.JSON || opts.Format == output.YAML {
+					return output.Render(os.Stdout, opts.Format, s)
 				}
 
 				fmt.Fprintf(os.Stdout, "Space %s\n", s.ID)
@@ -190,8 +183,9 @@ func newSpaceDeleteCmd(opts *globalOptions) *cobra.Command {
 				if err := app.manager.RemoveSpace(ctx, args[0], args[1], force); err != nil {
 					return err
 				}
-				if shouldJSON(*opts) {
-					return writeJSON(os.Stdout, map[string]any{"space_id": args[1], "removed": true})
+				if opts.Format == output.JSON || opts.Format == output.YAML {
+					return output.Render(os.Stdout, opts.Format,
+						map[string]any{"space_id": args[1], "removed": true})
 				}
 				// §6.3: ack message (non-data) → stderr.
 				fmt.Fprintf(os.Stderr, "Removed space %s\n", args[1])
@@ -245,8 +239,8 @@ func newSpaceSyncCmd(opts *globalOptions) *cobra.Command {
 					}
 					written++
 				}
-				if shouldJSON(*opts) {
-					return writeJSON(os.Stdout, map[string]any{
+				if opts.Format == output.JSON || opts.Format == output.YAML {
+					return output.Render(os.Stdout, opts.Format, map[string]any{
 						"written": written,
 						"failed":  failed,
 					})
