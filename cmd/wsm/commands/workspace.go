@@ -60,7 +60,8 @@ func newWorkspaceAddCmd(opts *globalOptions) *cobra.Command {
 					payload := map[string]any{"id": ws.ID, "created_at": ws.CreatedAt}
 					return writeJSON(os.Stdout, payload)
 				}
-				fmt.Fprintf(os.Stdout, "Created workspace %q (%s)\n", ws.Name, ws.ID)
+				// §6.3: ack message (non-data) → stderr.
+				fmt.Fprintf(os.Stderr, "Created workspace %q (%s)\n", ws.Name, ws.ID)
 				return nil
 			})
 		},
@@ -101,10 +102,11 @@ func newWorkspaceListCmd(opts *globalOptions) *cobra.Command {
 
 				if len(items) == 0 {
 					if !opts.Quiet {
-						fmt.Fprintln(os.Stdout, "No workspaces yet.")
-					fmt.Fprintln(os.Stdout)
-					fmt.Fprintln(os.Stdout, "  Create your first workspace:")
-					fmt.Fprintln(os.Stdout, "    wsm workspace add my-project")
+						// §6.3: empty-state hint is non-data → stderr.
+						fmt.Fprintln(os.Stderr, "No workspaces yet.")
+						fmt.Fprintln(os.Stderr)
+						fmt.Fprintln(os.Stderr, "  Create your first workspace:")
+						fmt.Fprintln(os.Stderr, "    wsm workspace add my-project")
 					}
 					return nil
 				}
@@ -279,7 +281,8 @@ func newWorkspaceArchiveCmd(opts *globalOptions) *cobra.Command {
 				if shouldJSON(*opts) || !stdoutIsTTY() {
 					return writeJSON(os.Stdout, map[string]any{"id": ws.ID, "status": "archived"})
 				}
-				fmt.Fprintf(os.Stdout, "Archived workspace %q\n", ws.Name)
+				// §6.3: ack message (non-data) → stderr.
+				fmt.Fprintf(os.Stderr, "Archived workspace %q\n", ws.Name)
 				return nil
 			})
 		},
@@ -307,7 +310,8 @@ func newWorkspaceUnarchiveCmd(opts *globalOptions) *cobra.Command {
 				if shouldJSON(*opts) || !stdoutIsTTY() {
 					return writeJSON(os.Stdout, map[string]any{"id": ws.ID, "status": "active"})
 				}
-				fmt.Fprintf(os.Stdout, "Unarchived workspace %q\n", ws.Name)
+				// §6.3: ack message (non-data) → stderr.
+				fmt.Fprintf(os.Stderr, "Unarchived workspace %q\n", ws.Name)
 				return nil
 			})
 		},
@@ -347,13 +351,14 @@ func newWorkspaceDeleteCmd(opts *globalOptions) *cobra.Command {
 						return workspace.NewErrorUsage("remove in non-TTY requires --force")
 					}
 					if line == "" {
-						fmt.Fprintf(os.Stdout, "Remove workspace %q? [y/N]: ", preview.WorkspaceName)
+						// §6.3: prompt is non-data → stderr.
+						fmt.Fprintf(os.Stderr, "Remove workspace %q? [y/N]: ", preview.WorkspaceName)
 						reader := bufio.NewReader(os.Stdin)
 						line, _ = reader.ReadString('\n')
 						line = strings.TrimSpace(strings.ToLower(line))
 					}
 					if line != "y" && line != "yes" {
-						fmt.Fprintln(os.Stdout, "Aborted.")
+						fmt.Fprintln(os.Stderr, "Aborted.")
 						return fmt.Errorf("deletion cancelled")
 					}
 				}
@@ -368,7 +373,8 @@ func newWorkspaceDeleteCmd(opts *globalOptions) *cobra.Command {
 				if shouldJSON(*opts) || !stdoutIsTTY() {
 					return writeJSON(os.Stdout, map[string]any{"id": preview.WorkspaceID, "deleted": true})
 				}
-				fmt.Fprintf(os.Stdout, "Removed workspace %q\n", preview.WorkspaceName)
+				// §6.3: ack message (non-data) → stderr.
+				fmt.Fprintf(os.Stderr, "Removed workspace %q\n", preview.WorkspaceName)
 				return nil
 			})
 		},

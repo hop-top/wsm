@@ -184,7 +184,8 @@ func newEventAddCmd(opts *globalOptions) *cobra.Command {
 				if shouldJSON(*opts) {
 					return writeJSON(os.Stdout, ev)
 				}
-				fmt.Fprintf(os.Stdout, "Recorded %s seq=%d id=%s\n", ev.Type, ev.SeqNum, ev.ID)
+				// §6.3: ack message (non-data) → stderr.
+				fmt.Fprintf(os.Stderr, "Recorded %s seq=%d id=%s\n", ev.Type, ev.SeqNum, ev.ID)
 				return nil
 			})
 		},

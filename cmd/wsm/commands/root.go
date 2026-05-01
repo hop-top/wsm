@@ -2,6 +2,7 @@ package commands
 
 import (
 	"context"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime/debug"
@@ -9,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"hop.top/kit/go/console/cli"
+	kitlog "hop.top/kit/go/console/log"
 	"hop.top/kit/go/core/upgrade"
 	"hop.top/wsm/pkg/backend"
 	backendsqlite "hop.top/wsm/pkg/backend/sqlite"
@@ -182,6 +184,9 @@ func NewRootCmd() *cobra.Command {
 		opts.Format = r.Viper.GetString("format")
 		opts.Quiet = r.Viper.GetBool("quiet")
 		opts.NoColor = r.Viper.GetBool("no-color")
+		// CLI conv §6.2: install kit/log as default slog handler.
+		// -V (verbose count) raises level: 0=info, 1=debug, 2+=trace.
+		slog.SetDefault(slog.New(kitlog.WithVerbose(r.Viper, r.VerboseCount())))
 		if cmd.Name() != "upgrade" {
 			upgrade.NotifyIfAvailable(cmd.Context(), newChecker(), os.Stderr)
 		}
@@ -189,12 +194,15 @@ func NewRootCmd() *cobra.Command {
 	}
 
 	root.RunE = func(cmd *cobra.Command, _ []string) error {
-		cmd.Printf("Workspace & Session Manager\n\n")
-		cmd.Printf("Quick start:\n")
-		cmd.Printf("  wsm workspace add my-project\n")
-		cmd.Printf("  wsm workspace list\n")
-		cmd.Printf("  wsm workspace show <id-or-name>\n")
-		cmd.Printf("\nRun 'wsm --help' for full command reference.\n")
+		// CLI conv §6.3: quick-start hint is non-data → stderr.
+		// Preserves `wsm | jq` (stdout stays empty for the bare invocation).
+		w := cmd.ErrOrStderr()
+		_, _ = w.Write([]byte("Workspace & Session Manager\n\n"))
+		_, _ = w.Write([]byte("Quick start:\n"))
+		_, _ = w.Write([]byte("  wsm workspace add my-project\n"))
+		_, _ = w.Write([]byte("  wsm workspace list\n"))
+		_, _ = w.Write([]byte("  wsm workspace show <id-or-name>\n"))
+		_, _ = w.Write([]byte("\nRun 'wsm --help' for full command reference.\n"))
 		return nil
 	}
 	// cli.New sets Args: cobra.NoArgs; relax for the bare-invocation hint.

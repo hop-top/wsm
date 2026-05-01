@@ -38,9 +38,10 @@ With --hop, creates .hop/wsm/ and symlinks .wsm/ -> .hop/wsm/.`,
 			if hop {
 				mode = ".hop/wsm/"
 			}
-			fmt.Fprintf(os.Stdout, "Initialized %s in %s\n", mode, dir)
+			// §6.3: ack message (non-data) → stderr.
+			fmt.Fprintf(os.Stderr, "Initialized %s in %s\n", mode, dir)
 			if configPath != "" {
-				fmt.Fprintf(os.Stdout, "Config file: %s\n", configPath)
+				fmt.Fprintf(os.Stderr, "Config file: %s\n", configPath)
 			}
 			return nil
 		},

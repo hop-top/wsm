@@ -84,7 +84,8 @@ func newSnapshotListCmd(opts *globalOptions) *cobra.Command {
 
 				if len(snaps) == 0 {
 					if !opts.Quiet {
-						fmt.Fprintln(os.Stdout, "No snapshots found.")
+						// §6.3: empty-state hint is non-data → stderr.
+						fmt.Fprintln(os.Stderr, "No snapshots found.")
 					}
 					return nil
 				}
@@ -300,12 +301,13 @@ func newSnapshotDeleteCmd(opts *globalOptions) *cobra.Command {
 					if !stdoutIsTTY() {
 						return workspace.NewErrorUsage("remove in non-TTY requires --force")
 					}
-					fmt.Fprintf(os.Stdout, "Remove snapshot %q? [y/N]: ", snap.ID)
+					// §6.3: prompt is non-data → stderr.
+					fmt.Fprintf(os.Stderr, "Remove snapshot %q? [y/N]: ", snap.ID)
 					reader := bufio.NewReader(os.Stdin)
 					line, _ := reader.ReadString('\n')
 					line = strings.TrimSpace(strings.ToLower(line))
 					if line != "y" && line != "yes" {
-						fmt.Fprintln(os.Stdout, "Aborted.")
+						fmt.Fprintln(os.Stderr, "Aborted.")
 						return nil
 					}
 				}
@@ -318,7 +320,8 @@ func newSnapshotDeleteCmd(opts *globalOptions) *cobra.Command {
 				if shouldJSON(*opts) || !stdoutIsTTY() {
 					return writeJSON(os.Stdout, map[string]any{"id": args[0], "deleted": true})
 				}
-				fmt.Fprintf(os.Stdout, "Removed snapshot %q\n", args[0])
+				// §6.3: ack message (non-data) → stderr.
+				fmt.Fprintf(os.Stderr, "Removed snapshot %q\n", args[0])
 				return nil
 			})
 		},

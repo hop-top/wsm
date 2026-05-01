@@ -41,7 +41,8 @@ func newDeviceListCmd(opts *globalOptions) *cobra.Command {
 
 				if len(devs) == 0 {
 					if !opts.Quiet {
-						fmt.Fprintln(os.Stdout, "No devices registered.")
+						// §6.3: empty-state hint is non-data → stderr.
+						fmt.Fprintln(os.Stderr, "No devices registered.")
 					}
 					return nil
 				}

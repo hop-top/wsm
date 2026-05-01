@@ -88,7 +88,8 @@ func newSpaceAddCmd(opts *globalOptions) *cobra.Command {
 				if shouldJSON(*opts) {
 					return writeJSON(os.Stdout, created)
 				}
-				fmt.Fprintf(os.Stdout, "Added space %s to workspace %s\n", created.ID, args[0])
+				// §6.3: ack message (non-data) → stderr.
+				fmt.Fprintf(os.Stderr, "Added space %s to workspace %s\n", created.ID, args[0])
 				return nil
 			})
 		},
@@ -120,7 +121,8 @@ func newSpaceListCmd(opts *globalOptions) *cobra.Command {
 
 				if len(spaces) == 0 {
 					if !opts.Quiet {
-						fmt.Fprintln(os.Stdout, "No spaces associated with this workspace.")
+						// §6.3: empty-state hint is non-data → stderr.
+						fmt.Fprintln(os.Stderr, "No spaces associated with this workspace.")
 					}
 					return nil
 				}
@@ -191,7 +193,8 @@ func newSpaceDeleteCmd(opts *globalOptions) *cobra.Command {
 				if shouldJSON(*opts) {
 					return writeJSON(os.Stdout, map[string]any{"space_id": args[1], "removed": true})
 				}
-				fmt.Fprintf(os.Stdout, "Removed space %s\n", args[1])
+				// §6.3: ack message (non-data) → stderr.
+				fmt.Fprintf(os.Stderr, "Removed space %s\n", args[1])
 				return nil
 			})
 		},
@@ -248,11 +251,12 @@ func newSpaceSyncCmd(opts *globalOptions) *cobra.Command {
 						"failed":  failed,
 					})
 				}
-				fmt.Fprintf(os.Stdout, "synced %d spaces to projects.yaml", written)
+				// §6.3: ack message (non-data) → stderr.
+				fmt.Fprintf(os.Stderr, "synced %d spaces to projects.yaml", written)
 				if failed > 0 {
-					fmt.Fprintf(os.Stdout, " (%d failed)", failed)
+					fmt.Fprintf(os.Stderr, " (%d failed)", failed)
 				}
-				fmt.Fprintln(os.Stdout)
+				fmt.Fprintln(os.Stderr)
 				return nil
 			})
 		},
