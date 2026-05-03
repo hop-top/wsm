@@ -19,23 +19,24 @@ Bare `wsm` (no args) prints a quick-start hint to stderr (stdout stays empty so
 
 ## Help groups
 
-`wsm --help` shows the four primary groups; management commands are hidden by
+`wsm --help` shows the three primary groups; management commands are hidden by
 default. Use `--help-all` to see everything, or one of the group-scoped flags.
 
 | Group         | Commands                                                   |
 |---------------|------------------------------------------------------------|
 | ORGANIZE      | `workspace`, `space`, `device`                             |
 | CAPTURE       | `event`, `snapshot`                                        |
-| INTERACT      | `init`, `tui`                                              |
+| INTERACT      | `init`, `tui` (hidden)                                     |
 | MANAGEMENT    | `config`, `alias`, `upgrade`, `version`, `completion`      |
 
 Group filters: `--help-organize`, `--help-capture`, `--help-interact`,
-`--help-management`, `--help-all`.
+`--help-management`, `--help-knowledge`, `--help-curate`, `--help-all`.
 
-### Subcommand groups (KNOWLEDGE / CURATE)
+### Subcommand groups (KNOWLEDGE / CURATE / CAPTURE)
 
 Inside `wsm workspace`, `wsm snapshot`, and `wsm event`, verbs are bucketed
-into KNOWLEDGE (read) and CURATE (mutate) help groups per CLI conv §4:
+into KNOWLEDGE (read), CURATE (mutate), and CAPTURE (event recording) help
+groups per CLI conv §4:
 
 | Parent      | KNOWLEDGE                  | CURATE                                              | CAPTURE |
 |-------------|----------------------------|-----------------------------------------------------|---------|
@@ -55,6 +56,8 @@ Provided by `kit/cli` plus wsm-specific globals registered on the root command.
 | `--help-capture`      | bool   | false   | Show only CAPTURE commands                                        |
 | `--help-interact`     | bool   | false   | Show only INTERACT commands                                       |
 | `--help-management`   | bool   | false   | Show only MANAGEMENT commands                                     |
+| `--help-knowledge`    | bool   | false   | Show only KNOWLEDGE subcommands of a parent                       |
+| `--help-curate`       | bool   | false   | Show only CURATE subcommands of a parent                          |
 | `-v`, `--version`     | bool   | false   | Print wsm version and exit                                        |
 | `-V`, `--verbose`     | count  | 0       | Increase log verbosity (`-V`=debug, `-VV`=trace)                  |
 | `-C`, `--chdir`       | string | ""      | Change directory before running                                   |
@@ -87,7 +90,7 @@ top-level `--json` flag was removed in this release; see
 
 #### `wsm workspace`
 
-Workspace operations. Aliases: `ws`, `w`.
+Workspace operations.
 
 ```
 wsm workspace [command] [--flags]
@@ -97,7 +100,7 @@ Subcommands: `add`, `list`, `show`, `archive`, `unarchive`, `delete`, `config`.
 
 ##### `wsm workspace add <name>`
 
-Create a workspace. Aliases: `create`, `new`, `a`, `+`.
+Create a workspace.
 
 ```
 wsm workspace add <name> [--description <text>] [--tag <tag>...]
@@ -118,7 +121,7 @@ wsm workspace add api --format json
 
 ##### `wsm workspace list`
 
-List workspaces. Aliases: `ls`, `all`, `l`.
+List workspaces.
 
 ```
 wsm workspace list [--status active|archived] [--sort name|created|updated]
@@ -141,7 +144,7 @@ wsm workspace list --sort name --cols ID,NAME
 
 ##### `wsm workspace show <id-or-name>`
 
-Show workspace details. Aliases: `get`, `inspect`, `info`, `i`.
+Show workspace details.
 
 ```
 wsm workspace show <id-or-name> [--events] [--devices]
@@ -164,7 +167,7 @@ wsm workspace show 01J7... --format json
 ##### `wsm workspace archive <workspace>` / `unarchive <workspace>`
 
 Mark a workspace as archived (read-only) or restore an archived workspace to
-active. Aliases: `arch` / `unarch`.
+active.
 
 ```
 wsm workspace archive <workspace>
@@ -173,7 +176,7 @@ wsm workspace unarchive <workspace>
 
 ##### `wsm workspace delete <workspace>`
 
-Permanently delete a workspace and its history. Aliases: `rm`, `del`.
+Permanently delete a workspace and its history.
 
 Renamed from `remove` in this release; see [CHANGELOG](../../CHANGELOG.md).
 
@@ -198,7 +201,7 @@ wsm workspace delete my-project --force
 
 ##### `wsm workspace config`
 
-Workspace configuration. Aliases: `cfg`.
+Workspace configuration.
 
 ```
 wsm workspace config show
@@ -266,7 +269,7 @@ projects.Write contract.
 
 #### `wsm device`
 
-Device registry operations. Aliases: `devices`, `dev`, `d`.
+Device registry operations.
 
 ```
 wsm device [command] [--flags]
@@ -276,17 +279,17 @@ Subcommands: `list`, `show`.
 
 ##### `wsm device list`
 
-List all registered devices. Aliases: `ls`, `all`, `l`.
+List all registered devices.
 
 ##### `wsm device show <id-or-name>`
 
-Show device details and recent sessions. Aliases: `get`, `inspect`, `info`, `s`.
+Show device details and recent sessions.
 
 ### CAPTURE
 
 #### `wsm event`
 
-Event operations. Aliases: `events`, `ev`, `e`.
+Event operations.
 
 ```
 wsm event [command] [--flags]
@@ -296,7 +299,7 @@ Subcommands: `add`, `list`, `show`.
 
 ##### `wsm event add <workspace> <type>`
 
-Append an event to a workspace. Aliases: `create`, `a`, `+`.
+Append an event to a workspace.
 
 ```
 wsm event add <workspace> <type> [--data <json>] [typed flags...]
@@ -337,7 +340,7 @@ wsm event add my-project mutation.file_patch --path src/main.go --operation modi
 
 ##### `wsm event list <workspace>`
 
-List workspace events with filtering. Aliases: `ls`, `all`, `l`.
+List workspace events with filtering.
 
 ```
 wsm event list <workspace> [--type t1,t2] [--after-seq N] [--before-seq N] [--limit N]
@@ -352,11 +355,11 @@ wsm event list <workspace> [--type t1,t2] [--after-seq N] [--before-seq N] [--li
 
 ##### `wsm event show <workspace> <seq-or-id>`
 
-Show full event details including payload. Aliases: `get`, `inspect`, `info`, `s`.
+Show full event details including payload.
 
 #### `wsm snapshot`
 
-Snapshot operations. Aliases: `snap`, `s`.
+Snapshot operations.
 
 ```
 wsm snapshot [command] [--flags]
@@ -366,8 +369,8 @@ Subcommands: `generate`, `list`, `show`, `update`, `delete`, `context`.
 
 ##### `wsm snapshot generate [workspace]`
 
-Generate and persist a workspace snapshot. Aliases: `gen`, `g`. With no
-argument, picks the most recently updated workspace.
+Generate and persist a workspace snapshot. With no argument, picks the most
+recently updated workspace.
 
 | Flag             | Default | Description                |
 |------------------|---------|----------------------------|
@@ -377,7 +380,7 @@ argument, picks the most recently updated workspace.
 
 ##### `wsm snapshot list`
 
-List snapshots with filtering. Aliases: `ls`, `all`, `l`.
+List snapshots with filtering.
 
 | Flag                | Default | Description                                       |
 |---------------------|---------|---------------------------------------------------|
@@ -390,11 +393,11 @@ List snapshots with filtering. Aliases: `ls`, `all`, `l`.
 
 ##### `wsm snapshot show <workspace>`
 
-Show latest snapshot for a workspace. Aliases: `get`, `s`.
+Show latest snapshot for a workspace.
 
 ##### `wsm snapshot update <snapshot-id-or-name>`
 
-Update snapshot metadata. Aliases: `rename`.
+Update snapshot metadata.
 
 | Flag             | Default | Description           |
 |------------------|---------|-----------------------|
@@ -403,7 +406,7 @@ Update snapshot metadata. Aliases: `rename`.
 
 ##### `wsm snapshot delete <snapshot-id-or-name>`
 
-Delete a snapshot. Aliases: `rm`, `del`.
+Delete a snapshot.
 
 Renamed from `remove` in this release; see [CHANGELOG](../../CHANGELOG.md).
 
@@ -446,8 +449,8 @@ wsm init --force
 
 #### `wsm tui`
 
-Launch the terminal UI (Charmbracelet bubbletea v2). Aliases: `ui`. Hidden by
-default; invoked explicitly.
+Launch the terminal UI (Charmbracelet bubbletea v2). Hidden by default;
+invoked explicitly.
 
 ```
 wsm tui
@@ -496,16 +499,18 @@ and share the resolver order documented in [configuration.md](configuration.md).
 #### `wsm alias`
 
 Manage user-curated command aliases backed by a YAML store at
-`$XDG_CONFIG_HOME/wsm/aliases.yaml`. Cobra-level command shortcuts
-(e.g. `ws`, `ls`, `snap`) keep working — `alias` is additive and
-user-controlled.
+`$XDG_CONFIG_HOME/wsm/aliases.yaml`. The kit `alias.Store` is the only
+alias mechanism — wsm has no hardcoded cobra-level shortcuts.
 
 ```
 wsm alias                       # list (default)
 wsm alias list                  # explicit list
 wsm alias add <name> <target>   # add or update
-wsm alias remove <name>         # remove (alias: rm)
+wsm alias remove <name>         # remove
 ```
+
+Aliases are resolved at parse time before cobra sees argv; targets can
+be any wsm command path (e.g. `wsm alias add wl workspace list`).
 
 #### `wsm upgrade`
 
@@ -608,3 +613,22 @@ Per CLI conventions §8.1:
 Codes 64+ are tool-specific. wsm error helpers
 (`workspace.NewErrorUsage`, `NewErrorNotFound`, `NewErrorBackend`,
 `NewErrorForbidden`) map to these codes via `kit/cli` error rendering.
+
+## Published events (kit bus topics)
+
+When a `bus.Bus` is wired into the workspace `Manager`, lifecycle
+operations publish to the following topics. Topic names follow the kit
+4-segment convention (`<tool>.<area>.<entity>.<verb-past>`):
+
+| Topic                              | Trigger                              |
+|------------------------------------|--------------------------------------|
+| `wsm.runtime.workspace.created`    | `wsm workspace add`                  |
+| `wsm.runtime.workspace.archived`   | `wsm workspace archive`              |
+| `wsm.runtime.workspace.unarchived` | `wsm workspace unarchive`            |
+| `wsm.runtime.workspace.deleted`    | `wsm workspace delete`               |
+| `wsm.runtime.snapshot.created`    | `wsm snapshot generate`              |
+
+Subscribers wanting all wsm runtime topics use the AMQP-style pattern
+`wsm.runtime.#`; workspace-only is `wsm.runtime.workspace.#`. These
+topics are emitted only when a bus is configured; CLI behavior is
+unchanged when no bus is present.

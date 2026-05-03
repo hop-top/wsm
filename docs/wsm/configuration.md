@@ -112,11 +112,12 @@ mark the resolved `Source` as `env`.
 The convention is uppercase `WSM_` prefix with dots replaced by underscores
 (matching the `kit/go/core/config` env hook contract).
 
-Additional env var read by `wsm workspace delete` on macOS only:
+Additional env vars read by specific commands:
 
-| Env var                 | Effect                                                |
-|-------------------------|-------------------------------------------------------|
-| `WSM_DELETE_CONFIRM=y`  | Skip the interactive confirmation prompt for delete   |
+| Env var                 | Effect                                                                |
+|-------------------------|-----------------------------------------------------------------------|
+| `WSM_DELETE_CONFIRM=y`  | `wsm workspace delete` (macOS only): skip confirmation prompt         |
+| `WSM_TUI_SCRIPT`        | `wsm tui`: drive bubbletea via a script file (testing/automation)     |
 
 ## Inspect resolved config
 
@@ -142,6 +143,10 @@ backup is never overwritten).
 Independent of `config.yaml`, `wsm` keeps a YAML-backed alias store at
 `$XDG_CONFIG_HOME/wsm/aliases.yaml` (managed by `kit/console/alias`).
 
+This store is the only alias mechanism in wsm — there are no hardcoded
+cobra-level shortcuts (`ws`, `ls`, `snap`, etc. were removed). Every
+alias is user-authored and lives in this file.
+
 Mutate via `wsm alias add <name> <target>` / `wsm alias remove <name>`;
 inspect with `wsm alias list`. The file is a flat `name: target` map:
 
@@ -149,9 +154,6 @@ inspect with `wsm alias list`. The file is a flat `name: target` map:
 wl: workspace list
 ws-show: workspace show
 ```
-
-Cobra-level command shortcuts (`ws`, `ls`, `snap`, etc.) are unrelated to
-this store and remain hardcoded.
 
 ## Verbose & log output
 
