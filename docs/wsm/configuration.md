@@ -1,6 +1,6 @@
 # wsm — Configuration
 
-Last updated: 2026-04-30
+Last updated: 2026-05-02
 Author: $USER
 
 `wsm` reads configuration from layered sources via `kit/go/core/config.Load`.
@@ -13,7 +13,10 @@ See also: [api-cli.md](api-cli.md), [../architecture.md](../architecture.md).
 1. Built-in defaults (`backend=sqlite`, XDG-derived dirs)
 2. System: `/etc/wsm/config.yaml`
 3. User: `$XDG_CONFIG_HOME/wsm/config.yaml`
-4. Project: `./.wsm.yaml` (cwd; not walked up)
+4. Project: first existing of (cwd; not walked up):
+   - `./.wsm.yaml` (legacy single-file form)
+   - `./.wsm/config.yaml` (default `wsm init`)
+   - `./.hop/wsm/config.yaml` (`wsm init --hop`)
 5. `--config <path>` flag override (replaces the user-scope path)
 6. Env vars: `WSM_<KEY>`
 7. CLI flags
@@ -24,6 +27,8 @@ resolved `Source` field reflects the highest layer that contributed
 
 `--config` set to a non-existent path is a hard error (unlike layered files,
 which are silently skipped when missing).
+
+`wsm config path` and `wsm config paths` reflect this exact resolver order.
 
 ## XDG paths (kit/go/core/xdg)
 
@@ -46,12 +51,15 @@ Data, cache, and state directories are auto-created on first run.
 | StateDir    | `state_dir`   | `WSM_STATE_DIR`   | (none)           | XDG state dir  | State directory                                   |
 | BackendURL  | `backend_url` | `WSM_BACKEND_URL` | `--backend-url`  | ""             | Backend URL (reserved for future backends)        |
 
-Two additional CLI-only globals are not file-backed:
+CLI-only globals not file-backed (CLI conv §5 canonicals + wsm extras):
 
-| Flag           | Default | Description                       |
-|----------------|---------|-----------------------------------|
-| `--session-id` | ""      | Session ID for event tracking     |
-| `--agent-id`   | user    | Agent ID for event tracking       |
+| Flag           | Default | Description                                                       |
+|----------------|---------|-------------------------------------------------------------------|
+| `--session-id` | ""      | Session ID for event tracking                                     |
+| `--agent-id`   | user    | Agent ID for event tracking                                       |
+| `--offline`    | false   | Disable all network (skip sync, upgrade check, plugin downloads)  |
+| `--profile`    | ""      | Named credential / config profile                                 |
+| `--instance`   | ""      | Backend instance discriminator                                    |
 
 ## Sample config
 
@@ -128,6 +136,22 @@ On first run, wsm migrates a legacy `~/.wsm/wsm.db` to the XDG data dir
 automatically (`pkg/config.MigrateFromLegacy`). The migration is idempotent
 and preserves the legacy file when the target already exists (so a manual
 backup is never overwritten).
+
+## User aliases
+
+Independent of `config.yaml`, `wsm` keeps a YAML-backed alias store at
+`$XDG_CONFIG_HOME/wsm/aliases.yaml` (managed by `kit/console/alias`).
+
+Mutate via `wsm alias add <name> <target>` / `wsm alias remove <name>`;
+inspect with `wsm alias list`. The file is a flat `name: target` map:
+
+```yaml
+wl: workspace list
+ws-show: workspace show
+```
+
+Cobra-level command shortcuts (`ws`, `ls`, `snap`, etc.) are unrelated to
+this store and remain hardcoded.
 
 ## Verbose & log output
 

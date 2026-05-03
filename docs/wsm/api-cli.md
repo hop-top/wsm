@@ -1,6 +1,6 @@
 # wsm — CLI Reference
 
-Last updated: 2026-04-30
+Last updated: 2026-05-02
 Author: $USER
 
 Generated reference for every wsm subcommand. See also:
@@ -22,15 +22,26 @@ Bare `wsm` (no args) prints a quick-start hint to stderr (stdout stays empty so
 `wsm --help` shows the four primary groups; management commands are hidden by
 default. Use `--help-all` to see everything, or one of the group-scoped flags.
 
-| Group         | Commands                                        |
-|---------------|-------------------------------------------------|
-| ORGANIZE      | `workspace`, `space`, `device`                  |
-| CAPTURE       | `event`, `snapshot`                             |
-| INTERACT      | `init`, `tui`                                   |
-| MANAGEMENT    | `config`, `upgrade`, `version`, `completion`    |
+| Group         | Commands                                                   |
+|---------------|------------------------------------------------------------|
+| ORGANIZE      | `workspace`, `space`, `device`                             |
+| CAPTURE       | `event`, `snapshot`                                        |
+| INTERACT      | `init`, `tui`                                              |
+| MANAGEMENT    | `config`, `alias`, `upgrade`, `version`, `completion`      |
 
 Group filters: `--help-organize`, `--help-capture`, `--help-interact`,
 `--help-management`, `--help-all`.
+
+### Subcommand groups (KNOWLEDGE / CURATE)
+
+Inside `wsm workspace`, `wsm snapshot`, and `wsm event`, verbs are bucketed
+into KNOWLEDGE (read) and CURATE (mutate) help groups per CLI conv §4:
+
+| Parent      | KNOWLEDGE                  | CURATE                                              | CAPTURE |
+|-------------|----------------------------|-----------------------------------------------------|---------|
+| `workspace` | `list`, `show`             | `add`, `archive`, `unarchive`, `delete`, `config`   | —       |
+| `snapshot`  | `list`, `show`, `context`  | `generate`, `update`, `delete`                      | —       |
+| `event`     | `list`, `show`             | —                                                   | `add`   |
 
 ## Global flags
 
@@ -62,6 +73,9 @@ Provided by `kit/cli` plus wsm-specific globals registered on the root command.
 | `--backend-url`       | string | ""      | Backend URL (reserved for future backends)                        |
 | `--session-id`        | string | ""      | Session ID for event tracking                                     |
 | `--agent-id`          | string | user    | Agent ID for event tracking                                       |
+| `--offline`           | bool   | false   | Disable all network (skip sync, upgrade check, plugin downloads)  |
+| `--profile`           | string | ""      | Named profile (credentials/config)                                |
+| `--instance`          | string | ""      | Backend instance discriminator                                    |
 
 `--format json|yaml` is the canonical machine-readable selector. The previous
 top-level `--json` flag was removed in this release; see
@@ -456,6 +470,43 @@ Output (text mode) shows `backend`, `data_dir`, `config_file` (with
 `(not found)` suffix when absent), and `source` (one of `defaults`,
 `config_file`, `env`, `flags`).
 
+#### `wsm config path`
+
+Print the highest-precedence existing wsm config file (single path).
+Exits 1 with `no config file found in resolution chain` to stderr when
+no rung exists.
+
+```
+wsm config path [--from <dir>] [--format text|json|yaml]
+```
+
+#### `wsm config paths`
+
+Print every rung of the wsm config resolution chain, highest-precedence
+first. Each entry includes path, source label, scope, and whether the
+file exists.
+
+```
+wsm config paths [--from <dir>] [--format text|json|yaml]
+```
+
+Both subcommands are wired via `kit/cli/config.RegisterPathSubcommands`
+and share the resolver order documented in [configuration.md](configuration.md).
+
+#### `wsm alias`
+
+Manage user-curated command aliases backed by a YAML store at
+`$XDG_CONFIG_HOME/wsm/aliases.yaml`. Cobra-level command shortcuts
+(e.g. `ws`, `ls`, `snap`) keep working — `alias` is additive and
+user-controlled.
+
+```
+wsm alias                       # list (default)
+wsm alias list                  # explicit list
+wsm alias add <name> <target>   # add or update
+wsm alias remove <name>         # remove (alias: rm)
+```
+
 #### `wsm upgrade`
 
 Check for and install updates.
@@ -544,14 +595,16 @@ as `wsm workspace list --format json | jq`.
 
 Per CLI conventions §8.1:
 
-| Code | Meaning                              |
-|------|--------------------------------------|
-| 0    | Success                              |
-| 1    | Generic error                        |
-| 2    | Usage error (bad flags/args)         |
-| 3    | Not found (workspace/space/snapshot) |
-| 4    | Conflict (already exists, in use)    |
-| 5    | Unauthorized                         |
+| Code | Meaning                                |
+|------|----------------------------------------|
+| 0    | Success                                |
+| 1    | Generic error                          |
+| 2    | Usage error (bad flags/args)           |
+| 3    | Not found (workspace/space/snapshot)   |
+| 4    | Conflict (already exists, in use)      |
+| 5    | Unauthorized / forbidden (capability)  |
+| 64   | Backend / persistence failure (wsm)    |
 
-wsm error helpers (`workspace.NewErrorUsage`, `NewErrorNotFound`,
-`NewErrorBackend`) map to these codes via `kit/cli` error rendering.
+Codes 64+ are tool-specific. wsm error helpers
+(`workspace.NewErrorUsage`, `NewErrorNotFound`, `NewErrorBackend`,
+`NewErrorForbidden`) map to these codes via `kit/cli` error rendering.
