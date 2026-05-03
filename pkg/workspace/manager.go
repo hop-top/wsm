@@ -9,11 +9,26 @@ import (
 	"time"
 
 	"github.com/oklog/ulid/v2"
+	"hop.top/kit/go/runtime/bus"
 
 	"hop.top/wsm/pkg/backend"
 	"hop.top/wsm/pkg/device"
 	"hop.top/wsm/pkg/model"
 	"hop.top/wsm/pkg/owsf"
+)
+
+// Workspace lifecycle topics published on the kit bus. 4-segment past-tense
+// per kit topic spec: wsm.runtime.workspace.* and wsm.runtime.snapshot.*.
+// Subscribers wanting "any wsm workspace event" use pattern wsm.runtime.workspace.#
+// (or wsm.# for everything wsm publishes).
+const (
+	topicWorkspaceCreated    bus.Topic = "wsm.runtime.workspace.created"
+	topicWorkspaceArchived   bus.Topic = "wsm.runtime.workspace.archived"
+	topicWorkspaceUnarchived bus.Topic = "wsm.runtime.workspace.unarchived"
+	topicWorkspaceDeleted    bus.Topic = "wsm.runtime.workspace.deleted"
+	topicSnapshotCreated     bus.Topic = "wsm.runtime.snapshot.created"
+
+	topicSource = "wsm"
 )
 
 // Manager provides workspace lifecycle operations.
@@ -27,6 +42,7 @@ type Manager struct {
 	spaceID      string
 	lamportClock uint64
 	caps         *Capabilities
+	bus          bus.Bus
 }
 
 // CreateOptions configures workspace creation.
@@ -89,6 +105,27 @@ func WithCapabilities(caps *Capabilities) ManagerOption {
 	}
 }
 
+// WithBus wires a kit bus instance for publishing workspace lifecycle
+// events (wsm.runtime.workspace.*, wsm.runtime.snapshot.*). When nil
+// (the default) lifecycle ops keep working but no events are emitted.
+func WithBus(b bus.Bus) ManagerOption {
+	return func(m *Manager) {
+		m.bus = b
+	}
+}
+
+// publish emits an event on m.bus. No-op when the bus is unset.
+// Errors are swallowed: lifecycle correctness must not depend on
+// subscriber availability (subscribers are observers, not gates).
+func (m *Manager) publish(ctx context.Context, topic bus.Topic, workspaceID string, payload any) {
+	if m.bus == nil {
+		return
+	}
+	ev := bus.NewEvent(topic, topicSource, payload)
+	ev.WorkspaceID = workspaceID
+	_ = m.bus.Publish(ctx, ev)
+}
+
 // NewManager constructs a manager with current device identity.
 func NewManager(b backend.Backend, opts ...ManagerOption) (*Manager, error) {
 	m := &Manager{backend: b, device: device.Current(), caps: AllCapabilities()}
@@ -130,6 +167,10 @@ func (m *Manager) Create(ctx context.Context, name string, opts CreateOptions) (
 		return nil, mapBackendErr("create workspace", err)
 	}
 	_, _ = m.RecordEvent(ctx, ws.ID, EventWorkspaceCreated, map[string]any{"name": ws.Name})
+	m.publish(ctx, topicWorkspaceCreated, ws.ID, map[string]any{
+		"id":   ws.ID,
+		"name": ws.Name,
+	})
 	out := Workspace(ws)
 	return &out, nil
 }
@@ -338,6 +379,11 @@ func (m *Manager) Snapshot(ctx context.Context, workspaceRef string, opts Snapsh
 	}
 	_, _ = m.appendLifecycleEvent(ctx, ws.ID, EventSnapshotCreated, model.SnapshotEventData{
 		SnapshotID: snap.ID, WorkspaceID: ws.ID, Name: snap.Name,
+	})
+	m.publish(ctx, topicSnapshotCreated, ws.ID, map[string]any{
+		"snapshot_id":  snap.ID,
+		"workspace_id": ws.ID,
+		"name":         snap.Name,
 	})
 	out := Snapshot(snap)
 	return &out, nil
@@ -548,6 +594,11 @@ func (m *Manager) Archive(ctx context.Context, ref string) error {
 	if _, err := m.appendLifecycleEvent(ctx, ws.ID, EventWorkspaceArchived, map[string]any{"archived_at": now}); err != nil {
 		return err
 	}
+	m.publish(ctx, topicWorkspaceArchived, ws.ID, map[string]any{
+		"id":          ws.ID,
+		"name":        ws.Name,
+		"archived_at": now,
+	})
 	return nil
 }
 
@@ -573,6 +624,11 @@ func (m *Manager) Unarchive(ctx context.Context, ref string) error {
 	if _, err := m.appendLifecycleEvent(ctx, ws.ID, EventWorkspaceUnarchived, map[string]any{"updated_at": now}); err != nil {
 		return err
 	}
+	m.publish(ctx, topicWorkspaceUnarchived, ws.ID, map[string]any{
+		"id":         ws.ID,
+		"name":       ws.Name,
+		"updated_at": now,
+	})
 	return nil
 }
 
@@ -607,6 +663,10 @@ func (m *Manager) Delete(ctx context.Context, ref string) error {
 	if err := m.backend.DeleteWorkspace(ctx, ws.ID); err != nil {
 		return backendError("delete workspace", err)
 	}
+	m.publish(ctx, topicWorkspaceDeleted, ws.ID, map[string]any{
+		"id":   ws.ID,
+		"name": ws.Name,
+	})
 	return nil
 }
 

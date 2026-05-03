@@ -6,12 +6,14 @@ import (
 	"os"
 	"path/filepath"
 	"runtime/debug"
+	"time"
 
 	"github.com/spf13/cobra"
 
 	"hop.top/kit/go/console/cli"
 	kitlog "hop.top/kit/go/console/log"
 	"hop.top/kit/go/core/upgrade"
+	"hop.top/kit/go/runtime/bus"
 	"hop.top/wsm/pkg/backend"
 	backendsqlite "hop.top/wsm/pkg/backend/sqlite"
 	"hop.top/wsm/pkg/config"
@@ -74,9 +76,15 @@ type appContext struct {
 	cfg     config.Config
 	backend backend.Backend
 	manager *workspace.Manager
+	bus     bus.Bus
 }
 
 func (a *appContext) Close() error {
+	if a.bus != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = a.bus.Close(ctx)
+	}
 	if a.backend != nil {
 		return a.backend.Close()
 	}
@@ -122,16 +130,22 @@ func newAppContext(opts globalOptions) (*appContext, error) {
 		_ = b.Close()
 		return nil, workspace.NewErrorBackend("run sqlite migrations", err)
 	}
+	// kit/bus: in-memory bus for lifecycle events. Subscribers (aps,
+	// ctxt, future plugins) can attach via Subscribe; cross-process
+	// fan-out is the bus adapter's job, not ours.
+	eventBus := bus.New()
+
 	mgr, err := workspace.NewManager(b,
 		workspace.WithSessionID(opts.SessionID),
 		workspace.WithAgentID(opts.AgentID),
+		workspace.WithBus(eventBus),
 	)
 	if err != nil {
 		_ = b.Close()
 		return nil, workspace.NewErrorBackend("create manager", err)
 	}
 
-	return &appContext{cfg: cfg, backend: b, manager: mgr}, nil
+	return &appContext{cfg: cfg, backend: b, manager: mgr, bus: eventBus}, nil
 }
 
 // NewRootCmd creates the root command for wsm via kit/cli.
