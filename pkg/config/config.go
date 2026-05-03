@@ -190,9 +190,21 @@ func Load(opts LoadOptions) (Config, error) {
 
 	// Track whether any YAML layer actually existed on disk; that drives
 	// the legacy "source: config_file" string the e2e tests assert on.
+	// Pick the highest-precedence existing file as the reported source so
+	// `wsm config show` points users at the file that actually contributed
+	// (project beats user beats system). Fall back to the user/--config
+	// path for the "(not found)" case so the hint stays meaningful.
 	fileLoaded := pathExists(systemConfigPath) || pathExists(userPath) ||
 		pathExists(projectPath)
-	if pathExists(userPath) {
+	switch {
+	case pathExists(projectPath):
+		cfg.ConfigFile = projectPath
+		cfg.ConfigFileFound = true
+	case pathExists(userPath):
+		cfg.ConfigFile = userPath
+		cfg.ConfigFileFound = true
+	case pathExists(systemConfigPath):
+		cfg.ConfigFile = systemConfigPath
 		cfg.ConfigFileFound = true
 	}
 	if fileLoaded && source == "defaults" {

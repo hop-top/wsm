@@ -216,6 +216,125 @@ func TestConfig_ProjectConfig_Candidates(t *testing.T) {
 	}
 }
 
+func TestConfig_ConfigFile_ReportsProjectSource(t *testing.T) {
+	// Each project candidate, when present, should be reported as the
+	// resolved ConfigFile path (not the XDG user default). This is the
+	// T-0117 regression: layered loaders correctly used the project
+	// values but the metadata kept pointing at the XDG location.
+	cases := []struct {
+		name string
+		rel  string
+	}{
+		{"legacy_dotfile", ".wsm.yaml"},
+		{"wsm_dir", filepath.Join(".wsm", "config.yaml")},
+		{"hop_wsm_dir", filepath.Join(".hop", "wsm", "config.yaml")},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			withCleanConfigEnv(t)
+			cwd, err := os.Getwd()
+			if err != nil {
+				t.Fatalf("getwd: %v", err)
+			}
+			t.Cleanup(func() { _ = os.Chdir(cwd) })
+			project := t.TempDir()
+			if err := os.Chdir(project); err != nil {
+				t.Fatalf("chdir: %v", err)
+			}
+			full := filepath.Join(project, tc.rel)
+			if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+				t.Fatalf("mkdir: %v", err)
+			}
+			if err := os.WriteFile(full, []byte("backend: sqlite\n"), 0o644); err != nil {
+				t.Fatalf("write: %v", err)
+			}
+			cfg, err := Load(LoadOptions{})
+			if err != nil {
+				t.Fatalf("load: %v", err)
+			}
+			// macOS resolves /var/folders → /private/var/folders; compare via EvalSymlinks.
+			gotResolved, _ := filepath.EvalSymlinks(cfg.ConfigFile)
+			wantResolved, _ := filepath.EvalSymlinks(full)
+			if gotResolved != wantResolved {
+				t.Fatalf("ConfigFile = %q (resolved %q), want %q (resolved %q)",
+					cfg.ConfigFile, gotResolved, full, wantResolved)
+			}
+			if !cfg.ConfigFileFound {
+				t.Fatalf("ConfigFileFound = false, want true")
+			}
+			if cfg.Source != "config_file" {
+				t.Fatalf("Source = %q, want config_file", cfg.Source)
+			}
+		})
+	}
+}
+
+func TestConfig_ConfigFile_NotFoundReportsUserPath(t *testing.T) {
+	// When no layer file exists, the reported path should still point at
+	// the user-scope (XDG) path so `(not found)` hint is actionable.
+	withCleanConfigEnv(t)
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(cwd) })
+	if err := os.Chdir(t.TempDir()); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	cfg, err := Load(LoadOptions{})
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if cfg.ConfigFileFound {
+		t.Fatalf("ConfigFileFound = true, want false")
+	}
+	if cfg.ConfigFile != userConfigPath() {
+		t.Fatalf("ConfigFile = %q, want user XDG path %q", cfg.ConfigFile, userConfigPath())
+	}
+}
+
+func TestConfig_ConfigFile_ProjectBeatsUser(t *testing.T) {
+	// When both a user XDG file and a project file exist, the project
+	// path wins (highest precedence existing file).
+	root := withCleanConfigEnv(t)
+	userDir := filepath.Join(root, "cfg", "wsm")
+	if err := os.MkdirAll(userDir, 0o755); err != nil {
+		t.Fatalf("mkdir user: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(userDir, "config.yaml"),
+		[]byte("backend: sqlite\n"), 0o644); err != nil {
+		t.Fatalf("write user: %v", err)
+	}
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(cwd) })
+	project := t.TempDir()
+	if err := os.Chdir(project); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	projectFile := filepath.Join(project, ".wsm", "config.yaml")
+	if err := os.MkdirAll(filepath.Dir(projectFile), 0o755); err != nil {
+		t.Fatalf("mkdir project: %v", err)
+	}
+	if err := os.WriteFile(projectFile, []byte("data_dir: /tmp/from-project\n"), 0o644); err != nil {
+		t.Fatalf("write project: %v", err)
+	}
+
+	cfg, err := Load(LoadOptions{})
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	gotResolved, _ := filepath.EvalSymlinks(cfg.ConfigFile)
+	wantResolved, _ := filepath.EvalSymlinks(projectFile)
+	if gotResolved != wantResolved {
+		t.Fatalf("ConfigFile = %q (resolved %q), want %q (resolved %q)",
+			cfg.ConfigFile, gotResolved, projectFile, wantResolved)
+	}
+}
+
 func TestConfig_CacheDir_FileOverride(t *testing.T) {
 	root := withCleanConfigEnv(t)
 	path := filepath.Join(root, "cfg", "wsm")

@@ -6,6 +6,46 @@ import (
 	"testing"
 )
 
+// TestConfigShow_ProjectSourcePath covers T-0117: when a project-level
+// config exists, `wsm config show` must report that file as the source —
+// not the XDG default.
+func TestConfigShow_ProjectSourcePath(t *testing.T) {
+	cases := []struct {
+		name string
+		rel  string
+	}{
+		{"legacy_dotfile", ".wsm.yaml"},
+		{"wsm_dir", filepath.Join(".wsm", "config.yaml")},
+		{"hop_wsm_dir", filepath.Join(".hop", "wsm", "config.yaml")},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := newRunner(t)
+			full := filepath.Join(r.workDir, tc.rel)
+			mustMkdirAll(t, filepath.Dir(full))
+			writeFile(t, full, []byte("backend: sqlite\ndata_dir: /tmp/from-project-"+tc.name+"\n"))
+
+			res := r.runNoGlobal("config", "show")
+			requireExitCode(t, res, 0)
+
+			// Path may be reported via realpath (macOS resolves
+			// /var/folders → /private/var/folders), so assert the
+			// candidate suffix is present rather than the exact prefix.
+			wantSuffix := "/" + tc.rel
+			if !strings.Contains(res.Stdout, "config_file:") ||
+				!strings.Contains(res.Stdout, wantSuffix) {
+				t.Fatalf("expected config_file pointing at %q, got:\n%s", tc.rel, res.Stdout)
+			}
+			if strings.Contains(res.Stdout, "(not found)") {
+				t.Fatalf("did not expect (not found) when project file exists, got:\n%s", res.Stdout)
+			}
+			if !strings.Contains(res.Stdout, "source:      config_file") {
+				t.Fatalf("expected config_file source, got:\n%s", res.Stdout)
+			}
+		})
+	}
+}
+
 func TestConfigShow(t *testing.T) {
 	r := newRunner(t)
 
