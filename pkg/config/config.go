@@ -48,6 +48,16 @@ const (
 	projectConfigName = ".wsm.yaml"
 )
 
+// projectConfigCandidates lists the per-project config paths checked in
+// precedence order (first existing file wins). Mirrors what `wsm init`
+// can produce: legacy single-file form, hidden dir form, and the .hop/
+// nested form when wsm lives inside a hop bare-worktree layout.
+var projectConfigCandidates = []string{
+	projectConfigName,
+	filepath.Join(".wsm", "config.yaml"),
+	filepath.Join(".hop", "wsm", "config.yaml"),
+}
+
 func defaultDataDir() string {
 	if p, err := xdg.DataDir("wsm"); err == nil {
 		return p
@@ -77,17 +87,23 @@ func userConfigPath() string {
 	return filepath.Join(".", "config", "wsm", "config.yaml")
 }
 
-// projectConfigPath returns ./.wsm.yaml in cwd if it exists; empty otherwise.
+// projectConfigPath returns the first existing per-project config file in
+// the cwd, walking projectConfigCandidates in order. Returns empty when no
+// candidate is present. The init command can produce any of the candidate
+// shapes (./.wsm.yaml, ./.wsm/config.yaml, ./.hop/wsm/config.yaml) so all
+// three must be honoured here.
 func projectConfigPath() string {
 	wd, err := os.Getwd()
 	if err != nil {
 		return ""
 	}
-	p := filepath.Join(wd, projectConfigName)
-	if _, err := os.Stat(p); err != nil {
-		return ""
+	for _, name := range projectConfigCandidates {
+		p := filepath.Join(wd, name)
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
 	}
-	return p
+	return ""
 }
 
 // pathExists reports whether path is non-empty and stats successfully.

@@ -175,6 +175,47 @@ func TestConfig_DataDir_XDG(t *testing.T) {
 	}
 }
 
+func TestConfig_ProjectConfig_Candidates(t *testing.T) {
+	cases := []struct {
+		name string
+		rel  string
+	}{
+		{"legacy_dotfile", ".wsm.yaml"},
+		{"wsm_dir", filepath.Join(".wsm", "config.yaml")},
+		{"hop_wsm_dir", filepath.Join(".hop", "wsm", "config.yaml")},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			withCleanConfigEnv(t)
+			cwd, err := os.Getwd()
+			if err != nil {
+				t.Fatalf("getwd: %v", err)
+			}
+			t.Cleanup(func() { _ = os.Chdir(cwd) })
+			project := t.TempDir()
+			if err := os.Chdir(project); err != nil {
+				t.Fatalf("chdir: %v", err)
+			}
+			full := filepath.Join(project, tc.rel)
+			if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+				t.Fatalf("mkdir: %v", err)
+			}
+			content := []byte("data_dir: /tmp/wsm-project-" + tc.name + "\n")
+			if err := os.WriteFile(full, content, 0o644); err != nil {
+				t.Fatalf("write: %v", err)
+			}
+			cfg, err := Load(LoadOptions{})
+			if err != nil {
+				t.Fatalf("load: %v", err)
+			}
+			want := "/tmp/wsm-project-" + tc.name
+			if cfg.DataDir != want {
+				t.Fatalf("expected project data_dir %q, got %q", want, cfg.DataDir)
+			}
+		})
+	}
+}
+
 func TestConfig_CacheDir_FileOverride(t *testing.T) {
 	root := withCleanConfigEnv(t)
 	path := filepath.Join(root, "cfg", "wsm")

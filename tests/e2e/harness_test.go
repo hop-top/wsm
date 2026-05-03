@@ -40,6 +40,7 @@ func (r commandResult) StdoutTrim() string {
 type e2eRunner struct {
 	t             *testing.T
 	root          string
+	workDir       string
 	binary        string
 	dataDir       string
 	homeDir       string
@@ -53,14 +54,17 @@ func newRunner(t *testing.T) *e2eRunner {
 	homeDir := filepath.Join(base, "home")
 	xdgConfigHome := filepath.Join(base, "xdg")
 	dataDir := filepath.Join(base, "data")
+	workDir := filepath.Join(base, "work")
 
 	mustMkdirAll(t, homeDir)
 	mustMkdirAll(t, xdgConfigHome)
 	mustMkdirAll(t, dataDir)
+	mustMkdirAll(t, workDir)
 
 	return &e2eRunner{
 		t:             t,
 		root:          root,
+		workDir:       workDir,
 		binary:        buildDefaultBinary(t),
 		dataDir:       dataDir,
 		homeDir:       homeDir,
@@ -178,7 +182,7 @@ func (r *e2eRunner) exec(opts runOptions) commandResult {
 	}
 
 	cmd := exec.CommandContext(ctx, r.binary, opts.Args...)
-	cmd.Dir = r.root
+	cmd.Dir = r.workDir
 	cmd.Env = r.baseEnv(opts.ExtraEnv)
 	if opts.Input != "" {
 		cmd.Stdin = strings.NewReader(opts.Input)
@@ -220,7 +224,7 @@ func (r *e2eRunner) execTTY(ctx context.Context, opts runOptions) commandResult 
 		commandLine := shellJoin(append([]string{r.binary}, opts.Args...))
 		cmd = exec.CommandContext(ctx, "script", "-q", "-e", "-c", commandLine, "/dev/null")
 	}
-	cmd.Dir = r.root
+	cmd.Dir = r.workDir
 	cmd.Env = r.baseEnv(opts.ExtraEnv)
 	if opts.Input != "" {
 		cmd.Stdin = strings.NewReader(opts.Input)
