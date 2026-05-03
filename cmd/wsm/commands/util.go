@@ -4,11 +4,14 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
 
+	kitcliconfig "hop.top/kit/go/console/cli/config"
 	"hop.top/kit/go/console/output"
+	"hop.top/kit/go/core/xdg"
 	"hop.top/wsm/pkg/backend"
 	pkgcli "hop.top/wsm/pkg/cli"
 	"hop.top/wsm/pkg/config"
@@ -86,7 +89,64 @@ func newConfigCmd(opts *globalOptions) *cobra.Command {
 		Short:   "Configuration commands",
 	}
 	cmd.AddCommand(showCmd)
+	// kit/cli/config: shared `path` and `paths` subcommands that walk
+	// the precedence chain. wsmConfigResolver mirrors pkg/config.Load
+	// rung order (project → user → system) so `wsm config paths`
+	// agrees with `wsm config show`.
+	kitcliconfig.RegisterPathSubcommands(cmd, "wsm",
+		kitcliconfig.WithResolver(wsmConfigResolver))
 	return cmd
+}
+
+// wsmConfigResolver returns the wsm config precedence chain at cwd,
+// highest-precedence first. Mirrors pkg/config.Load: project ./.wsm.yaml
+// or ./.wsm/config.yaml or ./.hop/wsm/config.yaml → user XDG → system
+// /etc/wsm/config.yaml.
+func wsmConfigResolver(cwd string) []kitcliconfig.ResolvedPath {
+	if cwd == "" {
+		if wd, err := os.Getwd(); err == nil {
+			cwd = wd
+		}
+	}
+	out := make([]kitcliconfig.ResolvedPath, 0, 5)
+	for _, name := range []string{
+		".wsm.yaml",
+		filepath.Join(".wsm", "config.yaml"),
+		filepath.Join(".hop", "wsm", "config.yaml"),
+	} {
+		p := filepath.Join(cwd, name)
+		out = append(out, kitcliconfig.ResolvedPath{
+			Path:   p,
+			Source: "project",
+			Scope:  "project",
+			Exists: pathExists(p),
+		})
+	}
+	if p, err := xdg.ConfigDir("wsm"); err == nil {
+		userPath := filepath.Join(p, "config.yaml")
+		out = append(out, kitcliconfig.ResolvedPath{
+			Path:   userPath,
+			Source: "user",
+			Scope:  "user",
+			Exists: pathExists(userPath),
+		})
+	}
+	out = append(out, kitcliconfig.ResolvedPath{
+		Path:   "/etc/wsm/config.yaml",
+		Source: "system",
+		Scope:  "system",
+		Exists: pathExists("/etc/wsm/config.yaml"),
+	})
+	return out
+}
+
+// pathExists reports whether path stats successfully.
+func pathExists(p string) bool {
+	if p == "" {
+		return false
+	}
+	_, err := os.Stat(p)
+	return err == nil
 }
 
 func newCompletionCmd(root *cobra.Command, _ *globalOptions) *cobra.Command {
