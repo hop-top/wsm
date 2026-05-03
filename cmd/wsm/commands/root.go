@@ -65,6 +65,9 @@ type globalOptions struct {
 	NoColor    bool
 	SessionID  string
 	AgentID    string
+	Offline    bool   // §5: skip network (sync, upgrade check, plugin downloads)
+	Profile    string // §5: named credential / config profile
+	Instance   string // §5: backend instance discriminator
 }
 
 type appContext struct {
@@ -165,6 +168,10 @@ func NewRootCmd() *cobra.Command {
 			{Name: "data-dir", Usage: "Data directory"},
 			{Name: "session-id", Usage: "Session ID for event tracking"},
 			{Name: "agent-id", Default: "user", Usage: "Agent ID for event tracking"},
+			// CLI conv §5 canonical globals.
+			{Name: "offline", Usage: "Disable all network (skip sync, upgrade check, plugin downloads)", BoolVar: &opts.Offline},
+			{Name: "profile", Usage: "Named profile (credentials/config)", StringVar: &opts.Profile},
+			{Name: "instance", Usage: "Backend instance", StringVar: &opts.Instance},
 		},
 	})
 	root := r.Cmd
@@ -185,13 +192,15 @@ func NewRootCmd() *cobra.Command {
 		opts.DataDir, _ = cmd.Flags().GetString("data-dir")
 		opts.SessionID, _ = cmd.Flags().GetString("session-id")
 		opts.AgentID, _ = cmd.Flags().GetString("agent-id")
+		// opts.Offline / opts.Profile / opts.Instance are bound directly via
+		// cli.Flag.{Bool,String}Var pointers, no manual lookup needed.
 		opts.Format = r.Viper.GetString("format")
 		opts.Quiet = r.Viper.GetBool("quiet")
 		opts.NoColor = r.Viper.GetBool("no-color")
 		// CLI conv §6.2: install kit/log as default slog handler.
 		// -V (verbose count) raises level: 0=info, 1=debug, 2+=trace.
 		slog.SetDefault(slog.New(kitlog.WithVerbose(r.Viper, r.VerboseCount())))
-		if cmd.Name() != "upgrade" {
+		if cmd.Name() != "upgrade" && !opts.Offline {
 			upgrade.NotifyIfAvailable(cmd.Context(), newChecker(), os.Stderr)
 		}
 		return nil
