@@ -70,6 +70,75 @@ func applyCommandGroups(root *cobra.Command) {
 	}
 }
 
+// subcommandGroups defines how parent commands split their verbs between
+// the KNOWLEDGE (read) and CURATE (mutate) help groups. Keyed by the
+// parent command name; value maps verb name → group ID. Verbs absent
+// from this map keep cobra's default (no group, "Available Commands").
+var subcommandGroups = map[string]map[string]string{
+	"workspace": {
+		"list":      "knowledge",
+		"show":      "knowledge",
+		"add":       "curate",
+		"archive":   "curate",
+		"unarchive": "curate",
+		"delete":    "curate",
+		"config":    "curate",
+	},
+	"snapshot": {
+		"list":    "knowledge",
+		"show":    "knowledge",
+		"context": "knowledge",
+		// "generate" creates a snapshot; CURATE side.
+		"generate": "curate",
+		"create":   "curate",
+		"update":   "curate",
+		"delete":   "curate",
+	},
+	"event": {
+		"list": "knowledge",
+		"show": "knowledge",
+		// CLI conv §4: appending an event is data CAPTURE.
+		"add": "capture",
+	},
+}
+
+// subcommandGroupTitles is the display title for each group ID used by
+// subcommandGroups. Parents AddGroup these so cobra renders the
+// section header in help output.
+var subcommandGroupTitles = map[string]string{
+	"knowledge": "KNOWLEDGE",
+	"curate":    "CURATE",
+	"capture":   "CAPTURE",
+}
+
+// applySubcommandGroups walks each parent that has an entry in
+// subcommandGroups, registers the needed cobra groups on that parent,
+// and assigns GroupID to its child verbs. Idempotent — safe to call
+// after group commands have been added but before Execute.
+func applySubcommandGroups(root *cobra.Command) {
+	for _, parent := range root.Commands() {
+		mapping, ok := subcommandGroups[parent.Name()]
+		if !ok {
+			continue
+		}
+		// Collect group IDs we'll need on this parent (deduped).
+		needed := map[string]struct{}{}
+		for _, gid := range mapping {
+			needed[gid] = struct{}{}
+		}
+		for gid := range needed {
+			if title, ok := subcommandGroupTitles[gid]; ok {
+				parent.AddGroup(&cobra.Group{ID: gid, Title: title})
+			}
+		}
+		for _, c := range parent.Commands() {
+			if gid, ok := mapping[c.Name()]; ok {
+				c.GroupID = gid
+			}
+		}
+	}
+}
+
 type globalOptions struct {
 	Backend    string
 	DataDir    string
@@ -186,6 +255,12 @@ func NewRootCmd() *cobra.Command {
 				{ID: "organize", Title: "ORGANIZE"},
 				{ID: "capture", Title: "CAPTURE"},
 				{ID: "interact", Title: "INTERACT"},
+				// CLI conv §4: KNOWLEDGE = read/inspect verbs;
+				// CURATE = mutate/lifecycle verbs. Used by the
+				// workspace, snapshot, and event subcommand
+				// help layouts to split read vs write surface.
+				{ID: "knowledge", Title: "KNOWLEDGE"},
+				{ID: "curate", Title: "CURATE"},
 			},
 		},
 		Globals: []cli.Flag{
@@ -271,6 +346,7 @@ func NewRootCmd() *cobra.Command {
 	root.AddCommand(r.AliasCmd(store))
 
 	applyCommandGroups(root)
+	applySubcommandGroups(root)
 	registerWorkspaceCompletion(root, &opts)
 	kitRootInstance = r
 	return root
