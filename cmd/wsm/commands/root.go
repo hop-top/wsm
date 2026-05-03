@@ -188,7 +188,10 @@ func newAppContext(opts globalOptions) (*appContext, error) {
 		cfg.Backend = "sqlite"
 	}
 	if cfg.Backend != "sqlite" {
-		return nil, workspace.NewErrorUsage("only sqlite backend is currently implemented")
+		// An unrecognized --backend value is semantically a Backend
+		// error per CLI conv §8.1, not a usage error. Routing through
+		// ErrorKindBackend yields exit 64 instead of 2.
+		return nil, workspace.NewErrorBackend("unsupported backend "+cfg.Backend+" (only sqlite is currently implemented)", nil)
 	}
 
 	// Attempt legacy migration before opening the backend.
