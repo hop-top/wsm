@@ -10,9 +10,11 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"hop.top/kit/go/console/alias"
 	"hop.top/kit/go/console/cli"
 	kitlog "hop.top/kit/go/console/log"
 	"hop.top/kit/go/core/upgrade"
+	"hop.top/kit/go/core/xdg"
 	"hop.top/kit/go/runtime/bus"
 	"hop.top/wsm/pkg/backend"
 	backendsqlite "hop.top/wsm/pkg/backend/sqlite"
@@ -31,6 +33,16 @@ var (
 	kitRootInstance *cli.Root
 )
 
+// aliasStorePath returns the path to the wsm alias YAML store. Falls
+// back to a relative path when XDG resolution fails so tests/embedded
+// runs still get a deterministic location.
+func aliasStorePath() string {
+	if p, err := xdg.ConfigDir("wsm"); err == nil {
+		return filepath.Join(p, "aliases.yaml")
+	}
+	return filepath.Join(".config", "wsm", "aliases.yaml")
+}
+
 // commandGroups maps top-level subcommand name to its kit group ID per
 // CLI conventions §4. management is auto-hidden by kit unless --help-all.
 var commandGroups = map[string]string{
@@ -45,6 +57,7 @@ var commandGroups = map[string]string{
 	"completion": "management",
 	"version":    "management",
 	"upgrade":    "management",
+	"alias":      "management",
 }
 
 // applyCommandGroups assigns GroupID to each top-level subcommand based
@@ -248,6 +261,14 @@ func NewRootCmd() *cobra.Command {
 		newUpgradeCmd(),
 		newVersionCmd(),
 	)
+
+	// kit/console/alias: YAML-backed user alias store at
+	// $XDG_CONFIG_HOME/wsm/aliases.yaml. AliasCmd attaches add/remove/
+	// list subcommands. Load failures are non-fatal — an unreadable
+	// aliases file should not block the CLI.
+	store := alias.NewStore(aliasStorePath())
+	_ = store.Load()
+	root.AddCommand(r.AliasCmd(store))
 
 	applyCommandGroups(root)
 	registerWorkspaceCompletion(root, &opts)
