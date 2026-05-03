@@ -43,6 +43,8 @@ func TestExitCode_BackendError(t *testing.T) {
 		t.Fatalf("create bad data dir path: %v", err)
 	}
 
+	// CLI conv §8.1: 5 is unauthorized; backend / persistence failures
+	// map to the tool-specific 64 slot.
 	res := r.runNoGlobal("--data-dir", bad, "workspace", "list")
-	requireExitCode(t, res, 5)
+	requireExitCode(t, res, 64)
 }

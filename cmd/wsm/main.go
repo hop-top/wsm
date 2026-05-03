@@ -32,6 +32,17 @@ func main() {
 	}
 }
 
+// exitCodeForError maps a wsm error to a CLI exit code per CLI conv §8.1:
+//
+//	1   = generic error
+//	2   = usage error
+//	3   = not found
+//	4   = conflict
+//	5   = unauthorized / forbidden
+//	64+ = tool-specific (we use 64 for backend / persistence failures)
+//
+// Historically Backend mapped to 5, colliding with the §8.1 reserved
+// slot for unauthorized. Forbidden now claims 5; Backend moved to 64.
 func exitCodeForError(err error) int {
 	switch {
 	case workspace.IsKind(err, workspace.ErrorKindUsage):
@@ -40,10 +51,10 @@ func exitCodeForError(err error) int {
 		return 3
 	case workspace.IsKind(err, workspace.ErrorKindConflict):
 		return 4
-	case workspace.IsKind(err, workspace.ErrorKindBackend):
-		return 5
 	case workspace.IsKind(err, workspace.ErrorKindForbidden):
-		return 6
+		return 5
+	case workspace.IsKind(err, workspace.ErrorKindBackend):
+		return 64
 	case isCobraUsageError(err):
 		return 2
 	default:
