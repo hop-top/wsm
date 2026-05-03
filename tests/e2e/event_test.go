@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 	"testing"
 
 	"hop.top/wsm/pkg/workspace"
@@ -279,35 +278,3 @@ func TestEventShow(t *testing.T) {
 	requireExitCode(t, notFound, 3)
 }
 
-func TestEventAlias(t *testing.T) {
-	r := newRunner(t)
-	wsID := r.mustCreateWorkspace("event-alias-e2e")
-
-	addRes := r.run("events", "add", wsID, "interaction.message", "--content=alias-test", "--format", "json")
-	requireExitCode(t, addRes, 0)
-
-	listRes := r.run("events", "list", wsID, "--format", "json")
-	requireExitCode(t, listRes, 0)
-	events := mustUnmarshalJSONArray[workspace.Event](t, listRes.Stdout)
-	if len(events) < 1 {
-		t.Fatalf("expected at least 1 event, got %d", len(events))
-	}
-
-	var found bool
-	for _, e := range events {
-		var payload workspace.MessageData
-		if err := json.Unmarshal(e.Data, &payload); err == nil {
-			if payload.Content == "alias-test" {
-				found = true
-				break
-			}
-		}
-	}
-	if !found {
-		t.Fatal("expected to find event with content 'alias-test'")
-	}
-
-	if strings.Contains(strings.ToLower(r.run("event").Combined()), "unknown command") {
-		t.Fatal("event command should be available (singular)")
-	}
-}

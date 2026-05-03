@@ -5,20 +5,6 @@ import (
 	"testing"
 )
 
-func TestAliases_TopLevel(t *testing.T) {
-	r := newRunner(t)
-	_ = r.mustCreateWorkspace("alias-test")
-
-	wsListRes := r.run("workspace", "list", "--format", "json")
-	requireExitCode(t, wsListRes, 0)
-
-	wsRes := r.run("ws", "list", "--format", "json")
-	requireExitCode(t, wsRes, 0)
-
-	lsRes := r.run("ws", "ls", "--format", "json")
-	requireExitCode(t, lsRes, 0)
-}
-
 // TestAliases_KitStore exercises the kit/console/alias YAML store wired
 // in via Root.AliasCmd. Persistence to $XDG_CONFIG_HOME/wsm/aliases.yaml
 // is the contract; the runner's per-test xdgConfigHome isolates state.

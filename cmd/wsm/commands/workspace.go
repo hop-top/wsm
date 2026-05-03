@@ -60,10 +60,9 @@ type eventRow struct {
 
 func newWorkspaceGroupCmd(opts *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:     "workspace",
-		Aliases: []string{"ws", "w"},
-		Short:   "Workspace operations",
-		RunE:    groupOnlyRunE,
+		Use:   "workspace",
+		Short: "Workspace operations",
+		RunE:  groupOnlyRunE,
 	}
 	cmd.AddCommand(
 		newWorkspaceAddCmd(opts),
@@ -81,10 +80,9 @@ func newWorkspaceAddCmd(opts *globalOptions) *cobra.Command {
 	var description string
 	var tags []string
 	cmd := &cobra.Command{
-		Use:     "add <name>",
-		Aliases: []string{"create", "new", "a", "+"},
-		Short:   "Create a workspace",
-		Args:    cobra.ExactArgs(1),
+		Use:   "add <name>",
+		Short: "Create a workspace",
+		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
 				ws, err := app.manager.Create(ctx, args[0], workspace.CreateOptions{Description: description, Tags: tags})
@@ -118,9 +116,8 @@ func newWorkspaceAddCmd(opts *globalOptions) *cobra.Command {
 func newWorkspaceListCmd(opts *globalOptions) *cobra.Command {
 	var status, sortBy string
 	cmd := &cobra.Command{
-		Use:     "list",
-		Aliases: []string{"ls", "all", "l"},
-		Short:   "List workspaces",
+		Use:   "list",
+		Short: "List workspaces",
 		RunE: func(_ *cobra.Command, _ []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
 				sortDir := "desc"
@@ -193,10 +190,9 @@ func newWorkspaceListCmd(opts *globalOptions) *cobra.Command {
 func newWorkspaceShowCmd(opts *globalOptions) *cobra.Command {
 	var eventsAll, showDevices bool
 	cmd := &cobra.Command{
-		Use:     "show <id-or-name>",
-		Aliases: []string{"get", "inspect", "info", "i"},
-		Short:   "Show workspace details",
-		Args:    cobra.ExactArgs(1),
+		Use:   "show <id-or-name>",
+		Short: "Show workspace details",
+		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
 				ws, err := app.manager.ResolveWorkspaceRef(ctx, args[0])
@@ -310,10 +306,9 @@ func newWorkspaceShowCmd(opts *globalOptions) *cobra.Command {
 
 func newWorkspaceArchiveCmd(opts *globalOptions) *cobra.Command {
 	return &cobra.Command{
-		Use:     "archive <workspace>",
-		Aliases: []string{"arch"},
-		Short:   "Mark a workspace as archived (read-only)",
-		Args:    cobra.ExactArgs(1),
+		Use:   "archive <workspace>",
+		Short: "Mark a workspace as archived (read-only)",
+		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
 				ws, err := app.manager.ResolveWorkspaceRef(ctx, args[0])
@@ -344,10 +339,9 @@ func newWorkspaceArchiveCmd(opts *globalOptions) *cobra.Command {
 
 func newWorkspaceUnarchiveCmd(opts *globalOptions) *cobra.Command {
 	return &cobra.Command{
-		Use:     "unarchive <workspace>",
-		Aliases: []string{"unarch"},
-		Short:   "Restore an archived workspace to active status",
-		Args:    cobra.ExactArgs(1),
+		Use:   "unarchive <workspace>",
+		Short: "Restore an archived workspace to active status",
+		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
 				ws, err := app.manager.ResolveWorkspaceRef(ctx, args[0])
@@ -379,10 +373,9 @@ func newWorkspaceUnarchiveCmd(opts *globalOptions) *cobra.Command {
 func newWorkspaceDeleteCmd(opts *globalOptions) *cobra.Command {
 	var force, dryRun bool
 	cmd := &cobra.Command{
-		Use:     "delete <workspace>",
-		Aliases: []string{"rm", "del"},
-		Short:   "Permanently delete a workspace and its history",
-		Args:    cobra.ExactArgs(1),
+		Use:   "delete <workspace>",
+		Short: "Permanently delete a workspace and its history",
+		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
 				preview, err := app.manager.DeletePreview(ctx, args[0])
@@ -450,9 +443,8 @@ func newWorkspaceDeleteCmd(opts *globalOptions) *cobra.Command {
 
 func newWorkspaceConfigCmd(opts *globalOptions) *cobra.Command {
 	showCmd := &cobra.Command{
-		Use:     "show",
-		Aliases: []string{"cfg"},
-		Short:   "Show resolved configuration",
+		Use:   "show",
+		Short: "Show resolved configuration",
 		RunE: func(_ *cobra.Command, _ []string) error {
 			cfg, err := config.Load(config.LoadOptions{FlagBackend: opts.Backend, FlagDataDir: opts.DataDir, FlagBackendURL: opts.BackendURL})
 			if err != nil {
@@ -473,10 +465,9 @@ func newWorkspaceConfigCmd(opts *globalOptions) *cobra.Command {
 		},
 	}
 	cmd := &cobra.Command{
-		Use:     "config",
-		Aliases: []string{"cfg"},
-		Short:   "Workspace configuration",
-		RunE:    groupOnlyRunE,
+		Use:   "config",
+		Short: "Workspace configuration",
+		RunE:  groupOnlyRunE,
 	}
 	cmd.AddCommand(showCmd)
 	return cmd

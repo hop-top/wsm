@@ -34,10 +34,9 @@ type deviceSessionRow struct {
 
 func newDeviceGroupCmd(opts *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:     "device",
-		Aliases: []string{"devices", "dev", "d"},
-		Short:   "Device registry operations",
-		RunE:    groupOnlyRunE,
+		Use:   "device",
+		Short: "Device registry operations",
+		RunE:  groupOnlyRunE,
 	}
 	cmd.AddCommand(
 		newDeviceListCmd(opts),
@@ -48,9 +47,8 @@ func newDeviceGroupCmd(opts *globalOptions) *cobra.Command {
 
 func newDeviceListCmd(opts *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:     "list",
-		Aliases: []string{"ls", "all", "l"},
-		Short:   "List all registered devices",
+		Use:   "list",
+		Short: "List all registered devices",
 		RunE: func(_ *cobra.Command, _ []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
 				devs, err := app.manager.ListDevices(ctx)
@@ -90,10 +88,9 @@ func newDeviceListCmd(opts *globalOptions) *cobra.Command {
 
 func newDeviceShowCmd(opts *globalOptions) *cobra.Command {
 	return &cobra.Command{
-		Use:     "show <id-or-name>",
-		Aliases: []string{"get", "inspect", "info", "s"},
-		Short:   "Show device details and activity",
-		Args:    cobra.ExactArgs(1),
+		Use:   "show <id-or-name>",
+		Short: "Show device details and activity",
+		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
 				dev, err := app.manager.ResolveDeviceRef(ctx, args[0])

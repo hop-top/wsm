@@ -28,10 +28,9 @@ type eventListRow struct {
 
 func newEventGroupCmd(opts *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:     "event",
-		Aliases: []string{"events", "ev", "e"},
-		Short:   "Event operations",
-		RunE:    groupOnlyRunE,
+		Use:   "event",
+		Short: "Event operations",
+		RunE:  groupOnlyRunE,
 	}
 	cmd.AddCommand(
 		newEventListCmd(opts),
@@ -46,10 +45,9 @@ func newEventListCmd(opts *globalOptions) *cobra.Command {
 	var afterSeq, beforeSeq uint64
 	var limit int
 	cmd := &cobra.Command{
-		Use:     "list <workspace>",
-		Aliases: []string{"ls", "all", "l"},
-		Short:   "List workspace events with filtering",
-		Args:    cobra.ExactArgs(1),
+		Use:   "list <workspace>",
+		Short: "List workspace events with filtering",
+		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
 				evTypes := make([]workspace.EventType, 0, len(types))
@@ -102,10 +100,9 @@ func newEventListCmd(opts *globalOptions) *cobra.Command {
 
 func newEventShowCmd(opts *globalOptions) *cobra.Command {
 	return &cobra.Command{
-		Use:     "show <workspace> <seq-or-id>",
-		Aliases: []string{"get", "inspect", "info", "s"},
-		Short:   "Show full event details including payload",
-		Args:    cobra.ExactArgs(2),
+		Use:   "show <workspace> <seq-or-id>",
+		Short: "Show full event details including payload",
+		Args:  cobra.ExactArgs(2),
 		RunE: func(_ *cobra.Command, args []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
 				ev, err := app.manager.GetEvent(ctx, args[0], args[1])
@@ -153,10 +150,9 @@ func newEventAddCmd(opts *globalOptions) *cobra.Command {
 	var deviceID, deviceName string
 
 	cmd := &cobra.Command{
-		Use:     "add <workspace> <type>",
-		Aliases: []string{"create", "a", "+"},
-		Short:   "Append an event to a workspace",
-		Args:    cobra.ExactArgs(2),
+		Use:   "add <workspace> <type>",
+		Short: "Append an event to a workspace",
+		Args:  cobra.ExactArgs(2),
 		RunE: func(_ *cobra.Command, args []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
 				eventType := workspace.EventType(strings.TrimSpace(args[1]))

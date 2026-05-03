@@ -49,21 +49,6 @@ func TestDeviceShow_NotFound(t *testing.T) {
 	requireExitCode(t, res, 3)
 }
 
-func TestDeviceAlias(t *testing.T) {
-	r := newRunner(t)
-	wsID := r.mustCreateWorkspace("device-alias-test")
-	r.run("event", "add", wsID, "interaction.message", "--content=hello", "--format", "json")
-
-	res := r.run("devices", "list", "--format", "json")
-	requireExitCode(t, res, 0)
-
-	var devices []device.Device
-	mustUnmarshalJSON(t, res.Stdout, &devices)
-	if len(devices) == 0 {
-		t.Fatal("expected at least one device")
-	}
-}
-
 func TestDeviceShow_PartialID(t *testing.T) {
 	r := newRunner(t)
 	wsID := r.mustCreateWorkspace("device-partial-id-test")

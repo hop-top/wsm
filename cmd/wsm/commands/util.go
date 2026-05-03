@@ -84,9 +84,8 @@ func newConfigCmd(opts *globalOptions) *cobra.Command {
 		},
 	}
 	cmd := &cobra.Command{
-		Use:     "config",
-		Aliases: []string{"cfg"},
-		Short:   "Configuration commands",
+		Use:   "config",
+		Short: "Configuration commands",
 	}
 	cmd.AddCommand(showCmd)
 	// kit/cli/config: shared `path` and `paths` subcommands that walk
@@ -176,10 +175,9 @@ func newCompletionCmd(root *cobra.Command, _ *globalOptions) *cobra.Command {
 
 func newTUICmd(opts *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:     "tui",
-		Aliases: []string{"ui"},
-		Short:   "Launch terminal UI",
-		Hidden:  true,
+		Use:    "tui",
+		Short:  "Launch terminal UI",
+		Hidden: true,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
 				return runTUI(ctx, app, *opts)

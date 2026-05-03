@@ -28,10 +28,9 @@ type snapshotRow struct {
 
 func newSnapshotGroupCmd(opts *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:     "snapshot",
-		Short:   "Snapshot operations",
-		Aliases: []string{"snap", "s"},
-		RunE:    groupOnlyRunE,
+		Use:   "snapshot",
+		Short: "Snapshot operations",
+		RunE:  groupOnlyRunE,
 	}
 	cmd.AddCommand(
 		newSnapshotListCmd(opts),
@@ -50,9 +49,8 @@ func newSnapshotListCmd(opts *globalOptions) *cobra.Command {
 	var after, before, sortDir string
 	var limit int
 	cmd := &cobra.Command{
-		Use:     "list",
-		Aliases: []string{"ls", "all", "l"},
-		Short:   "List snapshots with filtering",
+		Use:   "list",
+		Short: "List snapshots with filtering",
 		RunE: func(_ *cobra.Command, _ []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
 				var wsIDs []string
@@ -132,10 +130,9 @@ func newSnapshotGenerateCmd(opts *globalOptions) *cobra.Command {
 	var sessionID, name string
 	var isSeed bool
 	cmd := &cobra.Command{
-		Use:     "generate [workspace]",
-		Short:   "Generate and persist a workspace snapshot",
-		Aliases: []string{"gen", "g"},
-		Args:    cobra.MaximumNArgs(1),
+		Use:   "generate [workspace]",
+		Short: "Generate and persist a workspace snapshot",
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
 				var ws workspace.Workspace
@@ -199,10 +196,9 @@ func newSnapshotGenerateCmd(opts *globalOptions) *cobra.Command {
 
 func newSnapshotShowCmd(opts *globalOptions) *cobra.Command {
 	return &cobra.Command{
-		Use:     "show <workspace>",
-		Short:   "Show latest snapshot",
-		Aliases: []string{"get", "s"},
-		Args:    cobra.ExactArgs(1),
+		Use:   "show <workspace>",
+		Short: "Show latest snapshot",
+		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
 				ws, err := app.manager.ResolveWorkspaceRef(ctx, args[0])
@@ -261,10 +257,9 @@ func newSnapshotUpdateCmd(opts *globalOptions) *cobra.Command {
 	var name string
 	var isSeed bool
 	cmd := &cobra.Command{
-		Use:     "update <snapshot-id-or-name>",
-		Short:   "Update snapshot metadata",
-		Aliases: []string{"rename"},
-		Args:    cobra.ExactArgs(1),
+		Use:   "update <snapshot-id-or-name>",
+		Short: "Update snapshot metadata",
+		Args:  cobra.ExactArgs(1),
 		RunE: func(c *cobra.Command, args []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
 				uOpts := workspace.UpdateSnapshotOptions{}
@@ -302,10 +297,9 @@ func newSnapshotUpdateCmd(opts *globalOptions) *cobra.Command {
 func newSnapshotDeleteCmd(opts *globalOptions) *cobra.Command {
 	var force bool
 	cmd := &cobra.Command{
-		Use:     "delete <snapshot-id-or-name>",
-		Short:   "Delete a snapshot",
-		Aliases: []string{"rm", "del"},
-		Args:    cobra.ExactArgs(1),
+		Use:   "delete <snapshot-id-or-name>",
+		Short: "Delete a snapshot",
+		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
 				if !force {
