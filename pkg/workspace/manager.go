@@ -10,6 +10,7 @@ import (
 
 	"github.com/oklog/ulid/v2"
 	"hop.top/kit/go/runtime/bus"
+	"hop.top/kit/go/runtime/domain"
 
 	"hop.top/wsm/pkg/backend"
 	"hop.top/wsm/pkg/device"
@@ -21,18 +22,34 @@ import (
 // per kit topic spec: wsm.runtime.workspace.* and wsm.runtime.snapshot.*.
 // Subscribers wanting "any wsm workspace event" use pattern wsm.runtime.workspace.#
 // (or wsm.# for everything wsm publishes).
+//
+// These wsm-specific topics are aliases on top of the kit-canonical
+// kit.runtime.entity.* topics emitted by domain.Service[Workspace] /
+// domain.Service[Snapshot]. The canonical topics are the seam the
+// kit/runtime/policy engine subscribes to (T-1288); the wsm-prefixed
+// topics preserve backward compatibility for external consumers
+// (per ADR-0008 §6 and bus_test.go pattern wsm.runtime.#).
 const (
 	topicWorkspaceCreated    bus.Topic = "wsm.runtime.workspace.created"
 	topicWorkspaceArchived   bus.Topic = "wsm.runtime.workspace.archived"
 	topicWorkspaceUnarchived bus.Topic = "wsm.runtime.workspace.unarchived"
 	topicWorkspaceDeleted    bus.Topic = "wsm.runtime.workspace.deleted"
 	topicSnapshotCreated     bus.Topic = "wsm.runtime.snapshot.created"
+	topicSnapshotUpdated     bus.Topic = "wsm.runtime.snapshot.updated"
+	topicSnapshotDeleted     bus.Topic = "wsm.runtime.snapshot.deleted"
 
 	topicSource = "wsm"
 )
 
 // Manager provides workspace lifecycle operations.
 // Law 1 invariant: every write operation reads the current state first.
+//
+// Manager delegates CRUD to kit/runtime/domain.Service[Workspace] and
+// domain.Service[Snapshot] so synchronous pre_validated / pre_persisted
+// veto seams fire on every lifecycle op. The domain.Service publishes
+// kit.runtime.entity.* canonical topics; Manager additionally publishes
+// the wsm-specific aliases (wsm.runtime.workspace.* / wsm.runtime.snapshot.*)
+// after a successful op to keep external bus consumers working.
 type Manager struct {
 	backend      backend.Backend
 	device       device.Device
@@ -43,6 +60,8 @@ type Manager struct {
 	lamportClock uint64
 	caps         *Capabilities
 	bus          bus.Bus
+	wsService    *domain.Service[Workspace]
+	snapService  *domain.Service[Snapshot]
 }
 
 // CreateOptions configures workspace creation.
@@ -133,29 +152,58 @@ func NewManager(b backend.Backend, opts ...ManagerOption) (*Manager, error) {
 		opt(m)
 	}
 	_ = m.backend.SaveDevice(context.Background(), m.device)
+	m.wsService = newWorkspaceService(b, m.bus)
+	m.snapService = newSnapshotService(b, m.bus)
 	return m, nil
 }
 
+// newWorkspaceService wires a domain.Service[Workspace] around the
+// supplied backend. When bus is nil the service still validates and
+// persists; only the publish step is skipped.
+//
+// The service uses kit's DefaultTopics (kit.runtime.entity.*) so the
+// kit/runtime/policy engine has a stable seam to subscribe to. wsm's
+// historical wsm.runtime.workspace.* topics are republished by the
+// Manager wrapper on success — see Manager.Create / Archive / Unarchive
+// / Delete below.
+func newWorkspaceService(b backend.Backend, eb bus.Bus) *domain.Service[Workspace] {
+	repo := newWorkspaceRepo(b)
+	val := newWorkspaceValidator(b)
+	opts := []domain.Option[Workspace]{
+		domain.WithValidation[Workspace](val),
+	}
+	if eb != nil {
+		opts = append(opts, domain.WithPublisher[Workspace](newBusPublisher(eb)))
+	}
+	return domain.NewService[Workspace](repo, opts...)
+}
+
+// newSnapshotService wires a domain.Service[Snapshot]. Snapshots have
+// no per-verb validation today (the heavy materialization happens in
+// Manager.Snapshot before persistence); the validator slot stays empty.
+func newSnapshotService(b backend.Backend, eb bus.Bus) *domain.Service[Snapshot] {
+	repo := newSnapshotRepo(b)
+	opts := []domain.Option[Snapshot]{}
+	if eb != nil {
+		opts = append(opts, domain.WithPublisher[Snapshot](newBusPublisher(eb)))
+	}
+	return domain.NewService[Snapshot](repo, opts...)
+}
+
 // Create creates a new workspace and records workspace.created.
+//
+// CRUD flow: capability check → domain.Service.Create (which fires
+// kit.runtime.entity.pre_validated → workspaceValidator → kit.runtime
+// .entity.pre_persisted → repo.Create → kit.runtime.entity.created)
+// → wsm-side lifecycle event + alias topic (wsm.runtime.workspace.created).
 func (m *Manager) Create(ctx context.Context, name string, opts CreateOptions) (*Workspace, error) {
 	if !m.caps.Can(CapWorkspaceCreate) {
 		return nil, aopRejection(ErrorKindForbidden, "workspace create not permitted", "capability", "law5.capability_check", CapWorkspaceCreate, nil)
 	}
-	name = strings.TrimSpace(name)
-	if name == "" {
-		return nil, usageError("workspace name is required")
-	}
-	existing, err := m.backend.GetWorkspaceByName(ctx, name)
-	if err != nil {
-		return nil, backendError("check existing workspace", err)
-	}
-	if existing != nil {
-		return nil, conflictError(fmt.Sprintf("workspace %q already exists", name))
-	}
 	now := time.Now().UTC()
-	ws := model.Workspace{
+	ws := Workspace{
 		ID:          ulid.Make().String(),
-		Name:        name,
+		Name:        strings.TrimSpace(name),
 		Status:      model.StatusActive,
 		Description: opts.Description,
 		Tags:        opts.Tags,
@@ -163,16 +211,15 @@ func (m *Manager) Create(ctx context.Context, name string, opts CreateOptions) (
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}
-	if err := m.backend.CreateWorkspace(ctx, ws); err != nil {
-		return nil, mapBackendErr("create workspace", err)
+	if err := m.wsService.Create(withValidateOp(ctx, OpKindCreate), &ws); err != nil {
+		return nil, unwrapDomainErr(err)
 	}
 	_, _ = m.RecordEvent(ctx, ws.ID, EventWorkspaceCreated, map[string]any{"name": ws.Name})
 	m.publish(ctx, topicWorkspaceCreated, ws.ID, map[string]any{
 		"id":   ws.ID,
 		"name": ws.Name,
 	})
-	out := Workspace(ws)
-	return &out, nil
+	return &ws, nil
 }
 
 // Get retrieves a workspace by ID.
@@ -314,6 +361,11 @@ type SnapshotOptions struct {
 }
 
 // Snapshot generates and stores a point-in-time snapshot.
+//
+// The materialization (event replay, base-snapshot diff) stays inline;
+// only the persistence step routes through domain.Service[Snapshot]
+// .Create so kit pre-events fire and the wsm.runtime.snapshot.created
+// alias publishes after a successful save.
 func (m *Manager) Snapshot(ctx context.Context, workspaceRef string, opts SnapshotOptions) (*Snapshot, error) {
 	ws, err := m.ResolveWorkspaceRef(ctx, workspaceRef)
 	if err != nil {
@@ -374,18 +426,18 @@ func (m *Manager) Snapshot(ctx context.Context, workspaceRef string, opts Snapsh
 	snap.Name = opts.Name
 	snap.IsSeed = opts.IsSeed
 
-	if err := m.backend.SaveSnapshot(ctx, snap); err != nil {
-		return nil, backendError("save snapshot", err)
+	out := Snapshot(snap)
+	if err := m.snapService.Create(ctx, &out); err != nil {
+		return nil, unwrapDomainErr(err)
 	}
 	_, _ = m.appendLifecycleEvent(ctx, ws.ID, EventSnapshotCreated, model.SnapshotEventData{
-		SnapshotID: snap.ID, WorkspaceID: ws.ID, Name: snap.Name,
+		SnapshotID: out.ID, WorkspaceID: ws.ID, Name: out.Name,
 	})
 	m.publish(ctx, topicSnapshotCreated, ws.ID, map[string]any{
-		"snapshot_id":  snap.ID,
+		"snapshot_id":  out.ID,
 		"workspace_id": ws.ID,
-		"name":         snap.Name,
+		"name":         out.Name,
 	})
-	out := Snapshot(snap)
 	return &out, nil
 }
 
@@ -409,6 +461,10 @@ type UpdateSnapshotOptions struct {
 }
 
 // UpdateSnapshot updates a snapshot's metadata.
+//
+// Routes through domain.Service[Snapshot].Update so pre_validated /
+// pre_persisted seams fire. Also publishes the wsm-side lifecycle
+// event and the wsm.runtime.snapshot.updated alias topic.
 func (m *Manager) UpdateSnapshot(ctx context.Context, idOrName string, opts UpdateSnapshotOptions) (*Snapshot, error) {
 	snap, err := m.backend.GetSnapshot(ctx, idOrName)
 	if err != nil {
@@ -426,17 +482,27 @@ func (m *Manager) UpdateSnapshot(ctx context.Context, idOrName string, opts Upda
 	if opts.IsSeed != nil {
 		snap.IsSeed = *opts.IsSeed
 	}
-	if err := m.backend.UpdateSnapshot(ctx, *snap); err != nil {
-		return nil, backendError("update snapshot", err)
-	}
-	_, _ = m.appendLifecycleEvent(ctx, snap.WorkspaceID, EventSnapshotUpdated, model.SnapshotEventData{
-		SnapshotID: snap.ID, WorkspaceID: snap.WorkspaceID, Name: snap.Name,
-	})
 	out := Snapshot(*snap)
+	if err := m.snapService.Update(ctx, &out); err != nil {
+		return nil, unwrapDomainErr(err)
+	}
+	_, _ = m.appendLifecycleEvent(ctx, out.WorkspaceID, EventSnapshotUpdated, model.SnapshotEventData{
+		SnapshotID: out.ID, WorkspaceID: out.WorkspaceID, Name: out.Name,
+	})
+	m.publish(ctx, topicSnapshotUpdated, out.WorkspaceID, map[string]any{
+		"snapshot_id":  out.ID,
+		"workspace_id": out.WorkspaceID,
+		"name":         out.Name,
+	})
 	return &out, nil
 }
 
 // DeleteSnapshot removes a snapshot by ID or name.
+//
+// Routes through domain.Service[Snapshot].Delete so policy seams fire,
+// and publishes the wsm.runtime.snapshot.deleted alias topic (a new
+// alias added in T-1286 to close the gap noted in ADR-0008 §6: previously
+// snapshot.delete had no bus event, only a workspace lifecycle log entry).
 func (m *Manager) DeleteSnapshot(ctx context.Context, idOrName string) error {
 	// Law 1: read before delete.
 	snap, err := m.backend.GetSnapshot(ctx, idOrName)
@@ -449,9 +515,14 @@ func (m *Manager) DeleteSnapshot(ctx context.Context, idOrName string) error {
 	_, _ = m.appendLifecycleEvent(ctx, snap.WorkspaceID, EventSnapshotDeleted, model.SnapshotEventData{
 		SnapshotID: snap.ID, WorkspaceID: snap.WorkspaceID, Name: snap.Name,
 	})
-	if err := m.backend.DeleteSnapshot(ctx, snap.ID); err != nil {
-		return backendError("delete snapshot", err)
+	if err := m.snapService.Delete(ctx, snap.ID); err != nil {
+		return unwrapDomainErr(err)
 	}
+	m.publish(ctx, topicSnapshotDeleted, snap.WorkspaceID, map[string]any{
+		"snapshot_id":  snap.ID,
+		"workspace_id": snap.WorkspaceID,
+		"name":         snap.Name,
+	})
 	return nil
 }
 
@@ -573,6 +644,15 @@ func applyEventsToSnapshot(base model.Snapshot, events []model.Event) model.Snap
 }
 
 // Archive marks workspace archived and records event.
+//
+// Archive maps to domain.Service.Update with Status flipped to archived;
+// the canonical post-event is kit.runtime.entity.updated, and the wsm
+// alias wsm.runtime.workspace.archived is published from this wrapper
+// after a successful service call.
+//
+// The "already archived" precondition runs before mutation: the
+// validator slot in domain.Service runs against the post-flip entity
+// (so it can't see prior state), so this stays inline in Manager.
 func (m *Manager) Archive(ctx context.Context, ref string) error {
 	ws, err := m.ResolveWorkspaceRef(ctx, ref)
 	if err != nil {
@@ -588,8 +668,8 @@ func (m *Manager) Archive(ctx context.Context, ref string) error {
 	ws.Status = StatusArchived
 	ws.ArchivedAt = &now
 	ws.UpdatedAt = now
-	if err := m.backend.UpdateWorkspace(ctx, model.Workspace(*ws)); err != nil {
-		return backendError("archive workspace", err)
+	if err := m.wsService.Update(withValidateOp(ctx, OpKindArchive), ws); err != nil {
+		return unwrapDomainErr(err)
 	}
 	if _, err := m.appendLifecycleEvent(ctx, ws.ID, EventWorkspaceArchived, map[string]any{"archived_at": now}); err != nil {
 		return err
@@ -603,6 +683,9 @@ func (m *Manager) Archive(ctx context.Context, ref string) error {
 }
 
 // Unarchive marks workspace active and records event.
+//
+// Same lifecycle as Archive but with the inverse Status flip; alias
+// topic is wsm.runtime.workspace.unarchived.
 func (m *Manager) Unarchive(ctx context.Context, ref string) error {
 	ws, err := m.ResolveWorkspaceRef(ctx, ref)
 	if err != nil {
@@ -618,8 +701,8 @@ func (m *Manager) Unarchive(ctx context.Context, ref string) error {
 	ws.Status = StatusActive
 	ws.ArchivedAt = nil
 	ws.UpdatedAt = now
-	if err := m.backend.UpdateWorkspace(ctx, model.Workspace(*ws)); err != nil {
-		return backendError("unarchive workspace", err)
+	if err := m.wsService.Update(withValidateOp(ctx, OpKindUnarchive), ws); err != nil {
+		return unwrapDomainErr(err)
 	}
 	if _, err := m.appendLifecycleEvent(ctx, ws.ID, EventWorkspaceUnarchived, map[string]any{"updated_at": now}); err != nil {
 		return err
@@ -650,6 +733,10 @@ func (m *Manager) DeletePreview(ctx context.Context, ref string) (*DeletePreview
 }
 
 // Delete permanently removes workspace and dependent records.
+//
+// Delete maps to domain.Service.Delete: pre_validated and pre_persisted
+// fire as veto seams, then the repo Delete runs, then the wsm-side
+// lifecycle event + alias topic (wsm.runtime.workspace.deleted).
 func (m *Manager) Delete(ctx context.Context, ref string) error {
 	ws, err := m.ResolveWorkspaceRef(ctx, ref)
 	if err != nil {
@@ -660,8 +747,8 @@ func (m *Manager) Delete(ctx context.Context, ref string) error {
 	}
 	// Law 4: emit deleted event before cascade-delete (ephemeral but observable).
 	_, _ = m.appendLifecycleEvent(ctx, ws.ID, EventWorkspaceDeleted, map[string]any{"name": ws.Name})
-	if err := m.backend.DeleteWorkspace(ctx, ws.ID); err != nil {
-		return backendError("delete workspace", err)
+	if err := m.wsService.Delete(ctx, ws.ID); err != nil {
+		return unwrapDomainErr(err)
 	}
 	m.publish(ctx, topicWorkspaceDeleted, ws.ID, map[string]any{
 		"id":   ws.ID,

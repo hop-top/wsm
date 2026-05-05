@@ -132,3 +132,12 @@ type Snapshot struct {
 	IsSeed       bool      `json:"is_seed"`
 	GeneratedAt  time.Time `json:"generated_at" table:"GENERATED,priority=4"`
 }
+
+// GetID satisfies kit/runtime/domain.Entity so Workspace and Snapshot
+// can flow through domain.Service[T] CRUD pipelines (and therefore the
+// kit/runtime/policy seams). Defined as value receivers so both value
+// and pointer instantiations satisfy the interface.
+func (w Workspace) GetID() string { return w.ID }
+
+// GetID satisfies kit/runtime/domain.Entity for Snapshot.
+func (s Snapshot) GetID() string { return s.ID }
