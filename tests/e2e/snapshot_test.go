@@ -372,6 +372,11 @@ func TestSnapshotDelete_NoteFlag(t *testing.T) {
 	withNote := r.run("snapshot", "delete", snap1.ID, "--force", "--note", "obsolete")
 	requireExitCode(t, withNote, 0)
 
+	// delete-requires-note default policy (T-1288) enforces --note on
+	// every entity delete, including snapshots.
 	withoutNote := r.run("snapshot", "delete", snap2.ID, "--force")
-	requireExitCode(t, withoutNote, 0)
+	requireExitCode(t, withoutNote, 4)
+	if !strings.Contains(withoutNote.Combined(), "delete-requires-note") {
+		t.Fatalf("expected stderr to name the denying policy, got:\n%s", withoutNote.Combined())
+	}
 }

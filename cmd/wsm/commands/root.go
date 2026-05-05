@@ -155,13 +155,17 @@ type globalOptions struct {
 }
 
 type appContext struct {
-	cfg     config.Config
-	backend backend.Backend
-	manager *workspace.Manager
-	bus     bus.Bus
+	cfg          config.Config
+	backend      backend.Backend
+	manager      *workspace.Manager
+	bus          bus.Bus
+	policyUnwire func()
 }
 
 func (a *appContext) Close() error {
+	if a.policyUnwire != nil {
+		a.policyUnwire()
+	}
 	if a.bus != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
@@ -230,7 +234,17 @@ func newAppContext(opts globalOptions) (*appContext, error) {
 		return nil, workspace.NewErrorBackend("create manager", err)
 	}
 
-	return &appContext{cfg: cfg, backend: b, manager: mgr, bus: eventBus}, nil
+	// kit/runtime/policy: subscribe the engine to this bus so pre_*
+	// veto seams enforce declared rules. Engine is a process-wide
+	// singleton (built once on first call); each newAppContext gets a
+	// fresh subscription that appContext.Close will tear down.
+	unwire, err := wirePolicyToBus(eventBus)
+	if err != nil {
+		_ = b.Close()
+		return nil, workspace.NewErrorBackend("wire policy engine", err)
+	}
+
+	return &appContext{cfg: cfg, backend: b, manager: mgr, bus: eventBus, policyUnwire: unwire}, nil
 }
 
 // NewRootCmd creates the root command for wsm via kit/cli.
@@ -308,6 +322,13 @@ func NewRootCmd() *cobra.Command {
 		if cmd.Name() != "upgrade" && !opts.Offline {
 			upgrade.NotifyIfAvailable(cmd.Context(), newChecker(), os.Stderr)
 		}
+		// Fail loud on policy misconfig (bad YAML, broken CEL, unknown
+		// topic) at boot, before any subcommand RunE executes. The engine
+		// itself is constructed lazily here; appContext.bus wires the
+		// resulting engine via wirePolicyToBus on a per-command basis.
+		if _, err := initPolicyEngine(); err != nil {
+			return err
+		}
 		return nil
 	}
 
@@ -373,5 +394,5 @@ func withApp(opts *globalOptions, fn func(ctx context.Context, app *appContext) 
 	defer func() { _ = app.Close() }()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	return fn(ctx, app)
+	return mapPolicyDenialError(fn(ctx, app))
 }

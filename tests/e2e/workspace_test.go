@@ -113,7 +113,7 @@ func TestWorkspaceList_Filter(t *testing.T) {
 	r := newRunner(t)
 	r.mustCreateWorkspace("active-work")
 	r.mustCreateWorkspace("archived-work")
-	requireExitCode(t, r.run("workspace", "archive", "archived-work"), 0)
+	requireExitCode(t, r.run("workspace", "archive", "archived-work", "--note", "stage"), 0)
 
 	activeRes := r.run("workspace", "list", "--status=active", "--format", "json")
 	requireExitCode(t, activeRes, 0)
@@ -186,7 +186,10 @@ func TestWorkspaceArchive(t *testing.T) {
 	r := newRunner(t)
 	r.mustCreateWorkspace("to-archive")
 
-	res := r.run("workspace", "archive", "to-archive", "--format", "json")
+	// archive-requires-note default policy (T-1288) gates archive on a
+	// non-empty --note. Pass one so the canonical happy path keeps
+	// exercising the success branch.
+	res := r.run("workspace", "archive", "to-archive", "--note", "stale", "--format", "json")
 	requireExitCode(t, res, 0)
 	var payload map[string]any
 	mustUnmarshalJSON(t, res.Stdout, &payload)
@@ -202,14 +205,14 @@ func TestWorkspaceArchive(t *testing.T) {
 		t.Fatalf("expected archived status, got %s", got.Workspace.Status)
 	}
 
-	conflictRes := r.run("workspace", "archive", "to-archive")
+	conflictRes := r.run("workspace", "archive", "to-archive", "--note", "duplicate")
 	requireExitCode(t, conflictRes, 4)
 }
 
 func TestWorkspaceUnarchive(t *testing.T) {
 	r := newRunner(t)
 	r.mustCreateWorkspace("to-unarchive")
-	requireExitCode(t, r.run("workspace", "archive", "to-unarchive"), 0)
+	requireExitCode(t, r.run("workspace", "archive", "to-unarchive", "--note", "test"), 0)
 
 	res := r.run("workspace", "unarchive", "to-unarchive", "--format", "json")
 	requireExitCode(t, res, 0)
@@ -232,11 +235,14 @@ func TestWorkspaceRemove(t *testing.T) {
 	r := newRunner(t)
 	r.mustCreateWorkspace("old-work")
 
+	// delete-requires-note default policy (T-1288) gates delete on a
+	// non-empty --note. Pass one so the canonical happy path keeps
+	// exercising the success branch.
 	var res commandResult
 	if runtime.GOOS == "darwin" {
-		res = r.runWithEnv(map[string]string{"WSM_DELETE_CONFIRM": "yes"}, "workspace", "delete", "old-work", "--format", "json")
+		res = r.runWithEnv(map[string]string{"WSM_DELETE_CONFIRM": "yes"}, "workspace", "delete", "old-work", "--note", "cleanup", "--format", "json")
 	} else {
-		res = r.runTTYWithInput("y\n", "workspace", "delete", "old-work")
+		res = r.runTTYWithInput("y\n", "workspace", "delete", "old-work", "--note", "cleanup")
 	}
 	requireExitCode(t, res, 0)
 	if runtime.GOOS == "darwin" {
@@ -257,7 +263,7 @@ func TestWorkspaceRemove_Force(t *testing.T) {
 	r := newRunner(t)
 	r.mustCreateWorkspace("old-work")
 
-	res := r.run("workspace", "delete", "old-work", "--force", "--format", "json")
+	res := r.run("workspace", "delete", "old-work", "--force", "--note", "cleanup", "--format", "json")
 	requireExitCode(t, res, 0)
 	var payload map[string]any
 	mustUnmarshalJSON(t, res.Stdout, &payload)
@@ -444,9 +450,10 @@ func TestWorkspaceShow_EventsAllJSONIsValid(t *testing.T) {
 }
 
 // TestWorkspaceArchive_NoteFlag exercises the --note|-n flag plumbed in
-// T-1287. The flag binds and reaches the Manager via ctx (no enforcement
-// yet — that's T-1288 with the policy engine). With the flag set, the
-// archive succeeds; omitted, it also succeeds (no veto).
+// T-1287 plus the archive-requires-note default policy wired in T-1288.
+// With the flag set, archive succeeds (allow path). Omitting the flag
+// surfaces a PolicyDeniedError → exit 4 (deny path). Both flag forms
+// (--note and -n) are exercised on the allow path.
 func TestWorkspaceArchive_NoteFlag(t *testing.T) {
 	r := newRunner(t)
 	r.mustCreateWorkspace("with-note")
@@ -456,21 +463,26 @@ func TestWorkspaceArchive_NoteFlag(t *testing.T) {
 	requireExitCode(t, withNote, 0)
 
 	withoutNote := r.run("workspace", "archive", "no-note", "--format", "json")
-	requireExitCode(t, withoutNote, 0)
+	requireExitCode(t, withoutNote, 4)
+	if !strings.Contains(withoutNote.Combined(), "archive-requires-note") {
+		t.Fatalf("expected stderr to name the denying policy, got:\n%s", withoutNote.Combined())
+	}
 
-	shortFlag := r.mustCreateWorkspace("short-flag")
-	_ = shortFlag
+	r.mustCreateWorkspace("short-flag")
 	res := r.run("workspace", "archive", "short-flag", "-n", "via short flag", "--format", "json")
 	requireExitCode(t, res, 0)
 }
 
 // TestWorkspaceUnarchive_NoteFlag exercises --note|-n on unarchive.
+// The default policy bundle does not gate unarchive (the deny rules
+// target archive + delete only), so unarchive remains open with or
+// without --note.
 func TestWorkspaceUnarchive_NoteFlag(t *testing.T) {
 	r := newRunner(t)
 	r.mustCreateWorkspace("with-note")
 	r.mustCreateWorkspace("no-note")
-	requireExitCode(t, r.run("workspace", "archive", "with-note"), 0)
-	requireExitCode(t, r.run("workspace", "archive", "no-note"), 0)
+	requireExitCode(t, r.run("workspace", "archive", "with-note", "--note", "stage"), 0)
+	requireExitCode(t, r.run("workspace", "archive", "no-note", "--note", "stage"), 0)
 
 	withNote := r.run("workspace", "unarchive", "with-note", "--note", "user requested restore", "--format", "json")
 	requireExitCode(t, withNote, 0)
@@ -479,9 +491,9 @@ func TestWorkspaceUnarchive_NoteFlag(t *testing.T) {
 	requireExitCode(t, withoutNote, 0)
 }
 
-// TestWorkspaceDelete_NoteFlag exercises --note|-n on delete. T-1287
-// only wires the flag; deletion still succeeds whether or not it is
-// supplied.
+// TestWorkspaceDelete_NoteFlag exercises --note|-n on delete plus the
+// delete-requires-note default policy wired in T-1288. Without --note
+// the policy vetoes (exit 4); with --note the deletion proceeds.
 func TestWorkspaceDelete_NoteFlag(t *testing.T) {
 	r := newRunner(t)
 	r.mustCreateWorkspace("with-note")
@@ -491,5 +503,8 @@ func TestWorkspaceDelete_NoteFlag(t *testing.T) {
 	requireExitCode(t, withNote, 0)
 
 	withoutNote := r.run("workspace", "delete", "no-note", "--force", "--format", "json")
-	requireExitCode(t, withoutNote, 0)
+	requireExitCode(t, withoutNote, 4)
+	if !strings.Contains(withoutNote.Combined(), "delete-requires-note") {
+		t.Fatalf("expected stderr to name the denying policy, got:\n%s", withoutNote.Combined())
+	}
 }

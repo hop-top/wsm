@@ -8,6 +8,7 @@ import (
 
 	"hop.top/kit/go/runtime/bus"
 	"hop.top/kit/go/runtime/domain"
+	"hop.top/kit/go/runtime/policy"
 
 	"hop.top/wsm/pkg/backend"
 	"hop.top/wsm/pkg/model"
@@ -281,12 +282,28 @@ func withValidateOp(ctx context.Context, op OpKind) context.Context {
 // into wsm's typed Error vocabulary so Manager callers (cmd/wsm/*)
 // keep matching IsKind(err, ErrorKindConflict) / ErrorKindNotFound.
 //
+// Policy veto errors flow through as Error{Kind: ErrorKindConflict,
+// Policy: true} so the cmd layer can spot them and surface them via
+// kit's *output.Error envelope (CONFLICT, exit 4) — wsm's error type
+// doesn't import kit/console/output to avoid dragging the rendering
+// stack (and its charmbracelet vendor tree) into pkg/workspace's
+// dependency graph; see TestVendoredUIOptionality.
+//
 // Pre-event veto wrappers ("pre-validated veto: ...", "pre-persisted
-// veto: ...") flow through unchanged — those carry the original wsm
-// error via fmt.Errorf("%w") so errors.As / IsKind still resolves.
+// veto: ...") flow through unchanged for non-policy errors — those
+// carry the original wsm error via fmt.Errorf("%w") so errors.As /
+// IsKind still resolves.
 func unwrapDomainErr(err error) error {
 	if err == nil {
 		return nil
+	}
+	var pde *policy.PolicyDeniedError
+	if errors.As(err, &pde) {
+		return &Error{
+			Kind:    ErrorKindConflict,
+			Message: pde.Error(),
+			Policy:  true,
+		}
 	}
 	if errors.Is(err, domain.ErrNotFound) {
 		return notFoundError(err.Error())

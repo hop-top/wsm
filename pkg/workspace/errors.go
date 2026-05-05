@@ -25,6 +25,12 @@ type Error struct {
 	Check         string `json:"check,omitempty"`
 	Required      string `json:"required,omitempty"`
 	ActorHad      any    `json:"actor_had,omitempty"`
+	// Policy is set when the error originated from a kit/runtime/policy
+	// veto. The cmd layer reads this to render an *output.Error CONFLICT
+	// envelope (exit 4) without pkg/workspace having to import
+	// kit/console/output (which would drag charmbracelet into the
+	// dependency graph; see TestVendoredUIOptionality).
+	Policy bool `json:"policy,omitempty"`
 }
 
 func (e *Error) Error() string {
@@ -41,6 +47,18 @@ func IsKind(err error, kind ErrorKind) bool {
 	var target *Error
 	if errors.As(err, &target) {
 		return target.Kind == kind
+	}
+	return false
+}
+
+// IsPolicyDenial reports whether err originated from a kit/runtime/policy
+// engine veto (T-1288). The cmd layer uses this to convert wsm errors
+// into a kit *output.Error CONFLICT envelope (exit 4) without
+// pkg/workspace importing the rendering stack.
+func IsPolicyDenial(err error) bool {
+	var target *Error
+	if errors.As(err, &target) {
+		return target.Policy
 	}
 	return false
 }

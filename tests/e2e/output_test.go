@@ -47,7 +47,9 @@ func TestJSON_Show(t *testing.T) {
 func TestJSON_Archive(t *testing.T) {
 	r := newRunner(t)
 	id := r.mustCreateWorkspace("json-archive")
-	res := r.run("workspace", "archive", id, "--format", "json")
+	// archive-requires-note default policy (T-1288) gates archive on a
+	// non-empty --note.
+	res := r.run("workspace", "archive", id, "--note", "json test", "--format", "json")
 	requireExitCode(t, res, 0)
 	var payload map[string]any
 	mustUnmarshalJSON(t, res.Stdout, &payload)

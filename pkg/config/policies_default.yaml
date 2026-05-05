@@ -1,0 +1,34 @@
+# wsm default policy bundle. Loaded by cmd/wsm/commands/policy.go when no
+# user policies file is present at $XDG_CONFIG_HOME/wsm/policies.yaml,
+# and seeded into that path on first boot for adopters to extend.
+#
+# Two shipped rules mirror kit/runtime/policy/e2e/testdata/
+# delete-requires-note.yaml: destructive ops must carry a non-empty
+# `--note` so the audit log explains why state changed.
+#
+# - delete-requires-note guards every entity delete (workspaces,
+#   snapshots, future entities). Op comparison uses payload.Op
+#   (capital O) — Go's default JSON marshaller exports the field
+#   as-is on domain.PreEntityPayload.
+# - archive-requires-note guards the workspace archive Update path.
+#   Archives flow through domain.Service.Update with Status flipped
+#   to "archived"; the validated entity is exposed as resource.fields
+#   (kit/runtime/policy populates it from PreEntityPayload.Entity via
+#   JSON round-trip, so wsm Workspace's `status` JSON tag is the key).
+#
+# Non-destructive transitions stay open by default — additional rules
+# belong in the user file (or a wsm-shipped opt-in bundle), not here.
+policies:
+  - name: archive-requires-note
+    on: kit.runtime.entity.pre_persisted
+    when: 'payload.Op != "update" || !has(resource.fields.status) || resource.fields.status != "archived" || context.note != ""'
+    effect: allow
+    otherwise: deny
+    message: "archiving a workspace requires --note explaining why"
+
+  - name: delete-requires-note
+    on: kit.runtime.entity.pre_persisted
+    when: 'payload.Op != "delete" || context.note != ""'
+    effect: allow
+    otherwise: deny
+    message: "deleting requires --note explaining why"

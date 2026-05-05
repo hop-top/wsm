@@ -2,10 +2,12 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
 
+	"hop.top/kit/go/console/output"
 	"hop.top/wsm/cmd/wsm/commands"
 	"hop.top/wsm/pkg/workspace"
 )
@@ -44,6 +46,13 @@ func main() {
 // Historically Backend mapped to 5, colliding with the §8.1 reserved
 // slot for unauthorized. Forbidden now claims 5; Backend moved to 64.
 func exitCodeForError(err error) int {
+	// kit/runtime/policy vetoes (T-1288) are surfaced via the kit cli
+	// RunE middleware as *output.Error envelopes. Honour the embedded
+	// ExitCode (4 for CONFLICT) so a policy denial yields exit 4.
+	var oe *output.Error
+	if errors.As(err, &oe) && oe.ExitCode != 0 {
+		return oe.ExitCode
+	}
 	switch {
 	case workspace.IsKind(err, workspace.ErrorKindUsage):
 		return 2
