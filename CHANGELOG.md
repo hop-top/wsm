@@ -6,6 +6,37 @@ The format is based on Keep a Changelog, and this project aims to follow Semanti
 
 ## [Unreleased]
 
+### Added
+- `--note|-n` flag on `wsm workspace archive`, `wsm workspace unarchive`,
+  `wsm workspace delete`, `wsm snapshot delete`, and `wsm space delete`.
+  Records a transition note plumbed into ctx via
+  `policy.ContextAttrsKey` for the runtime policy engine to read
+  (T-1287).
+- `kit/runtime/policy` adoption: declarative policy YAML at
+  `$XDG_CONFIG_HOME/wsm/policies.yaml`, evaluated against state changes
+  via kit's policy engine. First boot seeds the file from a bundled
+  default; existing user files are never overwritten. Override via
+  `WSM_POLICY_FILE` env. Default policies: `archive-requires-note`,
+  `delete-requires-note`. See [`docs/wsm/policies.md`](docs/wsm/policies.md).
+  (T-1288)
+
+### Changed
+- `pkg/workspace.Manager` (workspace) and snapshot manager paths now
+  backed by `kit/runtime/domain.Service[Workspace]` and
+  `domain.Service[Snapshot]`. Internals-only refactor; public Manager
+  API and CLI behavior unchanged for callers (T-1286).
+- New topic aliases: `wsm.runtime.snapshot.updated` and
+  `wsm.runtime.snapshot.deleted` now publish on snapshot Update/Delete
+  operations (closes the alias gap noted in kit ADR-0008 §6).
+
+### Note for operators
+- `wsm workspace archive <id>` and `wsm workspace delete <id>` without
+  `--note` now exit 4 with a `policy "<name>" denied: ...` error.
+  Update scripts to pass `--note "<reason>"`. To restore pre-T-1288
+  behavior temporarily, edit `$XDG_CONFIG_HOME/wsm/policies.yaml` and
+  remove the offending rule. See [`docs/wsm/policies.md`](docs/wsm/policies.md)
+  for migration guidance.
+
 ### Breaking
 - Removed `--json` flag. Use `--format json` instead.
 - Renamed `event add --format` (payload format) to `--content-format` to free

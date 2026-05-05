@@ -6,6 +6,7 @@ Author: $USER
 Generated reference for every wsm subcommand. See also:
 
 - [configuration.md](configuration.md) — config keys, env vars, layered loading
+- [policies.md](policies.md) — runtime policy engine, default rules, custom authoring
 - [../architecture.md](../architecture.md) — system overview
 
 ## Synopsis
@@ -170,8 +171,23 @@ Mark a workspace as archived (read-only) or restore an archived workspace to
 active.
 
 ```
-wsm workspace archive <workspace>
-wsm workspace unarchive <workspace>
+wsm workspace archive <workspace> [--note <text>]
+wsm workspace unarchive <workspace> [--note <text>]
+```
+
+| Flag           | Default | Description                                                          |
+|----------------|---------|----------------------------------------------------------------------|
+| `-n`, `--note` | ""      | Reason note (recorded for audit; required by default policy on archive) |
+
+The default `archive-requires-note` policy rejects `archive` without a
+non-empty `--note` (exit 4). `unarchive` accepts `--note` but no default
+policy requires it. See [policies.md](policies.md).
+
+Examples:
+
+```
+wsm workspace archive my-project --note "rotated to api-v2"
+wsm workspace unarchive my-project -n "restoring for hotfix"
 ```
 
 ##### `wsm workspace delete <workspace>`
@@ -181,22 +197,26 @@ Permanently delete a workspace and its history.
 Renamed from `remove` in this release; see [CHANGELOG](../../CHANGELOG.md).
 
 ```
-wsm workspace delete <workspace> [--force] [--dry-run]
+wsm workspace delete <workspace> [--force] [--dry-run] [--note <text>]
 ```
 
-| Flag            | Default | Description                                 |
-|-----------------|---------|---------------------------------------------|
-| `-f`, `--force` | false   | Skip confirmation prompt                    |
-| `--dry-run`     | false   | Preview removal without deleting data       |
+| Flag            | Default | Description                                                       |
+|-----------------|---------|-------------------------------------------------------------------|
+| `-f`, `--force` | false   | Skip confirmation prompt                                          |
+| `--dry-run`     | false   | Preview removal without deleting data                             |
+| `-n`, `--note`  | ""      | Reason note (recorded for audit; required by default policy)      |
 
 Non-TTY runs require `--force`. On macOS, `WSM_DELETE_CONFIRM=y` skips the
 prompt non-interactively.
+
+The default `delete-requires-note` policy rejects `delete` without a
+non-empty `--note` (exit 4). See [policies.md](policies.md).
 
 Examples:
 
 ```
 wsm workspace delete my-project --dry-run
-wsm workspace delete my-project --force
+wsm workspace delete my-project --force --note "duplicate of api-v2"
 ```
 
 ##### `wsm workspace config`
@@ -256,9 +276,14 @@ Dissociate a space from a workspace.
 
 Renamed from `remove` in this release; see [CHANGELOG](../../CHANGELOG.md).
 
-| Flag            | Default | Description                            |
-|-----------------|---------|----------------------------------------|
-| `-f`, `--force` | false   | Force removal (cascade child spaces)   |
+| Flag            | Default | Description                                                            |
+|-----------------|---------|------------------------------------------------------------------------|
+| `-f`, `--force` | false   | Force removal (cascade child spaces)                                   |
+| `-n`, `--note`  | ""      | Reason note (recorded for audit; not required by default policies)     |
+
+`--note` is accepted and plumbed into ctx so user-authored policies can
+read it; the bundled defaults do not require it for `space delete`. See
+[policies.md](policies.md).
 
 ##### `wsm space sync`
 
@@ -410,11 +435,16 @@ Delete a snapshot.
 
 Renamed from `remove` in this release; see [CHANGELOG](../../CHANGELOG.md).
 
-| Flag            | Default | Description           |
-|-----------------|---------|-----------------------|
-| `-f`, `--force` | false   | Skip confirmation     |
+| Flag            | Default | Description                                                            |
+|-----------------|---------|------------------------------------------------------------------------|
+| `-f`, `--force` | false   | Skip confirmation                                                      |
+| `-n`, `--note`  | ""      | Reason note (recorded for audit; not required by default policies)     |
 
 Non-TTY runs require `--force`.
+
+`--note` is accepted and plumbed into ctx so user-authored policies can
+read it; the bundled defaults do not require it for `snapshot delete`.
+See [policies.md](policies.md).
 
 ##### `wsm snapshot context <workspace>`
 
@@ -600,19 +630,28 @@ as `wsm workspace list --format json | jq`.
 
 Per CLI conventions §8.1:
 
-| Code | Meaning                                |
-|------|----------------------------------------|
-| 0    | Success                                |
-| 1    | Generic error                          |
-| 2    | Usage error (bad flags/args)           |
-| 3    | Not found (workspace/space/snapshot)   |
-| 4    | Conflict (already exists, in use)      |
-| 5    | Unauthorized / forbidden (capability)  |
-| 64   | Backend / persistence failure (wsm)    |
+| Code | Meaning                                                           |
+|------|-------------------------------------------------------------------|
+| 0    | Success                                                           |
+| 1    | Generic error                                                     |
+| 2    | Usage error (bad flags/args)                                      |
+| 3    | Not found (workspace/space/snapshot)                              |
+| 4    | Conflict (already exists, in use) **or policy denied** — see [policies.md](policies.md) |
+| 5    | Unauthorized / forbidden (capability)                             |
+| 64   | Backend / persistence failure (wsm)                               |
 
 Codes 64+ are tool-specific. wsm error helpers
 (`workspace.NewErrorUsage`, `NewErrorNotFound`, `NewErrorBackend`,
 `NewErrorForbidden`) map to these codes via `kit/cli` error rendering.
+
+Policy denials produced by the runtime policy engine are routed
+through `*output.Error` with `CodeConflict` (exit 4); message is
+prefixed `policy "<name>" denied:`. See [policies.md](policies.md) for
+the full vocabulary and authoring guide.
+
+The current binary may return exit `1` for some paths that should
+return `3` or `4` (tracked in T-1304); over time those regressions
+will collapse onto the canonical table above.
 
 ## Published events (kit bus topics)
 
@@ -626,9 +665,22 @@ operations publish to the following topics. Topic names follow the kit
 | `wsm.runtime.workspace.archived`   | `wsm workspace archive`              |
 | `wsm.runtime.workspace.unarchived` | `wsm workspace unarchive`            |
 | `wsm.runtime.workspace.deleted`    | `wsm workspace delete`               |
-| `wsm.runtime.snapshot.created`    | `wsm snapshot generate`              |
+| `wsm.runtime.snapshot.created`     | `wsm snapshot generate`              |
+| `wsm.runtime.snapshot.updated`     | `wsm snapshot update`                |
+| `wsm.runtime.snapshot.deleted`     | `wsm snapshot delete`                |
 
 Subscribers wanting all wsm runtime topics use the AMQP-style pattern
 `wsm.runtime.#`; workspace-only is `wsm.runtime.workspace.#`. These
 topics are emitted only when a bus is configured; CLI behavior is
 unchanged when no bus is present.
+
+Pre-event topics from `kit/runtime/domain.Service` (used by the policy
+engine, not for end-user subscription):
+
+| Topic                                     | Phase |
+|-------------------------------------------|-------|
+| `kit.runtime.entity.pre_persisted`        | After validation, before repo write |
+
+Wsm publishes `pre_persisted` for every Workspace/Snapshot CRUD
+operation routed through `pkg/workspace.Manager`. Policies subscribe
+via `policy.Wire(bus, engine)`. See [policies.md](policies.md).
