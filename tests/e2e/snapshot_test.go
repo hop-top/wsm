@@ -348,3 +348,30 @@ func TestSnapshotList(t *testing.T) {
 		t.Fatalf("expected 3 snapshots with sess-a or sess-c, got %d", len(sessMultiSnaps))
 	}
 }
+
+// TestSnapshotDelete_NoteFlag exercises the --note|-n flag plumbed in
+// T-1287. With the flag set the delete succeeds; omitted, it also
+// succeeds (no enforcement yet — that's T-1288 with the policy engine).
+func TestSnapshotDelete_NoteFlag(t *testing.T) {
+	r := newRunner(t)
+	ws1 := r.mustCreateWorkspace("snap-note-with")
+	ws2 := r.mustCreateWorkspace("snap-note-without")
+
+	r.run("event", "add", ws1, "interaction.message", "--content=m1")
+	gen1 := r.run("snapshot", "generate", ws1, "-n", "snap-with-note", "--format", "json")
+	requireExitCode(t, gen1, 0)
+	var snap1 workspace.Snapshot
+	mustUnmarshalJSON(t, gen1.Stdout, &snap1)
+
+	r.run("event", "add", ws2, "interaction.message", "--content=m2")
+	gen2 := r.run("snapshot", "generate", ws2, "-n", "snap-no-note", "--format", "json")
+	requireExitCode(t, gen2, 0)
+	var snap2 workspace.Snapshot
+	mustUnmarshalJSON(t, gen2.Stdout, &snap2)
+
+	withNote := r.run("snapshot", "delete", snap1.ID, "--force", "--note", "obsolete")
+	requireExitCode(t, withNote, 0)
+
+	withoutNote := r.run("snapshot", "delete", snap2.ID, "--force")
+	requireExitCode(t, withoutNote, 0)
+}

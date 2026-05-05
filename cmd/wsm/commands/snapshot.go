@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"hop.top/kit/go/console/output"
+	"hop.top/kit/go/runtime/policy"
 	"hop.top/wsm/pkg/backend"
 	"hop.top/wsm/pkg/workspace"
 )
@@ -296,6 +297,7 @@ func newSnapshotUpdateCmd(opts *globalOptions) *cobra.Command {
 
 func newSnapshotDeleteCmd(opts *globalOptions) *cobra.Command {
 	var force bool
+	var note string
 	cmd := &cobra.Command{
 		Use:   "delete <snapshot-id-or-name>",
 		Short: "Delete a snapshot",
@@ -320,6 +322,15 @@ func newSnapshotDeleteCmd(opts *globalOptions) *cobra.Command {
 						return nil
 					}
 				}
+				// Plumb --note into ctx via policy.ContextAttrsKey so
+				// the runtime policy engine can read it during pre-event
+				// veto. T-1287 wires the flag; T-1288 adds the default
+				// policy that enforces note presence.
+				if note != "" {
+					ctx = context.WithValue(ctx, policy.ContextAttrsKey, map[string]any{
+						"note": note,
+					})
+				}
 				if err := app.manager.DeleteSnapshot(ctx, args[0]); err != nil {
 					return err
 				}
@@ -341,5 +352,6 @@ func newSnapshotDeleteCmd(opts *globalOptions) *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVarP(&force, "force", "f", false, "Skip confirmation")
+	cmd.Flags().StringVarP(&note, "note", "n", "", "Reason note (recorded for audit; future policies may require it)")
 	return cmd
 }

@@ -442,3 +442,54 @@ func TestWorkspaceShow_EventsAllJSONIsValid(t *testing.T) {
 		t.Fatalf("show payload missing events field: %s", res.Stdout)
 	}
 }
+
+// TestWorkspaceArchive_NoteFlag exercises the --note|-n flag plumbed in
+// T-1287. The flag binds and reaches the Manager via ctx (no enforcement
+// yet — that's T-1288 with the policy engine). With the flag set, the
+// archive succeeds; omitted, it also succeeds (no veto).
+func TestWorkspaceArchive_NoteFlag(t *testing.T) {
+	r := newRunner(t)
+	r.mustCreateWorkspace("with-note")
+	r.mustCreateWorkspace("no-note")
+
+	withNote := r.run("workspace", "archive", "with-note", "--note", "stale workspace", "--format", "json")
+	requireExitCode(t, withNote, 0)
+
+	withoutNote := r.run("workspace", "archive", "no-note", "--format", "json")
+	requireExitCode(t, withoutNote, 0)
+
+	shortFlag := r.mustCreateWorkspace("short-flag")
+	_ = shortFlag
+	res := r.run("workspace", "archive", "short-flag", "-n", "via short flag", "--format", "json")
+	requireExitCode(t, res, 0)
+}
+
+// TestWorkspaceUnarchive_NoteFlag exercises --note|-n on unarchive.
+func TestWorkspaceUnarchive_NoteFlag(t *testing.T) {
+	r := newRunner(t)
+	r.mustCreateWorkspace("with-note")
+	r.mustCreateWorkspace("no-note")
+	requireExitCode(t, r.run("workspace", "archive", "with-note"), 0)
+	requireExitCode(t, r.run("workspace", "archive", "no-note"), 0)
+
+	withNote := r.run("workspace", "unarchive", "with-note", "--note", "user requested restore", "--format", "json")
+	requireExitCode(t, withNote, 0)
+
+	withoutNote := r.run("workspace", "unarchive", "no-note", "--format", "json")
+	requireExitCode(t, withoutNote, 0)
+}
+
+// TestWorkspaceDelete_NoteFlag exercises --note|-n on delete. T-1287
+// only wires the flag; deletion still succeeds whether or not it is
+// supplied.
+func TestWorkspaceDelete_NoteFlag(t *testing.T) {
+	r := newRunner(t)
+	r.mustCreateWorkspace("with-note")
+	r.mustCreateWorkspace("no-note")
+
+	withNote := r.run("workspace", "delete", "with-note", "--force", "--note", "cleanup", "--format", "json")
+	requireExitCode(t, withNote, 0)
+
+	withoutNote := r.run("workspace", "delete", "no-note", "--force", "--format", "json")
+	requireExitCode(t, withoutNote, 0)
+}

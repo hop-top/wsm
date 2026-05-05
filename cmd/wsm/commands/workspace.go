@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"hop.top/kit/go/console/output"
+	"hop.top/kit/go/runtime/policy"
 	"hop.top/wsm/pkg/backend"
 	"hop.top/wsm/pkg/config"
 	"hop.top/wsm/pkg/model"
@@ -305,7 +306,8 @@ func newWorkspaceShowCmd(opts *globalOptions) *cobra.Command {
 }
 
 func newWorkspaceArchiveCmd(opts *globalOptions) *cobra.Command {
-	return &cobra.Command{
+	var note string
+	cmd := &cobra.Command{
 		Use:   "archive <workspace>",
 		Short: "Mark a workspace as archived (read-only)",
 		Args:  cobra.ExactArgs(1),
@@ -314,6 +316,15 @@ func newWorkspaceArchiveCmd(opts *globalOptions) *cobra.Command {
 				ws, err := app.manager.ResolveWorkspaceRef(ctx, args[0])
 				if err != nil {
 					return err
+				}
+				// Plumb --note into ctx via policy.ContextAttrsKey so
+				// the runtime policy engine can read it during pre-event
+				// veto. T-1287 wires the flag; T-1288 adds the default
+				// policy that enforces note presence.
+				if note != "" {
+					ctx = context.WithValue(ctx, policy.ContextAttrsKey, map[string]any{
+						"note": note,
+					})
 				}
 				if err := app.manager.Archive(ctx, ws.ID); err != nil {
 					return err
@@ -335,10 +346,13 @@ func newWorkspaceArchiveCmd(opts *globalOptions) *cobra.Command {
 			})
 		},
 	}
+	cmd.Flags().StringVarP(&note, "note", "n", "", "Reason note (recorded for audit; future policies may require it)")
+	return cmd
 }
 
 func newWorkspaceUnarchiveCmd(opts *globalOptions) *cobra.Command {
-	return &cobra.Command{
+	var note string
+	cmd := &cobra.Command{
 		Use:   "unarchive <workspace>",
 		Short: "Restore an archived workspace to active status",
 		Args:  cobra.ExactArgs(1),
@@ -347,6 +361,15 @@ func newWorkspaceUnarchiveCmd(opts *globalOptions) *cobra.Command {
 				ws, err := app.manager.ResolveWorkspaceRef(ctx, args[0])
 				if err != nil {
 					return err
+				}
+				// Plumb --note into ctx via policy.ContextAttrsKey so
+				// the runtime policy engine can read it during pre-event
+				// veto. T-1287 wires the flag; T-1288 adds the default
+				// policy that enforces note presence.
+				if note != "" {
+					ctx = context.WithValue(ctx, policy.ContextAttrsKey, map[string]any{
+						"note": note,
+					})
 				}
 				if err := app.manager.Unarchive(ctx, ws.ID); err != nil {
 					return err
@@ -368,10 +391,13 @@ func newWorkspaceUnarchiveCmd(opts *globalOptions) *cobra.Command {
 			})
 		},
 	}
+	cmd.Flags().StringVarP(&note, "note", "n", "", "Reason note (recorded for audit; future policies may require it)")
+	return cmd
 }
 
 func newWorkspaceDeleteCmd(opts *globalOptions) *cobra.Command {
 	var force, dryRun bool
+	var note string
 	cmd := &cobra.Command{
 		Use:   "delete <workspace>",
 		Short: "Permanently delete a workspace and its history",
@@ -415,6 +441,15 @@ func newWorkspaceDeleteCmd(opts *globalOptions) *cobra.Command {
 					}
 				}
 
+				// Plumb --note into ctx via policy.ContextAttrsKey so
+				// the runtime policy engine can read it during pre-event
+				// veto. T-1287 wires the flag; T-1288 adds the default
+				// policy that enforces note presence.
+				if note != "" {
+					ctx = context.WithValue(ctx, policy.ContextAttrsKey, map[string]any{
+						"note": note,
+					})
+				}
 				if err := app.manager.Delete(ctx, preview.WorkspaceID); err != nil {
 					return err
 				}
@@ -438,6 +473,7 @@ func newWorkspaceDeleteCmd(opts *globalOptions) *cobra.Command {
 	}
 	cmd.Flags().BoolVarP(&force, "force", "f", false, "Skip confirmation prompt")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Preview removal without deleting data")
+	cmd.Flags().StringVarP(&note, "note", "n", "", "Reason note (recorded for audit; future policies may require it)")
 	return cmd
 }
 

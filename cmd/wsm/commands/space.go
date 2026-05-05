@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"hop.top/kit/go/console/output"
+	"hop.top/kit/go/runtime/policy"
 	"hop.top/wsm/pkg/detector"
 	"hop.top/wsm/pkg/workspace"
 )
@@ -175,12 +176,22 @@ func newSpaceShowCmd(opts *globalOptions) *cobra.Command {
 
 func newSpaceDeleteCmd(opts *globalOptions) *cobra.Command {
 	var force bool
+	var note string
 	cmd := &cobra.Command{
 		Use:   "delete <workspace> <space-id>",
 		Short: "Dissociate a space from a workspace",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(_ *cobra.Command, args []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
+				// Plumb --note into ctx via policy.ContextAttrsKey so
+				// the runtime policy engine can read it during pre-event
+				// veto. T-1287 wires the flag; T-1288 adds the default
+				// policy that enforces note presence.
+				if note != "" {
+					ctx = context.WithValue(ctx, policy.ContextAttrsKey, map[string]any{
+						"note": note,
+					})
+				}
 				if err := app.manager.RemoveSpace(ctx, args[0], args[1], force); err != nil {
 					return err
 				}
@@ -195,6 +206,7 @@ func newSpaceDeleteCmd(opts *globalOptions) *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVarP(&force, "force", "f", false, "Force removal (cascade child spaces)")
+	cmd.Flags().StringVarP(&note, "note", "n", "", "Reason note (recorded for audit; future policies may require it)")
 	return cmd
 }
 
