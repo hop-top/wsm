@@ -325,7 +325,7 @@ func TestWorkspaceFullLifecycle(t *testing.T) {
 	showRes := r.run("workspace", "show", id)
 	requireExitCode(t, showRes, 0)
 
-	requireExitCode(t, r.run("workspace", "archive", id), 0)
+	requireExitCode(t, r.run("workspace", "archive", id, "--note", "lifecycle test"), 0)
 	archivedShow := r.run("workspace", "show", id, "--format", "json")
 	requireExitCode(t, archivedShow, 0)
 	var archived inspectJSON
@@ -335,7 +335,7 @@ func TestWorkspaceFullLifecycle(t *testing.T) {
 	}
 
 	requireExitCode(t, r.run("workspace", "unarchive", id), 0)
-	requireExitCode(t, r.run("workspace", "delete", id, "--force"), 0)
+	requireExitCode(t, r.run("workspace", "delete", id, "--force", "--note", "lifecycle test"), 0)
 
 	deletedShow := r.run("workspace", "show", id)
 	requireExitCode(t, deletedShow, 3)
@@ -395,7 +395,7 @@ func TestRefResolution_ByNameAndID(t *testing.T) {
 		t.Fatalf("expected deterministic ref resolution by name and id, got byName=%s byID=%s expected=%s", byName.Workspace.ID, byID.Workspace.ID, id)
 	}
 
-	requireExitCode(t, r.run("workspace", "archive", "ref-work"), 0)
+	requireExitCode(t, r.run("workspace", "archive", "ref-work", "--note", "ref test"), 0)
 	archived := r.run("workspace", "show", id, "--format", "json")
 	requireExitCode(t, archived, 0)
 	var archivedPayload inspectJSON
@@ -413,7 +413,7 @@ func TestRefResolution_ByNameAndID(t *testing.T) {
 		t.Fatalf("expected active status using name ref, got %s", active.Workspace.Status)
 	}
 
-	requireExitCode(t, r.run("workspace", "delete", "ref-work", "--force"), 0)
+	requireExitCode(t, r.run("workspace", "delete", "ref-work", "--force", "--note", "ref test"), 0)
 	notFound := r.run("workspace", "show", id)
 	requireExitCode(t, notFound, 3)
 	if !strings.Contains(notFound.Stderr, "Run 'wsm workspace list'") {
