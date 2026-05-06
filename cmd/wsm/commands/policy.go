@@ -125,9 +125,17 @@ func resetPolicyForTest() {
 	policyOnce = sync.Once{}
 }
 
-// mapPolicyDenialError converts a wsm Error originating from a
-// kit/runtime/policy veto into a kit *output.Error CONFLICT envelope
-// (exit 4). Other errors flow through unchanged.
+// mapPolicyDenialError converts a *workspace.Error into a kit
+// *output.Error envelope so kit's RunE wrapper surfaces the right
+// Code + ExitCode (otherwise everything becomes CodeGeneric exit 1).
+//
+// Maps:
+//   - policy denial   → CONFLICT  (exit 4)
+//   - ErrorKindNotFound → NOT_FOUND (exit 3)
+//   - ErrorKindConflict → CONFLICT  (exit 4)
+//   - ErrorKindForbidden → UNAUTHORIZED (exit 5)
+//   - ErrorKindUsage  → USAGE   (exit 2)
+//   - ErrorKindBackend → tool-specific 64
 //
 // The translation lives at the cmd layer because pkg/workspace cannot
 // import hop.top/kit/go/console/output without dragging charmbracelet
@@ -138,12 +146,45 @@ func mapPolicyDenialError(err error) error {
 	if err == nil {
 		return nil
 	}
-	if !workspace.IsPolicyDenial(err) {
-		return err
+	if workspace.IsPolicyDenial(err) {
+		return &output.Error{
+			Code:     output.CodeConflict,
+			Message:  err.Error(),
+			ExitCode: 4,
+		}
 	}
-	return &output.Error{
-		Code:     output.CodeConflict,
-		Message:  err.Error(),
-		ExitCode: 4,
+	switch {
+	case workspace.IsKind(err, workspace.ErrorKindNotFound):
+		return &output.Error{
+			Code:         output.CodeNotFound,
+			Message:      err.Error(),
+			ExitCode:     3,
+			SuggestedFix: "Run 'wsm workspace list' to see available workspaces.",
+		}
+	case workspace.IsKind(err, workspace.ErrorKindConflict):
+		return &output.Error{
+			Code:     output.CodeConflict,
+			Message:  err.Error(),
+			ExitCode: 4,
+		}
+	case workspace.IsKind(err, workspace.ErrorKindForbidden):
+		return &output.Error{
+			Code:     output.CodeUnauthorized,
+			Message:  err.Error(),
+			ExitCode: 5,
+		}
+	case workspace.IsKind(err, workspace.ErrorKindUsage):
+		return &output.Error{
+			Code:     output.CodeUsage,
+			Message:  err.Error(),
+			ExitCode: 2,
+		}
+	case workspace.IsKind(err, workspace.ErrorKindBackend):
+		return &output.Error{
+			Code:     output.CodeGeneric,
+			Message:  err.Error(),
+			ExitCode: 64,
+		}
 	}
+	return err
 }

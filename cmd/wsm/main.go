@@ -25,10 +25,12 @@ func main() {
 	// instance; commands.Execute then routes through fang.
 	_ = commands.NewRootCmd()
 	if err := commands.Execute(context.Background()); err != nil {
-		fmt.Fprintln(os.Stderr, "Error:", err)
-		if workspace.IsKind(err, workspace.ErrorKindNotFound) {
-			fmt.Fprintln(os.Stderr)
-			fmt.Fprintln(os.Stderr, "Run 'wsm workspace list' to see available workspaces.")
+		// Kit's RunE wrapper renders *output.Error envelopes (with
+		// SuggestedFix) to stderr already. Re-print plain errors
+		// (PersistentPreRunE failures, framework errors) here.
+		var oe *output.Error
+		if !errors.As(err, &oe) {
+			fmt.Fprintln(os.Stderr, "Error:", err)
 		}
 		os.Exit(exitCodeForError(err))
 	}

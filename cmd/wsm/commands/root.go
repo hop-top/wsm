@@ -389,7 +389,7 @@ func Execute(ctx context.Context) error {
 func withApp(opts *globalOptions, fn func(ctx context.Context, app *appContext) error) error {
 	app, err := newAppContext(*opts)
 	if err != nil {
-		return err
+		return mapPolicyDenialError(err)
 	}
 	defer func() { _ = app.Close() }()
 	ctx, cancel := context.WithCancel(context.Background())

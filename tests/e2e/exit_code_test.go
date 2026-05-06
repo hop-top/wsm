@@ -31,8 +31,8 @@ func TestExitCode_Conflict(t *testing.T) {
 	duplicate := r.run("workspace", "add", "exit-conflict")
 	requireExitCode(t, duplicate, 4)
 
-	requireExitCode(t, r.run("workspace", "archive", "exit-conflict"), 0)
-	archivedConflict := r.run("workspace", "archive", "exit-conflict")
+	requireExitCode(t, r.run("workspace", "archive", "exit-conflict", "--note", "stale"), 0)
+	archivedConflict := r.run("workspace", "archive", "exit-conflict", "--note", "again")
 	requireExitCode(t, archivedConflict, 4)
 }
 
