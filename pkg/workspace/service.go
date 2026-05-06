@@ -217,44 +217,18 @@ func workspaceIDOf(payload any) string {
 //
 // Validation here covers what the previous Manager.Create / Manager.Archive
 // blocks did inline: name presence + name uniqueness for create paths,
-// status invariants for archive/unarchive. The discriminator pattern
-// (action-aware via OpKind from a sentinel context value) keeps the
-// validator API at the single Validate(entity) shape kit/runtime/domain
-// exposes today, instead of forking domain.Service.
+// status invariants for archive/unarchive. The discriminator reads kit's
+// canonical domain.OpFromCtx — Service.{Create,Update,Delete} auto-inject
+// it — so create-only invariants run only on OpCreate and Update verbs
+// (archive, unarchive) skip them.
 type workspaceValidator struct {
 	b backend.Backend
 }
 
 func newWorkspaceValidator(b backend.Backend) *workspaceValidator { return &workspaceValidator{b: b} }
 
-// validateContextKey carries the action discriminator into Validate.
-// Manager.Create stamps OpKindCreate; archive/unarchive run their
-// status preconditions inline (they need the pre-flip state) and pass
-// OpKindUpdate so the validator only enforces the create-time rules.
-//
-// kit/runtime/domain.Service has a single Validate signature; the
-// discriminator is the workaround until kit grows per-op validators.
-type validateContextKey struct{}
-
-// OpKind tells the validator which CRUD verb is in flight. It does
-// not flow over the bus — only inside the goroutine running the op.
-type OpKind int
-
-const (
-	// OpKindCreate runs full create-time validation: name required,
-	// name unique within the backend.
-	OpKindCreate OpKind = iota + 1
-	// OpKindArchive is an Update verb. Manager checks status
-	// preconditions before flipping; validator no-ops.
-	OpKindArchive
-	// OpKindUnarchive is an Update verb. Manager checks status
-	// preconditions before flipping; validator no-ops.
-	OpKindUnarchive
-)
-
 func (v *workspaceValidator) Validate(ctx context.Context, ws Workspace) error {
-	op, _ := ctx.Value(validateContextKey{}).(OpKind)
-	if op != OpKindCreate {
+	if domain.OpFromCtx(ctx) != domain.OpCreate {
 		return nil
 	}
 	name := strings.TrimSpace(ws.Name)
@@ -269,13 +243,6 @@ func (v *workspaceValidator) Validate(ctx context.Context, ws Workspace) error {
 		return conflictError(fmt.Sprintf("workspace %q already exists", name))
 	}
 	return nil
-}
-
-// withValidateOp returns a context that tells workspaceValidator which
-// CRUD verb is running. Manager wraps each lifecycle method's ctx with
-// this before invoking domain.Service.
-func withValidateOp(ctx context.Context, op OpKind) context.Context {
-	return context.WithValue(ctx, validateContextKey{}, op)
 }
 
 // unwrapDomainErr translates kit/runtime/domain sentinel errors back

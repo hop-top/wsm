@@ -211,7 +211,7 @@ func (m *Manager) Create(ctx context.Context, name string, opts CreateOptions) (
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}
-	if err := m.wsService.Create(withValidateOp(ctx, OpKindCreate), &ws); err != nil {
+	if err := m.wsService.Create(ctx, &ws); err != nil {
 		return nil, unwrapDomainErr(err)
 	}
 	_, _ = m.RecordEvent(ctx, ws.ID, EventWorkspaceCreated, map[string]any{"name": ws.Name})
@@ -668,7 +668,7 @@ func (m *Manager) Archive(ctx context.Context, ref string) error {
 	ws.Status = StatusArchived
 	ws.ArchivedAt = &now
 	ws.UpdatedAt = now
-	if err := m.wsService.Update(withValidateOp(ctx, OpKindArchive), ws); err != nil {
+	if err := m.wsService.Update(domain.WithSubOp(ctx, "archive"), ws); err != nil {
 		return unwrapDomainErr(err)
 	}
 	if _, err := m.appendLifecycleEvent(ctx, ws.ID, EventWorkspaceArchived, map[string]any{"archived_at": now}); err != nil {
@@ -701,7 +701,7 @@ func (m *Manager) Unarchive(ctx context.Context, ref string) error {
 	ws.Status = StatusActive
 	ws.ArchivedAt = nil
 	ws.UpdatedAt = now
-	if err := m.wsService.Update(withValidateOp(ctx, OpKindUnarchive), ws); err != nil {
+	if err := m.wsService.Update(domain.WithSubOp(ctx, "unarchive"), ws); err != nil {
 		return unwrapDomainErr(err)
 	}
 	if _, err := m.appendLifecycleEvent(ctx, ws.ID, EventWorkspaceUnarchived, map[string]any{"updated_at": now}); err != nil {
