@@ -264,6 +264,18 @@ func NewRootCmd() *cobra.Command {
 		Name:    "wsm",
 		Version: Version,
 		Short:   "Workspace & Session Manager",
+		// kit v0.4 registers a built-in -c/--config StringArray for layered
+		// overrides. wsm owns the --config name with single-path semantics
+		// (override XDG config file location); suppress the built-in so the
+		// custom global below remains the sole --config flag.
+		Disable: cli.Disable{Config: true},
+		// kit v0.4 introduces Layer-A annotation enforcement (kit/side-effect,
+		// kit/idempotent, kit/top-level-verb, kit/hierarchical, Long descriptions,
+		// reserved status subcommand) at Execute() time. Adopting that surface
+		// across wsm is out of scope for this bump; opt out for now so the
+		// existing command tree continues to dispatch unchanged. Follow-up
+		// track owns the Layer-A annotation rollout.
+		DisableValidate: true,
 		Help: cli.HelpConfig{
 			Disclaimer: "Workspace & Session Manager (wsm) for IDE-agnostic session storage.",
 			// management is pre-registered + auto-hidden by cli.New;
