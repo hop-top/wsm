@@ -57,6 +57,9 @@ func newSnapshotListCmd(opts *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List snapshots with filtering",
+		Long: `List snapshots across one or more workspaces with optional filtering by
+session, time window, and sort direction. Output renders as a table by default
+and as JSON or YAML when --format is set; --quiet emits IDs only for scripting.`,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
 				var wsIDs []string
@@ -129,6 +132,7 @@ func newSnapshotListCmd(opts *globalOptions) *cobra.Command {
 	_ = cmd.RegisterFlagCompletionFunc("sort", func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
 		return []string{"asc", "desc"}, cobra.ShellCompDirectiveNoFileComp
 	})
+	cli.SetSideEffect(cmd, cli.SideEffectRead)
 	return cmd
 }
 
@@ -138,7 +142,11 @@ func newSnapshotGenerateCmd(opts *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "generate [workspace]",
 		Short: "Generate and persist a workspace snapshot",
-		Args:  cobra.MaximumNArgs(1),
+		Long: `Generate a new snapshot capturing the current state of a workspace as a
+point-in-time projection — session metadata, file changes, tool calls, and
+device list — and persist it under a fresh ID. Not idempotent: each invocation
+mints a new snapshot reflecting the current sequence number.`,
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
 				var ws workspace.Workspace
@@ -197,14 +205,19 @@ func newSnapshotGenerateCmd(opts *globalOptions) *cobra.Command {
 	cmd.Flags().StringVarP(&sessionID, "session", "s", "", "Filter by session ID")
 	cmd.Flags().StringVarP(&name, "name", "n", "", "Snapshot name/alias")
 	cmd.Flags().BoolVar(&isSeed, "seed", false, "Mark as seed snapshot")
+	cli.SetSideEffect(cmd, cli.SideEffectWrite)
+	cli.SetIdempotency(cmd, cli.IdempotencyNo)
 	return cmd
 }
 
 func newSnapshotShowCmd(opts *globalOptions) *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "show <workspace>",
 		Short: "Show latest snapshot",
-		Args:  cobra.ExactArgs(1),
+		Long: `Show the most recent snapshot for a workspace, resolved by ID or name,
+including sequence number, generation time, and key counts (messages, tool
+calls, files changed). Errors if no snapshot exists for the workspace yet.`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
 				ws, err := app.manager.ResolveWorkspaceRef(ctx, args[0])
@@ -230,6 +243,8 @@ func newSnapshotShowCmd(opts *globalOptions) *cobra.Command {
 			})
 		},
 	}
+	cli.SetSideEffect(cmd, cli.SideEffectRead)
+	return cmd
 }
 
 func newSnapshotContextCmd(opts *globalOptions) *cobra.Command {
@@ -237,7 +252,10 @@ func newSnapshotContextCmd(opts *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "context <workspace>",
 		Short: "Output markdown summary context for LLM",
-		Args:  cobra.ExactArgs(1),
+		Long: `Emit a markdown-formatted context document summarizing the current state of a
+workspace — suitable for handoff to an LLM agent. Read-only: derives output
+from existing snapshot and event state without mutating the workspace.`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
 				ws, err := app.manager.ResolveWorkspaceRef(ctx, args[0])
@@ -256,6 +274,8 @@ func newSnapshotContextCmd(opts *globalOptions) *cobra.Command {
 		},
 	}
 	cmd.Flags().IntVar(&recentEvents, "events", 5, "Number of recent events to include")
+	cli.SetSideEffect(cmd, cli.SideEffectRead)
+	cli.SetIdempotency(cmd, cli.IdempotencyYes)
 	return cmd
 }
 
@@ -265,7 +285,10 @@ func newSnapshotUpdateCmd(opts *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "update <snapshot-id-or-name>",
 		Short: "Update snapshot metadata",
-		Args:  cobra.ExactArgs(1),
+		Long: `Update mutable metadata on an existing snapshot resolved by ID or name —
+currently the snapshot name/alias and the is_seed flag. Idempotent: re-running
+with the same flag values yields the same observable state.`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(c *cobra.Command, args []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
 				uOpts := workspace.UpdateSnapshotOptions{}
@@ -297,6 +320,11 @@ func newSnapshotUpdateCmd(opts *globalOptions) *cobra.Command {
 	}
 	cmd.Flags().StringVarP(&name, "name", "n", "", "Snapshot name/alias")
 	cmd.Flags().BoolVar(&isSeed, "seed", false, "Mark as seed snapshot")
+	// kit applies the kit/idempotent tag automatically for verbs in its
+	// defaultIdempotency table (cli/idempotent.go) — 'update' resolves to
+	// IdempotencyYes there. Leaving the explicit annotation off keeps the
+	// classification aligned with the kit convention rather than forking it.
+	cli.SetSideEffect(cmd, cli.SideEffectWrite)
 	return cmd
 }
 
@@ -306,7 +334,10 @@ func newSnapshotDeleteCmd(opts *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "delete <snapshot-id-or-name>",
 		Short: "Delete a snapshot",
-		Args:  cobra.ExactArgs(1),
+		Long: `Permanently delete a snapshot resolved by ID or name. Prompts for confirmation
+in TTYs unless --force is set. The underlying event history of the workspace
+is preserved; only the snapshot projection is removed.`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
 				if !force {
@@ -358,5 +389,10 @@ func newSnapshotDeleteCmd(opts *globalOptions) *cobra.Command {
 	}
 	cmd.Flags().BoolVarP(&force, "force", "f", false, "Skip confirmation")
 	cmd.Flags().StringVarP(&note, "note", "n", "", "Reason note (recorded for audit; future policies may require it)")
+	// kit applies the kit/idempotent tag automatically for verbs in its
+	// defaultIdempotency table (cli/idempotent.go) — 'delete' resolves to
+	// IdempotencyYes there. Leaving the explicit annotation off keeps the
+	// classification aligned with the kit convention rather than forking it.
+	cli.SetSideEffect(cmd, cli.SideEffectWrite)
 	return cmd
 }
