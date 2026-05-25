@@ -216,7 +216,8 @@ func newSnapshotShowCmd(opts *globalOptions) *cobra.Command {
 		Short: "Show latest snapshot",
 		Long: `Show the most recent snapshot for a workspace, resolved by ID or name,
 including sequence number, generation time, and key counts (messages, tool
-calls, files changed). Errors if no snapshot exists for the workspace yet.`,
+calls, files changed). Read-only: surfaces stored snapshot state without
+mutating the workspace. Errors if no snapshot exists for the workspace yet.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
@@ -320,10 +321,7 @@ with the same flag values yields the same observable state.`,
 	}
 	cmd.Flags().StringVarP(&name, "name", "n", "", "Snapshot name/alias")
 	cmd.Flags().BoolVar(&isSeed, "seed", false, "Mark as seed snapshot")
-	// kit applies the kit/idempotent tag automatically for verbs in its
-	// defaultIdempotency table (cli/idempotent.go) — 'update' resolves to
-	// IdempotencyYes there. Leaving the explicit annotation off keeps the
-	// classification aligned with the kit convention rather than forking it.
+	// idempotent: kit default (update → Yes).
 	cli.SetSideEffect(cmd, cli.SideEffectWrite)
 	return cmd
 }
@@ -389,10 +387,7 @@ is preserved; only the snapshot projection is removed.`,
 	}
 	cmd.Flags().BoolVarP(&force, "force", "f", false, "Skip confirmation")
 	cmd.Flags().StringVarP(&note, "note", "n", "", "Reason note (recorded for audit; future policies may require it)")
-	// kit applies the kit/idempotent tag automatically for verbs in its
-	// defaultIdempotency table (cli/idempotent.go) — 'delete' resolves to
-	// IdempotencyYes there. Leaving the explicit annotation off keeps the
-	// classification aligned with the kit convention rather than forking it.
+	// idempotent: kit default (delete → Yes).
 	cli.SetSideEffect(cmd, cli.SideEffectWrite)
 	return cmd
 }

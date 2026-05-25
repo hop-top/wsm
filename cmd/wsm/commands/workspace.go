@@ -70,11 +70,8 @@ workspaces, and to inspect per-workspace configuration via 'workspace config'.`,
 		RunE: groupOnlyRunE,
 	}
 	cli.SetTopLevelVerb(cmd)
-	// kit/hierarchical: 'workspace' is the depth-1 intermediate in the
-	// 3-level chain wsm → workspace → config → show. The kit signature
-	// validator requires the annotation on every non-root, non-leaf
-	// ancestor of a depth>=3 runnable leaf (see kit cli/shape.go
-	// SetHierarchical + validate_signature.checkSignatureDepthHierarchical).
+	// Intermediate ancestor of the depth-3 leaf `wsm workspace config show`;
+	// kit requires kit/hierarchical on every non-root, non-leaf ancestor.
 	cli.SetHierarchical(cmd)
 	cmd.AddCommand(
 		newWorkspaceAddCmd(opts),
@@ -214,7 +211,8 @@ func newWorkspaceShowCmd(opts *globalOptions) *cobra.Command {
 		Short: "Show workspace details",
 		Long: `Show a workspace resolved by ID or name, including metadata, statistics,
 the latest snapshot summary, and the most recent events. Use --events to
-include the full event log and --devices to list attached devices and sessions.`,
+include the full event log and --devices to list attached devices and
+sessions. Read-only: surfaces stored workspace state without mutating it.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
@@ -510,10 +508,7 @@ preview what would be removed. Destructive and not recoverable.`,
 	cmd.Flags().BoolVarP(&force, "force", "f", false, "Skip confirmation prompt")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Preview removal without deleting data")
 	cmd.Flags().StringVarP(&note, "note", "n", "", "Reason note (recorded for audit; future policies may require it)")
-	// kit applies the kit/idempotent tag automatically for verbs in its
-	// defaultIdempotency table (cli/idempotent.go) — 'delete' resolves to
-	// IdempotencyYes there. Leaving the explicit annotation off keeps the
-	// classification aligned with the kit convention rather than forking it.
+	// idempotent: kit default (delete → Yes).
 	cli.SetSideEffect(cmd, cli.SideEffectWrite)
 	return cmd
 }
@@ -553,10 +548,7 @@ file source). Read-only surface for confirming how wsm interpreted the layered
 config sources (defaults, file, environment, flags).`,
 		RunE: groupOnlyRunE,
 	}
-	// kit/hierarchical: 'workspace config' is the depth-2 intermediate
-	// in the wsm → workspace → config → show chain. Required alongside
-	// the annotation on the 'workspace' group so the depth-3 'show'
-	// leaf passes checkSignatureDepthHierarchical.
+	// Depth-2 intermediate in the wsm → workspace → config → show chain.
 	cli.SetHierarchical(cmd)
 	cmd.AddCommand(showCmd)
 	return cmd

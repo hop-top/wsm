@@ -111,10 +111,7 @@ and use --auto to attempt detection of attributes from the resource path.`,
 	cmd.Flags().StringSliceVar(&capabilities, "cap", nil, "Space capabilities (OASF URI, repeatble)")
 	cmd.Flags().StringVar(&trustLevel, "trust", string(workspace.TrustLocal), "Trust level (local|verified|external|untrusted)")
 	cmd.Flags().BoolVar(&autoDetect, "auto", false, "Attempt to auto-detect space attributes from path")
-	// kit applies kit/idempotent automatically for verbs in its
-	// defaultIdempotency table — 'add' resolves to IdempotencyNo there,
-	// matching wsm semantics (each invocation registers a fresh space
-	// binding under the workspace and writes through to projects.yaml).
+	// idempotent: kit default (add → No) matches semantics.
 	cli.SetSideEffect(cmd, cli.SideEffectWrite)
 	return cmd
 }
@@ -302,11 +299,7 @@ state yields the same projects.yaml; existing StartupCmd values are preserved.`,
 			})
 		},
 	}
-	// kit applies kit/idempotent automatically for verbs in its
-	// defaultIdempotency table — 'sync' resolves to IdempotencyYes there,
-	// matching wsm semantics (re-running at steady state rewrites
-	// projects.yaml to the same content; failures emit warnings but
-	// produce no per-invocation state).
+	// idempotent: kit default (sync → Yes) matches semantics.
 	cli.SetSideEffect(cmd, cli.SideEffectWrite)
 	return cmd
 }

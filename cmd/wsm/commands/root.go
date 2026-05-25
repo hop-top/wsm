@@ -33,6 +33,27 @@ var (
 	kitRootInstance *cli.Root
 )
 
+// Layer-A annotation conventions
+//
+// kit/side-effect:   set explicitly via cli.SetSideEffect on every leaf.
+// kit/top-level-verb: set explicitly via cli.SetTopLevelVerb on depth-1 verbs.
+// kit/hierarchical:  set explicitly via cli.SetHierarchical on intermediate
+//                    ancestors of depth>=3 leaves (e.g., workspace, workspace
+//                    config).
+// kit/idempotent:    typically left implicit — kit auto-fills from its
+//                    verb-name table during Root.Validate(). The table maps
+//                    well-known verbs (list, show, get, find, search, info,
+//                    delete, update, sync, create, add, ...) to their default
+//                    classification. Adopters override explicitly only when
+//                    the kit default is wrong for the verb's actual semantics
+//                    (e.g., snapshot generate → IdempotencyNo, tui →
+//                    IdempotencyConditional, init → IdempotencyYes).
+//
+// Per-site comments below repeat the rationale only where the implicit-default
+// path is non-obvious (mutating verbs whose name happens to map to
+// IdempotencyYes via the kit table). The annotation-coverage contract is
+// regression-locked by TestLayerAAnnotationsPresent in root_test.go.
+
 // aliasStorePath returns the path to the wsm alias YAML store. Falls
 // back to a relative path when XDG resolution fails so tests/embedded
 // runs still get a deterministic location.
@@ -271,10 +292,14 @@ func NewRootCmd() *cobra.Command {
 		Disable: cli.Disable{Config: true},
 		// kit v0.4 introduces Layer-A annotation enforcement (kit/side-effect,
 		// kit/idempotent, kit/top-level-verb, kit/hierarchical, Long descriptions,
-		// reserved status subcommand) at Execute() time. Adopting that surface
-		// across wsm is out of scope for this bump; opt out for now so the
-		// existing command tree continues to dispatch unchanged. Follow-up
-		// track owns the Layer-A annotation rollout.
+		// reserved status subcommand) at Execute() time. The annotation surface
+		// is now in place (see the package-level "Layer-A annotation conventions"
+		// doc above and TestLayerAAnnotationsPresent in root_test.go) but one
+		// validator bucket remains: kit reports TooManyTopLevelVerbs because the
+		// reserved `status` subcommand brings depth-1 verbs to 11 over kit's
+		// default cap of 10. Flipping this to `false` blocks every wsm
+		// invocation until the verb count is resolved (raise the cap, demote
+		// a verb, or accept).
 		DisableValidate: true,
 		Help: cli.HelpConfig{
 			Disclaimer: "Workspace & Session Manager (wsm) for IDE-agnostic session storage.",

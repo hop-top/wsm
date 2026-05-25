@@ -30,7 +30,7 @@ directory with a minimal config.yaml and a symlink from the other path.
 By default creates .wsm/ and symlinks .hop/wsm/ -> .wsm/.
 With --hop, creates .hop/wsm/ and symlinks .wsm/ -> .hop/wsm/.
 
-Re-running on an already-initialized directory exits cleanly with an
+Re-running on an already-initialized directory fails with an
 "already exists" error unless --force is passed, in which case the
 existing directory is replaced with the same minimal config.yaml.`,
 		Args: cobra.NoArgs,
@@ -58,10 +58,10 @@ existing directory is replaced with the same minimal config.yaml.`,
 	cmd.Flags().BoolVar(&hop, "hop", false, "Use .hop/wsm/ as primary (for hop-managed projects)")
 	cmd.Flags().BoolVarP(&force, "force", "f", false, "Overwrite existing config directories")
 	cli.SetTopLevelVerb(cmd)
-	// Layer-A: writes a local .wsm/ or .hop/wsm/ directory tree; re-runs
-	// either fail with "already exists" or, with --force, produce the same
-	// minimal config.yaml — observably equivalent under the §8.5 rules.
 	cli.SetSideEffect(cmd, cli.SideEffectWriteLocal)
+	// Idempotent under --force: re-running with the same flags produces the
+	// same minimal config.yaml. Without --force, re-runs fail "already exists"
+	// without mutating anything, which is also observably stable per §8.5.
 	cli.SetIdempotency(cmd, cli.IdempotencyYes)
 	return cmd
 }
@@ -197,9 +197,10 @@ func newTUICmd(opts *globalOptions) *cobra.Command {
 		Use:    "tui",
 		Short:  "Launch terminal UI",
 		Long: `Launch the bubbletea-driven workspace browser. Interactive surface
-exposes the workspace list with show, archive, unarchive, and delete
-verbs dispatched through the same backend as the CLI; mutations occur
-only on explicit user keypress. Not suitable for batch / agent use.`,
+exposes the workspace list with inspect (enter), create (c), archive
+toggle (a), and delete (d) keybindings dispatched through the same
+backend as the CLI; mutations occur only on explicit user keypress.
+Not suitable for batch / agent use.`,
 		Hidden: true,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {

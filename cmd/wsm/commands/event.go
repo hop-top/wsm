@@ -242,12 +242,7 @@ with a fresh ID and sequence number.`,
 	cmd.Flags().StringVar(&deviceID, "device-id", "", "device.*: device identifier")
 	cmd.Flags().StringVar(&deviceName, "device-name", "", "device.*: device name")
 
-	// kit applies the kit/idempotent tag automatically for verbs in its
-	// defaultIdempotency table (cli/idempotent.go) — 'add' resolves to
-	// IdempotencyNo there, matching the wsm semantics (each invocation
-	// mints a fresh event ID + sequence number via Manager.RecordEvent).
-	// Leaving the explicit annotation off keeps the classification aligned
-	// with the kit convention rather than forking it.
+	// idempotent: kit default (add → No) matches semantics.
 	cli.SetSideEffect(cmd, cli.SideEffectWrite)
 	return cmd
 }

@@ -25,7 +25,11 @@ func newUpgradeCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "upgrade",
 		Short: "Check for and install updates",
-		Long:  `Check for a newer version of wsm and optionally install it.`,
+		Long: `Check for a newer version of wsm on GitHub releases and optionally
+install it in place. Default mode prompts before replacing the running
+binary; --auto installs without prompting; --quiet suppresses output
+when already up to date. Outcome depends on whether a newer release
+exists and on user confirmation, so re-runs are not idempotent.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return upgrade.RunCLI(cmd.Context(), newChecker(), upgrade.CLIOptions{
 				AutoUpgrade: auto,
@@ -37,6 +41,8 @@ func newUpgradeCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&auto, "auto", false, "Install without prompting")
 	cmd.Flags().BoolVarP(&quiet, "quiet", "q", false, "Suppress output when already up to date")
 	cli.SetTopLevelVerb(cmd)
+	cli.SetSideEffect(cmd, cli.SideEffectWriteLocal)
+	cli.SetIdempotency(cmd, cli.IdempotencyConditional)
 	cmd.AddCommand(newUpgradePreambleCmd())
 	return cmd
 }
