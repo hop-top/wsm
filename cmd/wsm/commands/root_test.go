@@ -6,6 +6,9 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/spf13/cobra"
+	"hop.top/kit/go/console/cli"
 )
 
 // executeCommand invokes the root command with the given args and
@@ -95,4 +98,92 @@ func TestGroupCmdUnknownSubcommandErrors(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestLayerAAnnotationsPresent locks in the kit Layer-A annotation
+// coverage. Without this guard, a future PR could silently delete an
+// annotation; the breakage would only surface when DisableValidate is
+// flipped to false in the gate-flip follow-up.
+//
+// Asserts every leaf the kit shape validator scrutinizes carries
+// kit/side-effect, and every depth-1 runnable leaf carries
+// kit/top-level-verb. kit/idempotent is auto-filled from kit's
+// defaultIdempotency table on Validate(), so this test does not
+// enforce it; the gate-flip follow-up's validator run will.
+func TestLayerAAnnotationsPresent(t *testing.T) {
+	root := NewRootCmd()
+
+	walkDepth(root, 0, func(cmd *cobra.Command, depth int) {
+		if cmd == root || isCobraBuiltin(cmd) {
+			return
+		}
+		// Kit-reserved status is built-in to kit; its annotations are
+		// kit's responsibility, not wsm's.
+		if depth == 1 && cmd.Name() == "status" {
+			return
+		}
+		if !cmd.Runnable() {
+			return
+		}
+		if depth == 1 && !cli.IsTopLevelVerb(cmd) {
+			t.Errorf("depth-1 verb %q missing kit/top-level-verb", cmd.CommandPath())
+		}
+		// Only enforce side-effect on actual leaves (no children) —
+		// group nodes with a help-RunE shim aren't the validator's
+		// concern.
+		if len(cmd.Commands()) == 0 {
+			if _, ok := cli.GetSideEffect(cmd); !ok {
+				t.Errorf("leaf %q missing kit/side-effect", cmd.CommandPath())
+			}
+		}
+	})
+}
+
+// TestTopLevelVerbCountLock pins the depth-1 runnable verb count. The
+// PR-5 deferral notes 11 verbs over kit's default MaxTopLevelVerbs=10;
+// this test prevents a 12th verb sneaking in unobserved before the
+// follow-up resolves the cap.
+//
+// Update this constant when intentionally adding or removing a
+// top-level verb.
+func TestTopLevelVerbCountLock(t *testing.T) {
+	const want = 11
+
+	root := NewRootCmd()
+	got := 0
+	for _, c := range root.Commands() {
+		if isCobraBuiltin(c) {
+			continue
+		}
+		if !c.Runnable() {
+			continue
+		}
+		got++
+	}
+	if got != want {
+		t.Fatalf("top-level verb count: got=%d want=%d (intentional change? update the constant)", got, want)
+	}
+}
+
+// walkDepth visits every command in the subtree rooted at cmd in DFS
+// order, invoking visit with the relative depth (root = 0).
+func walkDepth(cmd *cobra.Command, depth int, visit func(*cobra.Command, int)) {
+	visit(cmd, depth)
+	for _, child := range cmd.Commands() {
+		walkDepth(child, depth+1, visit)
+	}
+}
+
+// isCobraBuiltin matches kit's built-in classification: completion,
+// help, __complete* and completion shell sub-leaves. Status is
+// reserved by kit but not built-in (wsm mounts it via WithStatus).
+func isCobraBuiltin(cmd *cobra.Command) bool {
+	switch cmd.Name() {
+	case "completion", "help", "__complete", "__completeNoDesc":
+		return true
+	}
+	if p := cmd.Parent(); p != nil && p.Name() == "completion" {
+		return true
+	}
+	return false
 }
