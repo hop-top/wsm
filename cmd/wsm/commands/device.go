@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"hop.top/kit/go/console/cli"
 	"hop.top/kit/go/console/output"
 )
 
@@ -36,8 +37,12 @@ func newDeviceGroupCmd(opts *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "device",
 		Short: "Device registry operations",
-		RunE:  groupOnlyRunE,
+		Long: `Inspect the device registry — the set of machines that have produced events
+or sessions in this workspace store. Use list to see all known devices and
+show to drill into per-device session activity.`,
+		RunE: groupOnlyRunE,
 	}
+	cli.SetTopLevelVerb(cmd)
 	cmd.AddCommand(
 		newDeviceListCmd(opts),
 		newDeviceShowCmd(opts),

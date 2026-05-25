@@ -11,6 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"hop.top/kit/go/console/cli"
 	"hop.top/kit/go/console/output"
 	"hop.top/kit/go/runtime/policy"
 	"hop.top/wsm/pkg/backend"
@@ -63,8 +64,12 @@ func newWorkspaceGroupCmd(opts *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "workspace",
 		Short: "Workspace operations",
-		RunE:  groupOnlyRunE,
+		Long: `Manage workspaces — the top-level container for sessions, snapshots, and
+events. Use this group to create, list, show, archive, unarchive, or delete
+workspaces, and to inspect per-workspace configuration via 'workspace config'.`,
+		RunE: groupOnlyRunE,
 	}
+	cli.SetTopLevelVerb(cmd)
 	cmd.AddCommand(
 		newWorkspaceAddCmd(opts),
 		newWorkspaceListCmd(opts),
@@ -503,7 +508,10 @@ func newWorkspaceConfigCmd(opts *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "config",
 		Short: "Workspace configuration",
-		RunE:  groupOnlyRunE,
+		Long: `Inspect resolved workspace configuration (backend, data directory, config
+file source). Read-only surface for confirming how wsm interpreted the layered
+config sources (defaults, file, environment, flags).`,
+		RunE: groupOnlyRunE,
 	}
 	cmd.AddCommand(showCmd)
 	return cmd
