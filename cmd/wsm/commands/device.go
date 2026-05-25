@@ -54,6 +54,10 @@ func newDeviceListCmd(opts *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List all registered devices",
+		Long: `List every device that has produced events or sessions in the active workspace
+store, including platform (OS/arch) and first/last-seen timestamps. Output
+renders as a table by default and as JSON or YAML when --format is set;
+read-only over the device registry.`,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
 				devs, err := app.manager.ListDevices(ctx)
@@ -88,14 +92,19 @@ func newDeviceListCmd(opts *globalOptions) *cobra.Command {
 			})
 		},
 	}
+	cli.SetSideEffect(cmd, cli.SideEffectRead)
 	return cmd
 }
 
 func newDeviceShowCmd(opts *globalOptions) *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "show <id-or-name>",
 		Short: "Show device details and activity",
-		Args:  cobra.ExactArgs(1),
+		Long: `Show full details of a single device resolved by ID or name, including
+hostname, platform, first/last-seen timestamps, and the list of sessions the
+device has participated in with per-session event counts. Read-only: surfaces
+stored device-registry state without mutating the workspace.`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
 				dev, err := app.manager.ResolveDeviceRef(ctx, args[0])
@@ -136,4 +145,6 @@ func newDeviceShowCmd(opts *globalOptions) *cobra.Command {
 			})
 		},
 	}
+	cli.SetSideEffect(cmd, cli.SideEffectRead)
+	return cmd
 }
