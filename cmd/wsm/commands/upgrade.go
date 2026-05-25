@@ -48,7 +48,10 @@ func newUpgradePreambleCmd() *cobra.Command {
 		Use:   "preamble",
 		Short: "Print the upgrade preamble fragment for skill files",
 		Long: `Print a markdown preamble fragment for embedding in WSM skill files.
-Agents read this to know how to self-upgrade wsm before executing tasks.`,
+Agents read this to know how to self-upgrade wsm before executing tasks.
+Default mode prints to stdout; --install writes the fragment to
+~/.config/wsm/skills/upgrade-preamble.md. Re-running with the same flags
+emits (or overwrites) the same content.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			level := skill.SnoozeOnce
 			if auto {
@@ -74,6 +77,12 @@ Agents read this to know how to self-upgrade wsm before executing tasks.`,
 	cmd.Flags().BoolVar(&auto, "auto", false, "Emit auto-upgrade (SnoozeNever) variant")
 	cmd.Flags().BoolVar(&never, "never", false, "Emit check-only (SnoozeAlways) variant")
 	cmd.Flags().BoolVar(&install, "install", false, "Write preamble to ~/.config/wsm/skills/")
+	// Layer-A: prints by default but --install writes a local file under
+	// ~/.config/wsm/skills. Tag conservatively at the worst-case tier the
+	// command can perform. Same inputs always produce the same fragment,
+	// and --install overwrites with that same content — idempotent.
+	cli.SetSideEffect(cmd, cli.SideEffectWriteLocal)
+	cli.SetIdempotency(cmd, cli.IdempotencyYes)
 	return cmd
 }
 
