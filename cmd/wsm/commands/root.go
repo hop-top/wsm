@@ -304,7 +304,16 @@ func NewRootCmd() *cobra.Command {
 			{Name: "profile", Usage: "Named profile (credentials/config)", StringVar: &opts.Profile},
 			{Name: "instance", Usage: "Backend instance", StringVar: &opts.Instance},
 		},
-	})
+	},
+		// kit/console/cli ships a fully-conforming `status` subcommand
+		// (the validator's reserved depth-1 verb). Mount it so we satisfy
+		// the reserved-status arm of Layer-A enforcement once
+		// DisableValidate flips off. Kit's defaults cover profile, env,
+		// auth, effective-config, and a workspace stub — wsm-specific
+		// providers can be registered via r.RegisterStatusProvider in a
+		// later slice without touching this wiring.
+		cli.WithStatus(cli.StatusConfig{}),
+	)
 	root := r.Cmd
 
 	// Bridge kit-bound globals into opts so subcommands keep reading
