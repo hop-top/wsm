@@ -6,6 +6,8 @@ import (
 	"runtime"
 
 	"github.com/spf13/cobra"
+
+	"hop.top/kit/go/console/cli"
 )
 
 func newVersionCmd() *cobra.Command {
@@ -50,5 +52,6 @@ func newVersionCmd() *cobra.Command {
 	}
 
 	cmd.Flags().BoolVar(&short, "short", false, "Output only the version number")
+	cli.SetTopLevelVerb(cmd)
 	return cmd
 }

@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"hop.top/kit/go/console/cli"
 	kitcliconfig "hop.top/kit/go/console/cli/config"
 	"hop.top/kit/go/console/output"
 	"hop.top/kit/go/core/xdg"
@@ -52,6 +53,7 @@ With --hop, creates .hop/wsm/ and symlinks .wsm/ -> .hop/wsm/.`,
 	}
 	cmd.Flags().BoolVar(&hop, "hop", false, "Use .hop/wsm/ as primary (for hop-managed projects)")
 	cmd.Flags().BoolVarP(&force, "force", "f", false, "Overwrite existing config directories")
+	cli.SetTopLevelVerb(cmd)
 	return cmd
 }
 
@@ -184,6 +186,7 @@ func newTUICmd(opts *globalOptions) *cobra.Command {
 			})
 		},
 	}
+	cli.SetTopLevelVerb(cmd)
 	return cmd
 }
 

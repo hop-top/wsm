@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"hop.top/kit/go/console/cli"
 	"hop.top/kit/go/console/output"
 	"hop.top/kit/go/runtime/policy"
 	"hop.top/wsm/pkg/detector"
@@ -18,8 +19,12 @@ func newSpaceGroupCmd(opts *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "space",
 		Short: "OWSF Space management",
-		RunE:  groupOnlyRunE,
+		Long: `Manage OWSF (Open Workspace Specification Format) spaces — typed mounts
+that attach paths, capabilities, and trust levels to a workspace. Use add to
+register a space, list/show to inspect, delete to remove, sync to reconcile.`,
+		RunE: groupOnlyRunE,
 	}
+	cli.SetTopLevelVerb(cmd)
 	cmd.AddCommand(
 		newSpaceAddCmd(opts),
 		newSpaceListCmd(opts),

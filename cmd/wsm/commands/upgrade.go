@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+	"hop.top/kit/go/console/cli"
 	"hop.top/kit/go/core/upgrade"
 	"hop.top/kit/go/core/upgrade/skill"
 )
@@ -35,6 +36,7 @@ func newUpgradeCmd() *cobra.Command {
 
 	cmd.Flags().BoolVar(&auto, "auto", false, "Install without prompting")
 	cmd.Flags().BoolVarP(&quiet, "quiet", "q", false, "Suppress output when already up to date")
+	cli.SetTopLevelVerb(cmd)
 	cmd.AddCommand(newUpgradePreambleCmd())
 	return cmd
 }

@@ -10,6 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"hop.top/kit/go/console/cli"
 	"hop.top/kit/go/console/output"
 	"hop.top/kit/go/runtime/policy"
 	"hop.top/wsm/pkg/backend"
@@ -31,8 +32,12 @@ func newSnapshotGroupCmd(opts *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "snapshot",
 		Short: "Snapshot operations",
-		RunE:  groupOnlyRunE,
+		Long: `Manage workspace snapshots — point-in-time projections of session state
+suitable for agent context handoff. Use generate to materialize a snapshot,
+list/show to query existing ones, and context to emit a snapshot payload.`,
+		RunE: groupOnlyRunE,
 	}
+	cli.SetTopLevelVerb(cmd)
 	cmd.AddCommand(
 		newSnapshotListCmd(opts),
 		newSnapshotGenerateCmd(opts),

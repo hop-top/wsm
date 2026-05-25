@@ -10,6 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"hop.top/kit/go/console/cli"
 	"hop.top/kit/go/console/output"
 	"hop.top/wsm/pkg/backend"
 	"hop.top/wsm/pkg/workspace"
@@ -30,8 +31,12 @@ func newEventGroupCmd(opts *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "event",
 		Short: "Event operations",
-		RunE:  groupOnlyRunE,
+		Long: `Capture and inspect workspace events — the append-only audit log of session
+activity. Use add to record new events, list to query the stream with filters,
+and show to fetch a single event by sequence number.`,
+		RunE: groupOnlyRunE,
 	}
+	cli.SetTopLevelVerb(cmd)
 	cmd.AddCommand(
 		newEventListCmd(opts),
 		newEventAddCmd(opts),
