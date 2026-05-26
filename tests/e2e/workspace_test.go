@@ -242,7 +242,11 @@ func TestWorkspaceRemove(t *testing.T) {
 	if runtime.GOOS == "darwin" {
 		res = r.runWithEnv(map[string]string{"WSM_DELETE_CONFIRM": "yes"}, "workspace", "delete", "old-work", "--note", "cleanup", "--format", "json")
 	} else {
-		res = r.runTTYWithInput("y\n", "workspace", "delete", "old-work", "--note", "cleanup")
+		// Wait for the [y/N]: prompt before sending input. Fang's
+		// startup HasDarkBackground query reads from stdin for ~2s
+		// and would otherwise swallow any pre-buffered y\n. See
+		// T-0141.
+		res = r.runTTYExpectingPrompt("[y/N]:", "y\n", "workspace", "delete", "old-work", "--note", "cleanup")
 	}
 	requireExitCode(t, res, 0)
 	if runtime.GOOS == "darwin" {
