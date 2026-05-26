@@ -11,7 +11,7 @@ require (
 	github.com/oklog/ulid/v2 v2.1.1
 	github.com/spf13/cobra v1.10.2
 	gopkg.in/yaml.v3 v3.0.1
-	hop.top/kit v0.4.0-alpha.4
+	hop.top/kit v0.4.0-alpha.5
 )
 
 require (
@@ -80,7 +80,7 @@ require (
 	golang.org/x/mod v0.35.0 // indirect
 	golang.org/x/net v0.53.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect
-	golang.org/x/sys v0.44.0 // indirect
+	golang.org/x/sys v0.45.0 // indirect
 	golang.org/x/text v0.36.0 // indirect
 	golang.org/x/tools v0.44.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260414002931-afd174a4e478 // indirect
@@ -92,3 +92,10 @@ require (
 	modernc.org/memory v1.11.0 // indirect
 	modernc.org/sqlite v1.48.2 // indirect
 )
+
+// TEMPORARY: pin charm.land/lipgloss/v2 to a fork that honors NO_COLOR
+// in the compat package's init-time terminal background-color query.
+// Remove this replace once https://github.com/charmbracelet/lipgloss/pull/692
+// merges and lipgloss ships a release containing the fix.
+// Tracking: hop-top/kit T-0829, hop-top/wsm T-0139.
+replace charm.land/lipgloss/v2 => github.com/jadb/lipgloss/v2 v2.0.4-0.20260525223628-5250cbab534f
