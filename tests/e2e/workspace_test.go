@@ -237,12 +237,20 @@ func TestWorkspaceRemove(t *testing.T) {
 
 	// delete-requires-note default policy (T-1288) gates delete on a
 	// non-empty --note. Pass one so the canonical happy path keeps
-	// exercising the success branch.
+	// exercising the success branch. T-0122: confirmation is now gated
+	// by kit's global --confirm flag.
 	var res commandResult
 	if runtime.GOOS == "darwin" {
-		res = r.runWithEnv(map[string]string{"WSM_DELETE_CONFIRM": "yes"}, "workspace", "delete", "old-work", "--note", "cleanup", "--format", "json")
+		// kit's --confirm=yes bypasses the policy gate without needing
+		// a PTY (PTY tests flake on darwin — see T-0141).
+		res = r.run("workspace", "delete", "old-work", "--confirm=yes", "--note", "cleanup", "--format", "json")
 	} else {
-		res = r.runTTYWithInput("y\n", "workspace", "delete", "old-work", "--note", "cleanup")
+		// Wait for kit's [y/N] prompt before sending input. Fang's
+		// startup HasDarkBackground query reads from stdin for ~2s
+		// and would otherwise swallow any pre-buffered y\n. See
+		// T-0141. Kit emits "[y/N] " (no colon); match the bracket
+		// substring only.
+		res = r.runTTYExpectingPrompt("[y/N]", "y\n", "workspace", "delete", "old-work", "--note", "cleanup")
 	}
 	requireExitCode(t, res, 0)
 	if runtime.GOOS == "darwin" {
@@ -506,5 +514,55 @@ func TestWorkspaceDelete_NoteFlag(t *testing.T) {
 	requireExitCode(t, withoutNote, 4)
 	if !strings.Contains(withoutNote.Combined(), "delete-requires-note") {
 		t.Fatalf("expected stderr to name the denying policy, got:\n%s", withoutNote.Combined())
+	}
+}
+
+// TestWorkspaceDelete_ConfirmYes asserts kit's --confirm=yes bypasses
+// the confirmation gate on non-TTY (piped) invocations. Positive twin
+// of TestPipe_RemoveRequiresConfirm. T-0122.
+func TestWorkspaceDelete_ConfirmYes(t *testing.T) {
+	r := newRunner(t)
+	r.mustCreateWorkspace("confirm-yes")
+
+	res := r.run("workspace", "delete", "confirm-yes", "--confirm=yes", "--note", "cleanup", "--format", "json")
+	requireExitCode(t, res, 0)
+	var payload map[string]any
+	mustUnmarshalJSON(t, res.Stdout, &payload)
+	if payload["deleted"] != true {
+		t.Fatalf("expected deleted=true payload, got: %s", res.Stdout)
+	}
+}
+
+// TestWorkspaceDelete_ConfirmNo asserts --confirm=no on a non-TTY
+// invocation refuses with UNAUTHORIZED (exit 5), matching the default
+// non-TTY policy but with an explicit refusal envelope. T-0122.
+func TestWorkspaceDelete_ConfirmNo(t *testing.T) {
+	r := newRunner(t)
+	r.mustCreateWorkspace("confirm-no")
+
+	res := r.run("workspace", "delete", "confirm-no", "--confirm=no", "--note", "cleanup")
+	requireExitCode(t, res, 5)
+	if !strings.Contains(strings.ToLower(res.Stderr), "unauthorized") &&
+		!strings.Contains(strings.ToLower(res.Stderr), "confirm=no") {
+		t.Fatalf("expected UNAUTHORIZED refusal envelope, got: %s", res.Stderr)
+	}
+}
+
+// TestWorkspaceDelete_ForceBridge asserts that legacy --force still
+// works (bridged to --confirm=yes) and prints the deprecation hint to
+// stderr. T-0122.
+func TestWorkspaceDelete_ForceBridge(t *testing.T) {
+	r := newRunner(t)
+	r.mustCreateWorkspace("force-bridge")
+
+	res := r.run("workspace", "delete", "force-bridge", "--force", "--note", "cleanup", "--format", "json")
+	requireExitCode(t, res, 0)
+	var payload map[string]any
+	mustUnmarshalJSON(t, res.Stdout, &payload)
+	if payload["deleted"] != true {
+		t.Fatalf("expected deleted=true payload, got: %s", res.Stdout)
+	}
+	if !strings.Contains(strings.ToLower(res.Stderr), "--force is deprecated") {
+		t.Fatalf("expected --force deprecation hint on stderr, got: %s", res.Stderr)
 	}
 }

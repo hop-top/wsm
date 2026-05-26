@@ -1,16 +1,15 @@
 package commands
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"os"
-	"runtime"
 	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 
+	"hop.top/kit/go/console/cli"
 	"hop.top/kit/go/console/output"
 	"hop.top/kit/go/runtime/policy"
 	"hop.top/wsm/pkg/backend"
@@ -63,8 +62,15 @@ func newWorkspaceGroupCmd(opts *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "workspace",
 		Short: "Workspace operations",
-		RunE:  groupOnlyRunE,
+		Long: `Manage workspaces — the top-level container for sessions, snapshots, and
+events. Use this group to create, list, show, archive, unarchive, or delete
+workspaces, and to inspect per-workspace configuration via 'workspace config'.`,
+		RunE: groupOnlyRunE,
 	}
+	cli.SetTopLevelVerb(cmd)
+	// Intermediate ancestor of the depth-3 leaf `wsm workspace config show`;
+	// kit requires kit/hierarchical on every non-root, non-leaf ancestor.
+	cli.SetHierarchical(cmd)
 	cmd.AddCommand(
 		newWorkspaceAddCmd(opts),
 		newWorkspaceListCmd(opts),
@@ -83,7 +89,10 @@ func newWorkspaceAddCmd(opts *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "add <name>",
 		Short: "Create a workspace",
-		Args:  cobra.ExactArgs(1),
+		Long: `Create a new workspace under the active backend. The workspace becomes the
+container for sessions, events, and snapshots captured against it. Use
+--description and --tag to attach metadata at creation time.`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
 				ws, err := app.manager.Create(ctx, args[0], workspace.CreateOptions{Description: description, Tags: tags})
@@ -111,6 +120,7 @@ func newWorkspaceAddCmd(opts *globalOptions) *cobra.Command {
 	}
 	cmd.Flags().StringVarP(&description, "description", "d", "", "Workspace description")
 	cmd.Flags().StringArrayVarP(&tags, "tag", "t", nil, "Tags (repeatable)")
+	cli.SetSideEffect(cmd, cli.SideEffectWrite)
 	return cmd
 }
 
@@ -119,6 +129,9 @@ func newWorkspaceListCmd(opts *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List workspaces",
+		Long: `List workspaces from the active backend, optionally filtered by --status and
+sorted via --sort. Output renders as a table by default and as JSON or YAML
+when --format is set; --quiet emits IDs only for scripting.`,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
 				sortDir := "desc"
@@ -185,6 +198,7 @@ func newWorkspaceListCmd(opts *globalOptions) *cobra.Command {
 	_ = cmd.RegisterFlagCompletionFunc("sort", func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
 		return []string{"created", "updated", "name"}, cobra.ShellCompDirectiveNoFileComp
 	})
+	cli.SetSideEffect(cmd, cli.SideEffectRead)
 	return cmd
 }
 
@@ -193,7 +207,11 @@ func newWorkspaceShowCmd(opts *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "show <id-or-name>",
 		Short: "Show workspace details",
-		Args:  cobra.ExactArgs(1),
+		Long: `Show a workspace resolved by ID or name, including metadata, statistics,
+the latest snapshot summary, and the most recent events. Use --events to
+include the full event log and --devices to list attached devices and
+sessions. Read-only: surfaces stored workspace state without mutating it.`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
 				ws, err := app.manager.ResolveWorkspaceRef(ctx, args[0])
@@ -302,6 +320,7 @@ func newWorkspaceShowCmd(opts *globalOptions) *cobra.Command {
 	// Support both flags for backward compatibility/tests
 	cmd.Flags().BoolVar(&eventsAll, "events-all", false, "Show all events instead of last 5")
 	cmd.Flags().BoolVar(&showDevices, "devices", false, "Show attached devices")
+	cli.SetSideEffect(cmd, cli.SideEffectRead)
 	return cmd
 }
 
@@ -310,7 +329,10 @@ func newWorkspaceArchiveCmd(opts *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "archive <workspace>",
 		Short: "Mark a workspace as archived (read-only)",
-		Args:  cobra.ExactArgs(1),
+		Long: `Archive a workspace, flipping it to read-only and excluding it from default
+list views. Idempotent: re-running on an already-archived workspace yields the
+same state. Use 'workspace unarchive' to restore active status.`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
 				ws, err := app.manager.ResolveWorkspaceRef(ctx, args[0])
@@ -347,6 +369,8 @@ func newWorkspaceArchiveCmd(opts *globalOptions) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVarP(&note, "note", "n", "", "Reason note (recorded for audit; future policies may require it)")
+	cli.SetSideEffect(cmd, cli.SideEffectWrite)
+	cli.SetIdempotency(cmd, cli.IdempotencyYes)
 	return cmd
 }
 
@@ -355,7 +379,10 @@ func newWorkspaceUnarchiveCmd(opts *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "unarchive <workspace>",
 		Short: "Restore an archived workspace to active status",
-		Args:  cobra.ExactArgs(1),
+		Long: `Unarchive a workspace, flipping it back to active and restoring write access.
+Idempotent: re-running on an already-active workspace yields the same state.
+Inverse of 'workspace archive'.`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
 				ws, err := app.manager.ResolveWorkspaceRef(ctx, args[0])
@@ -392,6 +419,8 @@ func newWorkspaceUnarchiveCmd(opts *globalOptions) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVarP(&note, "note", "n", "", "Reason note (recorded for audit; future policies may require it)")
+	cli.SetSideEffect(cmd, cli.SideEffectWrite)
+	cli.SetIdempotency(cmd, cli.IdempotencyYes)
 	return cmd
 }
 
@@ -401,7 +430,23 @@ func newWorkspaceDeleteCmd(opts *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "delete <workspace>",
 		Short: "Permanently delete a workspace and its history",
-		Args:  cobra.ExactArgs(1),
+		Long: `Permanently delete a workspace and all of its events, snapshots, and metadata.
+
+Confirmation is gated by the global --confirm flag (auto|yes|no|prompt):
+prompts on a TTY, denies on non-TTY unless --confirm=yes. Use --dry-run to
+preview what would be removed without applying. Destructive and not
+recoverable.
+
+Deprecated: --force is a backward-compat alias for --confirm=yes. New
+scripts should pass --confirm=yes directly; --force will be removed in a
+future release.`,
+		Args: cobra.ExactArgs(1),
+		PreRunE: func(cmd *cobra.Command, _ []string) error {
+			// Bridge legacy --force to kit's global --confirm=yes so the
+			// policy gate (wrapPolicyRunE → gateConfirm) accepts the
+			// invocation. Emit a one-shot deprecation hint to stderr.
+			return bridgeForceToConfirm(cmd, force)
+		},
 		RunE: func(_ *cobra.Command, args []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
 				preview, err := app.manager.DeletePreview(ctx, args[0])
@@ -420,31 +465,13 @@ func newWorkspaceDeleteCmd(opts *globalOptions) *cobra.Command {
 					return nil
 				}
 
-				if !force {
-					line := ""
-					if runtime.GOOS == "darwin" {
-						line = strings.TrimSpace(strings.ToLower(os.Getenv("WSM_DELETE_CONFIRM")))
-					}
-					if !stdoutIsTTY() && line == "" {
-						return workspace.NewErrorUsage("remove in non-TTY requires --force")
-					}
-					if line == "" {
-						// §6.3: prompt is non-data → stderr.
-						fmt.Fprintf(os.Stderr, "Remove workspace %q? [y/N]: ", preview.WorkspaceName)
-						reader := bufio.NewReader(os.Stdin)
-						line, _ = reader.ReadString('\n')
-						line = strings.TrimSpace(strings.ToLower(line))
-					}
-					if line != "y" && line != "yes" {
-						fmt.Fprintln(os.Stderr, "Aborted.")
-						return fmt.Errorf("deletion cancelled")
-					}
-				}
-
 				// Plumb --note into ctx via policy.ContextAttrsKey so
 				// the runtime policy engine can read it during pre-event
 				// veto. T-1287 wires the flag; T-1288 adds the default
-				// policy that enforces note presence.
+				// policy that enforces note presence. Note: kit's
+				// --confirm gate fires BEFORE this RunE; the note policy
+				// fires AFTER (inside manager.Delete via bus subscriber)
+				// — both gates remain effective.
 				if note != "" {
 					ctx = context.WithValue(ctx, policy.ContextAttrsKey, map[string]any{
 						"note": note,
@@ -471,9 +498,11 @@ func newWorkspaceDeleteCmd(opts *globalOptions) *cobra.Command {
 			})
 		},
 	}
-	cmd.Flags().BoolVarP(&force, "force", "f", false, "Skip confirmation prompt")
+	cmd.Flags().BoolVarP(&force, "force", "f", false, "Deprecated: alias for --confirm=yes (kept for backward compat)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Preview removal without deleting data")
 	cmd.Flags().StringVarP(&note, "note", "n", "", "Reason note (recorded for audit; future policies may require it)")
+	// idempotent: kit default (delete → Yes).
+	cli.SetSideEffect(cmd, cli.SideEffectDestructive)
 	return cmd
 }
 
@@ -481,6 +510,9 @@ func newWorkspaceConfigCmd(opts *globalOptions) *cobra.Command {
 	showCmd := &cobra.Command{
 		Use:   "show",
 		Short: "Show resolved configuration",
+		Long: `Show the workspace configuration as resolved by the layered loader (defaults,
+config file, environment, flags). Reports the active backend, data directory,
+and the source path of the config file actually used.`,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			cfg, err := config.Load(config.LoadOptions{FlagBackend: opts.Backend, FlagDataDir: opts.DataDir, FlagBackendURL: opts.BackendURL})
 			if err != nil {
@@ -500,11 +532,17 @@ func newWorkspaceConfigCmd(opts *globalOptions) *cobra.Command {
 			return nil
 		},
 	}
+	cli.SetSideEffect(showCmd, cli.SideEffectRead)
 	cmd := &cobra.Command{
 		Use:   "config",
 		Short: "Workspace configuration",
-		RunE:  groupOnlyRunE,
+		Long: `Inspect resolved workspace configuration (backend, data directory, config
+file source). Read-only surface for confirming how wsm interpreted the layered
+config sources (defaults, file, environment, flags).`,
+		RunE: groupOnlyRunE,
 	}
+	// Depth-2 intermediate in the wsm → workspace → config → show chain.
+	cli.SetHierarchical(cmd)
 	cmd.AddCommand(showCmd)
 	return cmd
 }

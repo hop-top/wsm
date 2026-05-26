@@ -1,15 +1,14 @@
 package commands
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 
+	"hop.top/kit/go/console/cli"
 	"hop.top/kit/go/console/output"
 	"hop.top/kit/go/runtime/policy"
 	"hop.top/wsm/pkg/backend"
@@ -31,8 +30,12 @@ func newSnapshotGroupCmd(opts *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "snapshot",
 		Short: "Snapshot operations",
-		RunE:  groupOnlyRunE,
+		Long: `Manage workspace snapshots — point-in-time projections of session state
+suitable for agent context handoff. Use generate to materialize a snapshot,
+list/show to query existing ones, and context to emit a snapshot payload.`,
+		RunE: groupOnlyRunE,
 	}
+	cli.SetTopLevelVerb(cmd)
 	cmd.AddCommand(
 		newSnapshotListCmd(opts),
 		newSnapshotGenerateCmd(opts),
@@ -52,6 +55,9 @@ func newSnapshotListCmd(opts *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List snapshots with filtering",
+		Long: `List snapshots across one or more workspaces with optional filtering by
+session, time window, and sort direction. Output renders as a table by default
+and as JSON or YAML when --format is set; --quiet emits IDs only for scripting.`,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
 				var wsIDs []string
@@ -124,6 +130,7 @@ func newSnapshotListCmd(opts *globalOptions) *cobra.Command {
 	_ = cmd.RegisterFlagCompletionFunc("sort", func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
 		return []string{"asc", "desc"}, cobra.ShellCompDirectiveNoFileComp
 	})
+	cli.SetSideEffect(cmd, cli.SideEffectRead)
 	return cmd
 }
 
@@ -133,7 +140,11 @@ func newSnapshotGenerateCmd(opts *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "generate [workspace]",
 		Short: "Generate and persist a workspace snapshot",
-		Args:  cobra.MaximumNArgs(1),
+		Long: `Generate a new snapshot capturing the current state of a workspace as a
+point-in-time projection — session metadata, file changes, tool calls, and
+device list — and persist it under a fresh ID. Not idempotent: each invocation
+mints a new snapshot reflecting the current sequence number.`,
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
 				var ws workspace.Workspace
@@ -192,14 +203,20 @@ func newSnapshotGenerateCmd(opts *globalOptions) *cobra.Command {
 	cmd.Flags().StringVarP(&sessionID, "session", "s", "", "Filter by session ID")
 	cmd.Flags().StringVarP(&name, "name", "n", "", "Snapshot name/alias")
 	cmd.Flags().BoolVar(&isSeed, "seed", false, "Mark as seed snapshot")
+	cli.SetSideEffect(cmd, cli.SideEffectWrite)
+	cli.SetIdempotency(cmd, cli.IdempotencyNo)
 	return cmd
 }
 
 func newSnapshotShowCmd(opts *globalOptions) *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "show <workspace>",
 		Short: "Show latest snapshot",
-		Args:  cobra.ExactArgs(1),
+		Long: `Show the most recent snapshot for a workspace, resolved by ID or name,
+including sequence number, generation time, and key counts (messages, tool
+calls, files changed). Read-only: surfaces stored snapshot state without
+mutating the workspace. Errors if no snapshot exists for the workspace yet.`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
 				ws, err := app.manager.ResolveWorkspaceRef(ctx, args[0])
@@ -225,6 +242,8 @@ func newSnapshotShowCmd(opts *globalOptions) *cobra.Command {
 			})
 		},
 	}
+	cli.SetSideEffect(cmd, cli.SideEffectRead)
+	return cmd
 }
 
 func newSnapshotContextCmd(opts *globalOptions) *cobra.Command {
@@ -232,7 +251,10 @@ func newSnapshotContextCmd(opts *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "context <workspace>",
 		Short: "Output markdown summary context for LLM",
-		Args:  cobra.ExactArgs(1),
+		Long: `Emit a markdown-formatted context document summarizing the current state of a
+workspace — suitable for handoff to an LLM agent. Read-only: derives output
+from existing snapshot and event state without mutating the workspace.`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
 				ws, err := app.manager.ResolveWorkspaceRef(ctx, args[0])
@@ -251,6 +273,8 @@ func newSnapshotContextCmd(opts *globalOptions) *cobra.Command {
 		},
 	}
 	cmd.Flags().IntVar(&recentEvents, "events", 5, "Number of recent events to include")
+	cli.SetSideEffect(cmd, cli.SideEffectRead)
+	cli.SetIdempotency(cmd, cli.IdempotencyYes)
 	return cmd
 }
 
@@ -260,7 +284,10 @@ func newSnapshotUpdateCmd(opts *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "update <snapshot-id-or-name>",
 		Short: "Update snapshot metadata",
-		Args:  cobra.ExactArgs(1),
+		Long: `Update mutable metadata on an existing snapshot resolved by ID or name —
+currently the snapshot name/alias and the is_seed flag. Idempotent: re-running
+with the same flag values yields the same observable state.`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(c *cobra.Command, args []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
 				uOpts := workspace.UpdateSnapshotOptions{}
@@ -292,6 +319,8 @@ func newSnapshotUpdateCmd(opts *globalOptions) *cobra.Command {
 	}
 	cmd.Flags().StringVarP(&name, "name", "n", "", "Snapshot name/alias")
 	cmd.Flags().BoolVar(&isSeed, "seed", false, "Mark as seed snapshot")
+	// idempotent: kit default (update → Yes).
+	cli.SetSideEffect(cmd, cli.SideEffectWrite)
 	return cmd
 }
 
@@ -301,31 +330,29 @@ func newSnapshotDeleteCmd(opts *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "delete <snapshot-id-or-name>",
 		Short: "Delete a snapshot",
-		Args:  cobra.ExactArgs(1),
+		Long: `Permanently delete a snapshot resolved by ID or name. The underlying event
+history of the workspace is preserved; only the snapshot projection is
+removed.
+
+Confirmation is gated by the global --confirm flag (auto|yes|no|prompt):
+prompts on a TTY, denies on non-TTY unless --confirm=yes.
+
+Deprecated: --force is a backward-compat alias for --confirm=yes. New
+scripts should pass --confirm=yes directly; --force will be removed in a
+future release.`,
+		Args: cobra.ExactArgs(1),
+		PreRunE: func(cmd *cobra.Command, _ []string) error {
+			return bridgeForceToConfirm(cmd, force)
+		},
 		RunE: func(_ *cobra.Command, args []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
-				if !force {
-					snap, err := app.manager.GetSnapshot(ctx, args[0])
-					if err != nil {
-						return err
-					}
-					if !stdoutIsTTY() {
-						return workspace.NewErrorUsage("remove in non-TTY requires --force")
-					}
-					// §6.3: prompt is non-data → stderr.
-					fmt.Fprintf(os.Stderr, "Remove snapshot %q? [y/N]: ", snap.ID)
-					reader := bufio.NewReader(os.Stdin)
-					line, _ := reader.ReadString('\n')
-					line = strings.TrimSpace(strings.ToLower(line))
-					if line != "y" && line != "yes" {
-						fmt.Fprintln(os.Stderr, "Aborted.")
-						return nil
-					}
-				}
 				// Plumb --note into ctx via policy.ContextAttrsKey so
 				// the runtime policy engine can read it during pre-event
 				// veto. T-1287 wires the flag; T-1288 adds the default
-				// policy that enforces note presence.
+				// policy that enforces note presence. Note: kit's
+				// --confirm gate fires BEFORE this RunE; the note policy
+				// fires AFTER (inside manager.DeleteSnapshot via bus
+				// subscriber) — both gates remain effective.
 				if note != "" {
 					ctx = context.WithValue(ctx, policy.ContextAttrsKey, map[string]any{
 						"note": note,
@@ -351,7 +378,9 @@ func newSnapshotDeleteCmd(opts *globalOptions) *cobra.Command {
 			})
 		},
 	}
-	cmd.Flags().BoolVarP(&force, "force", "f", false, "Skip confirmation")
+	cmd.Flags().BoolVarP(&force, "force", "f", false, "Deprecated: alias for --confirm=yes (kept for backward compat)")
 	cmd.Flags().StringVarP(&note, "note", "n", "", "Reason note (recorded for audit; future policies may require it)")
+	// idempotent: kit default (delete → Yes).
+	cli.SetSideEffect(cmd, cli.SideEffectDestructive)
 	return cmd
 }

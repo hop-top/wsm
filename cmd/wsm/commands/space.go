@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"hop.top/kit/go/console/cli"
 	"hop.top/kit/go/console/output"
 	"hop.top/kit/go/runtime/policy"
 	"hop.top/wsm/pkg/detector"
@@ -18,8 +19,12 @@ func newSpaceGroupCmd(opts *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "space",
 		Short: "OWSF Space management",
-		RunE:  groupOnlyRunE,
+		Long: `Manage OWSF (Open Workspace Specification Format) spaces — typed mounts
+that attach paths, capabilities, and trust levels to a workspace. Use add to
+register a space, list/show to inspect, delete to remove, sync to reconcile.`,
+		RunE: groupOnlyRunE,
 	}
+	cli.SetTopLevelVerb(cmd)
 	cmd.AddCommand(
 		newSpaceAddCmd(opts),
 		newSpaceListCmd(opts),
@@ -37,7 +42,11 @@ func newSpaceAddCmd(opts *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "add <workspace> <id>",
 		Short: "Associate a compute/storage space with a workspace",
-		Args:  cobra.ExactArgs(2),
+		Long: `Associate a typed OWSF space with a workspace — a filesystem path, container,
+VM, API endpoint, database, or remote resource scoped by capabilities and a
+trust level. Optionally write-through to rux projects.yaml for IDE integration
+and use --auto to attempt detection of attributes from the resource path.`,
+		Args: cobra.ExactArgs(2),
 		RunE: func(_ *cobra.Command, args []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
 				s := workspace.Space{
@@ -102,6 +111,8 @@ func newSpaceAddCmd(opts *globalOptions) *cobra.Command {
 	cmd.Flags().StringSliceVar(&capabilities, "cap", nil, "Space capabilities (OASF URI, repeatble)")
 	cmd.Flags().StringVar(&trustLevel, "trust", string(workspace.TrustLocal), "Trust level (local|verified|external|untrusted)")
 	cmd.Flags().BoolVar(&autoDetect, "auto", false, "Attempt to auto-detect space attributes from path")
+	// idempotent: kit default (add → No) matches semantics.
+	cli.SetSideEffect(cmd, cli.SideEffectWrite)
 	return cmd
 }
 
@@ -109,7 +120,11 @@ func newSpaceListCmd(opts *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list <workspace>",
 		Short: "List spaces associated with a workspace",
-		Args:  cobra.ExactArgs(1),
+		Long: `List the OWSF spaces bound to a workspace, resolved by ID or name, including
+each space's type, trust level, and boundary path. Output renders as a table by
+default and as JSON or YAML when --format is set; --quiet emits IDs only for
+scripting.`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
 				spaces, err := app.manager.ListWorkspaceSpaces(ctx, args[0])
@@ -133,14 +148,19 @@ func newSpaceListCmd(opts *globalOptions) *cobra.Command {
 			})
 		},
 	}
+	cli.SetSideEffect(cmd, cli.SideEffectRead)
 	return cmd
 }
 
 func newSpaceShowCmd(opts *globalOptions) *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "show <space-id>",
 		Short: "Show space details",
-		Args:  cobra.ExactArgs(1),
+		Long: `Show full details of a single OWSF space resolved by ID, including its type,
+trust level, boundary, parent (if nested), capabilities, and any recorded
+observables. Read-only: surfaces stored space state without mutating the
+workspace.`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
 				s, err := app.manager.GetSpace(ctx, args[0])
@@ -172,6 +192,8 @@ func newSpaceShowCmd(opts *globalOptions) *cobra.Command {
 			})
 		},
 	}
+	cli.SetSideEffect(cmd, cli.SideEffectRead)
+	return cmd
 }
 
 func newSpaceDeleteCmd(opts *globalOptions) *cobra.Command {
@@ -180,7 +202,27 @@ func newSpaceDeleteCmd(opts *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "delete <workspace> <space-id>",
 		Short: "Dissociate a space from a workspace",
-		Args:  cobra.ExactArgs(2),
+		Long: `Dissociate an OWSF space from a workspace, resolved by workspace + space ID.
+Removes the space binding from the wsm DB but leaves the underlying resource
+untouched.
+
+Confirmation is gated by the global --confirm flag (auto|yes|no|prompt):
+prompts on a TTY, denies on non-TTY unless --confirm=yes. Use --note to
+record a reason for audit (and may be required by policy in the future).
+
+--force cascade-removes nested child spaces AND, for backward compat,
+bridges to --confirm=yes (so existing scripts keep working). New scripts
+should pass --confirm=yes separately and use --force only when cascade is
+intended; the cascade meaning of --force is stable, but the implicit
+confirmation bridge is deprecated and will be removed in a future
+release.`,
+		Args: cobra.ExactArgs(2),
+		PreRunE: func(cmd *cobra.Command, _ []string) error {
+			// Bridge --force → --confirm=yes for back-compat. The flag's
+			// cascade-children semantics remain (consumed by RemoveSpace
+			// below); this PreRun only wires the kit gate.
+			return bridgeForceToConfirm(cmd, force)
+		},
 		RunE: func(_ *cobra.Command, args []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
 				// Plumb --note into ctx via policy.ContextAttrsKey so
@@ -205,8 +247,9 @@ func newSpaceDeleteCmd(opts *globalOptions) *cobra.Command {
 			})
 		},
 	}
-	cmd.Flags().BoolVarP(&force, "force", "f", false, "Force removal (cascade child spaces)")
+	cmd.Flags().BoolVarP(&force, "force", "f", false, "Cascade-remove child spaces; also bridges to --confirm=yes (deprecated)")
 	cmd.Flags().StringVarP(&note, "note", "n", "", "Reason note (recorded for audit; future policies may require it)")
+	cli.SetSideEffect(cmd, cli.SideEffectDestructive)
 	return cmd
 }
 
@@ -220,10 +263,14 @@ func newSpaceDeleteCmd(opts *globalOptions) *cobra.Command {
 // surface nested spaces in CLI add flows — if/when nested spaces need
 // to be synced, recurse via parent ID.
 func newSpaceSyncCmd(opts *globalOptions) *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "sync",
 		Short: "Rewrite rux projects.yaml from wsm DB (recovery)",
-		Args:  cobra.NoArgs,
+		Long: `Rebuild rux projects.yaml from the spaces recorded in the wsm DB — useful
+after a partial write failure during 'space add', a fresh checkout where the
+file is missing, or to recover from drift. Idempotent: re-running at steady
+state yields the same projects.yaml; existing StartupCmd values are preserved.`,
+		Args: cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
 				spaces, err := app.manager.ListSpaces(ctx, "")
@@ -268,4 +315,7 @@ func newSpaceSyncCmd(opts *globalOptions) *cobra.Command {
 			})
 		},
 	}
+	// idempotent: kit default (sync → Yes) matches semantics.
+	cli.SetSideEffect(cmd, cli.SideEffectWrite)
+	return cmd
 }

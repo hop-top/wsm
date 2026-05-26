@@ -6,6 +6,8 @@ import (
 	"runtime"
 
 	"github.com/spf13/cobra"
+
+	"hop.top/kit/go/console/cli"
 )
 
 func newVersionCmd() *cobra.Command {
@@ -14,7 +16,10 @@ func newVersionCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "version",
 		Short: "Print version information",
-		Long:  `Print detailed version information including build metadata.`,
+		Long: `Print version information including the semver tag, short commit
+SHA, Go runtime, and host OS/arch. Use --short to emit only the bare
+version string; honor the global --format flag for JSON or YAML output
+of the full set.`,
 		Run: func(cmd *cobra.Command, _ []string) {
 			if short {
 				fmt.Println(Version)
@@ -50,5 +55,10 @@ func newVersionCmd() *cobra.Command {
 	}
 
 	cmd.Flags().BoolVar(&short, "short", false, "Output only the version number")
+	cli.SetTopLevelVerb(cmd)
+	// Layer-A: pure read of build-time strings; always observably the
+	// same for a given binary.
+	cli.SetSideEffect(cmd, cli.SideEffectRead)
+	cli.SetIdempotency(cmd, cli.IdempotencyYes)
 	return cmd
 }

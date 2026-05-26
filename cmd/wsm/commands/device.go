@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"hop.top/kit/go/console/cli"
 	"hop.top/kit/go/console/output"
 )
 
@@ -25,19 +26,23 @@ type deviceRow struct {
 // deviceSessionRow is the table projection for the SESSIONS section of
 // `device show`. Mirrors backend.DeviceSession with shortened IDs.
 type deviceSessionRow struct {
-	Session       string `table:"SESSION,priority=8"       json:"session"`
-	Agent         string `table:"AGENT,priority=6"         json:"agent"`
-	Workspace     string `table:"WORKSPACE,priority=7"     json:"workspace"`
-	Events        int    `table:"EVENTS,priority=5"        json:"events"`
-	LastActivity  string `table:"LAST ACTIVITY,priority=4" json:"last_activity"`
+	Session      string `table:"SESSION,priority=8"       json:"session"`
+	Agent        string `table:"AGENT,priority=6"         json:"agent"`
+	Workspace    string `table:"WORKSPACE,priority=7"     json:"workspace"`
+	Events       int    `table:"EVENTS,priority=5"        json:"events"`
+	LastActivity string `table:"LAST ACTIVITY,priority=4" json:"last_activity"`
 }
 
 func newDeviceGroupCmd(opts *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "device",
 		Short: "Device registry operations",
-		RunE:  groupOnlyRunE,
+		Long: `Inspect the device registry — the set of machines that have produced events
+or sessions in this workspace store. Use list to see all known devices and
+show to drill into per-device session activity.`,
+		RunE: groupOnlyRunE,
 	}
+	cli.SetTopLevelVerb(cmd)
 	cmd.AddCommand(
 		newDeviceListCmd(opts),
 		newDeviceShowCmd(opts),
@@ -49,6 +54,10 @@ func newDeviceListCmd(opts *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List all registered devices",
+		Long: `List every device that has produced events or sessions in the active workspace
+store, including platform (OS/arch) and first/last-seen timestamps. Output
+renders as a table by default and as JSON or YAML when --format is set;
+read-only over the device registry.`,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
 				devs, err := app.manager.ListDevices(ctx)
@@ -83,14 +92,19 @@ func newDeviceListCmd(opts *globalOptions) *cobra.Command {
 			})
 		},
 	}
+	cli.SetSideEffect(cmd, cli.SideEffectRead)
 	return cmd
 }
 
 func newDeviceShowCmd(opts *globalOptions) *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "show <id-or-name>",
 		Short: "Show device details and activity",
-		Args:  cobra.ExactArgs(1),
+		Long: `Show full details of a single device resolved by ID or name, including
+hostname, platform, first/last-seen timestamps, and the list of sessions the
+device has participated in with per-session event counts. Read-only: surfaces
+stored device-registry state without mutating the workspace.`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
 				dev, err := app.manager.ResolveDeviceRef(ctx, args[0])
@@ -131,4 +145,6 @@ func newDeviceShowCmd(opts *globalOptions) *cobra.Command {
 			})
 		},
 	}
+	cli.SetSideEffect(cmd, cli.SideEffectRead)
+	return cmd
 }

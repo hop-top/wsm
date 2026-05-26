@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"hop.top/kit/go/console/cli"
 	kitcliconfig "hop.top/kit/go/console/cli/config"
 	"hop.top/kit/go/console/output"
 	"hop.top/kit/go/core/xdg"
@@ -27,7 +28,11 @@ func newInitCmd(opts *globalOptions) *cobra.Command {
 directory with a minimal config.yaml and a symlink from the other path.
 
 By default creates .wsm/ and symlinks .hop/wsm/ -> .wsm/.
-With --hop, creates .hop/wsm/ and symlinks .wsm/ -> .hop/wsm/.`,
+With --hop, creates .hop/wsm/ and symlinks .wsm/ -> .hop/wsm/.
+
+Re-running on an already-initialized directory fails with an
+"already exists" error unless --force is passed, in which case the
+existing directory is replaced with the same minimal config.yaml.`,
 		Args: cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			dir, err := os.Getwd()
@@ -52,6 +57,12 @@ With --hop, creates .hop/wsm/ and symlinks .wsm/ -> .hop/wsm/.`,
 	}
 	cmd.Flags().BoolVar(&hop, "hop", false, "Use .hop/wsm/ as primary (for hop-managed projects)")
 	cmd.Flags().BoolVarP(&force, "force", "f", false, "Overwrite existing config directories")
+	cli.SetTopLevelVerb(cmd)
+	cli.SetSideEffect(cmd, cli.SideEffectWriteLocal)
+	// Idempotent under --force: re-running with the same flags produces the
+	// same minimal config.yaml. Without --force, re-runs fail "already exists"
+	// without mutating anything, which is also observably stable per §8.5.
+	cli.SetIdempotency(cmd, cli.IdempotencyYes)
 	return cmd
 }
 
@@ -59,6 +70,11 @@ func newConfigCmd(opts *globalOptions) *cobra.Command {
 	showCmd := &cobra.Command{
 		Use:   "show",
 		Short: "Show resolved configuration",
+		Long: `Print the effective wsm configuration after walking the precedence
+chain — project (.wsm.yaml / .wsm/config.yaml / .hop/wsm/config.yaml),
+user (XDG config dir), system (/etc/wsm/config.yaml) — and applying any
+--config / --data-dir / --backend / --backend-url overrides. Honors the
+global --format flag for JSON or YAML output.`,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			cfg, err := config.Load(config.LoadOptions{
 				FlagBackend:    opts.Backend,
@@ -83,6 +99,9 @@ func newConfigCmd(opts *globalOptions) *cobra.Command {
 			return nil
 		},
 	}
+	// Layer-A: pure read of the resolved config layers. Idempotency is
+	// auto-applied by kit's defaultIdempotency table (show → yes).
+	cli.SetSideEffect(showCmd, cli.SideEffectRead)
 	cmd := &cobra.Command{
 		Use:   "config",
 		Short: "Configuration commands",
@@ -175,8 +194,13 @@ func newCompletionCmd(root *cobra.Command, _ *globalOptions) *cobra.Command {
 
 func newTUICmd(opts *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:    "tui",
-		Short:  "Launch terminal UI",
+		Use:   "tui",
+		Short: "Launch terminal UI",
+		Long: `Launch the bubbletea-driven workspace browser. Interactive surface
+exposes the workspace list with inspect (enter), create (c), archive
+toggle (a), and delete (d) keybindings dispatched through the same
+backend as the CLI; mutations occur only on explicit user keypress.
+Not suitable for batch / agent use.`,
 		Hidden: true,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
@@ -184,6 +208,12 @@ func newTUICmd(opts *globalOptions) *cobra.Command {
 			})
 		},
 	}
+	cli.SetTopLevelVerb(cmd)
+	// Layer-A: long-running session-bound interactive surface. Idempotency
+	// depends on which verbs the operator invokes inside the TUI, so the
+	// conditional tier is the honest classification.
+	cli.SetSideEffect(cmd, cli.SideEffectInteractive)
+	cli.SetIdempotency(cmd, cli.IdempotencyConditional)
 	return cmd
 }
 

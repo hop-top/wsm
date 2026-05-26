@@ -13,6 +13,7 @@ import (
 	"hop.top/kit/go/console/alias"
 	"hop.top/kit/go/console/cli"
 	kitlog "hop.top/kit/go/console/log"
+	"hop.top/kit/go/console/output"
 	"hop.top/kit/go/core/upgrade"
 	"hop.top/kit/go/core/xdg"
 	"hop.top/kit/go/runtime/bus"
@@ -32,6 +33,27 @@ var (
 	// Execute() can route through fang and apply group visibility.
 	kitRootInstance *cli.Root
 )
+
+// Layer-A annotation conventions
+//
+// kit/side-effect:   set explicitly via cli.SetSideEffect on every leaf.
+// kit/top-level-verb: set explicitly via cli.SetTopLevelVerb on depth-1 verbs.
+// kit/hierarchical:  set explicitly via cli.SetHierarchical on intermediate
+//                    ancestors of depth>=3 leaves (e.g., workspace, workspace
+//                    config).
+// kit/idempotent:    typically left implicit — kit auto-fills from its
+//                    verb-name table during Root.Validate(). The table maps
+//                    well-known verbs (list, show, get, find, search, info,
+//                    delete, update, sync, create, add, ...) to their default
+//                    classification. Adopters override explicitly only when
+//                    the kit default is wrong for the verb's actual semantics
+//                    (e.g., snapshot generate → IdempotencyNo, tui →
+//                    IdempotencyConditional, init → IdempotencyYes).
+//
+// Per-site comments below repeat the rationale only where the implicit-default
+// path is non-obvious (mutating verbs whose name happens to map to
+// IdempotencyYes via the kit table). The annotation-coverage contract is
+// regression-locked by TestLayerAAnnotationsPresent in root_test.go.
 
 // aliasStorePath returns the path to the wsm alias YAML store. Falls
 // back to a relative path when XDG resolution fails so tests/embedded
@@ -264,6 +286,11 @@ func NewRootCmd() *cobra.Command {
 		Name:    "wsm",
 		Version: Version,
 		Short:   "Workspace & Session Manager",
+		// kit v0.4 registers a built-in -c/--config StringArray for layered
+		// overrides. wsm owns the --config name with single-path semantics
+		// (override XDG config file location); suppress the built-in so the
+		// custom global below remains the sole --config flag.
+		Disable: cli.Disable{Config: true},
 		Help: cli.HelpConfig{
 			Disclaimer: "Workspace & Session Manager (wsm) for IDE-agnostic session storage.",
 			// management is pre-registered + auto-hidden by cli.New;
@@ -292,8 +319,31 @@ func NewRootCmd() *cobra.Command {
 			{Name: "profile", Usage: "Named profile (credentials/config)", StringVar: &opts.Profile},
 			{Name: "instance", Usage: "Backend instance", StringVar: &opts.Instance},
 		},
-	})
+	},
+		// kit/console/cli ships a fully-conforming `status` subcommand
+		// (the validator's reserved depth-1 verb). Mount it so we satisfy
+		// the reserved-status arm of Layer-A enforcement once
+		// DisableValidate flips off. Kit's defaults cover profile, env,
+		// auth, effective-config, and a workspace stub — wsm-specific
+		// providers can be registered via r.RegisterStatusProvider in a
+		// later slice without touching this wiring.
+		cli.WithStatus(cli.StatusConfig{}),
+	)
 	root := r.Cmd
+
+	// NO_COLOR honor: cli.New installs a process-wide default table style
+	// (colors lifted from r.Theme) via output.SetDefaultTableStyle. The
+	// styled-table renderer then routes through lipgloss v2's Style.Render,
+	// which always emits full-fidelity 24-bit SGR even when NO_COLOR is set
+	// (lipgloss v2 downsampling lives at the output writer layer, which
+	// kit's renderer doesn't wrap). Clobbering the default with a zero
+	// TableStyle restores plain box-drawing output for the NO_COLOR=1
+	// env case at root construction time. The --no-color flag path is
+	// handled in PersistentPreRunE below because viper only knows the
+	// flag value after cobra has parsed args.
+	if os.Getenv("NO_COLOR") != "" {
+		output.SetDefaultTableStyle(output.TableStyle{})
+	}
 
 	// Bridge kit-bound globals into opts so subcommands keep reading
 	// opts.X. Existing PersistentPreRunE chain (set by cli.New for
@@ -316,6 +366,11 @@ func NewRootCmd() *cobra.Command {
 		opts.Format = r.Viper.GetString("format")
 		opts.Quiet = r.Viper.GetBool("quiet")
 		opts.NoColor = r.Viper.GetBool("no-color")
+		// Mirror the NO_COLOR env handling in NewRootCmd for the
+		// --no-color flag path: viper only knows the parsed flag here.
+		if opts.NoColor {
+			output.SetDefaultTableStyle(output.TableStyle{})
+		}
 		// CLI conv §6.2: install kit/log as default slog handler.
 		// -V (verbose count) raises level: 0=info, 1=debug, 2+=trace.
 		slog.SetDefault(slog.New(kitlog.WithVerbose(r.Viper, r.VerboseCount())))
