@@ -139,20 +139,31 @@ func TestLayerAAnnotationsPresent(t *testing.T) {
 	})
 }
 
-// TestTopLevelVerbCountLock pins the depth-1 runnable verb count. The
-// PR-5 deferral notes 11 verbs over kit's default MaxTopLevelVerbs=10;
-// this test prevents a 12th verb sneaking in unobserved before the
-// follow-up resolves the cap.
+// TestTopLevelVerbCountLock pins the depth-1 runnable verb count at
+// its steady-state value. kit's shape validator caps depth-1 verbs at
+// MaxTopLevelVerbs=10 but excludes reserved subcommands (`status`,
+// future kit-shipped reserved verbs) from the count — see
+// hop-top/kit T-0830, shipped in v0.4.0-alpha.6. Locking the count
+// here prevents an 11th non-reserved verb sneaking in unobserved.
 //
 // Update this constant when intentionally adding or removing a
 // top-level verb.
 func TestTopLevelVerbCountLock(t *testing.T) {
-	const want = 11
+	const want = 10
 
 	root := NewRootCmd()
+	// kitRootInstance is populated by NewRootCmd. Use its IsReserved
+	// directly so the test tracks kit's reservedSubcommands set without
+	// duplicating it here — kit owns the source of truth.
+	if kitRootInstance == nil {
+		t.Fatal("kitRootInstance not populated after NewRootCmd()")
+	}
 	got := 0
 	for _, c := range root.Commands() {
 		if isCobraBuiltin(c) {
+			continue
+		}
+		if kitRootInstance.IsReserved(c.Name()) {
 			continue
 		}
 		if !c.Runnable() {
