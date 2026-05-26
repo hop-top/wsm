@@ -152,15 +152,18 @@ func TestTopLevelVerbCountLock(t *testing.T) {
 	const want = 10
 
 	root := NewRootCmd()
+	// kitRootInstance is populated by NewRootCmd. Use its IsReserved
+	// directly so the test tracks kit's reservedSubcommands set without
+	// duplicating it here — kit owns the source of truth.
+	if kitRootInstance == nil {
+		t.Fatal("kitRootInstance not populated after NewRootCmd()")
+	}
 	got := 0
 	for _, c := range root.Commands() {
 		if isCobraBuiltin(c) {
 			continue
 		}
-		// Mirror kit's shape validator: reserved depth-1 verbs (status,
-		// future kit-shipped reserved verbs) do not count against
-		// MaxTopLevelVerbs. See hop-top/kit T-0830.
-		if isReservedTopLevel(c) {
+		if kitRootInstance.IsReserved(c.Name()) {
 			continue
 		}
 		if !c.Runnable() {
@@ -171,19 +174,6 @@ func TestTopLevelVerbCountLock(t *testing.T) {
 	if got != want {
 		t.Fatalf("top-level verb count: got=%d want=%d (intentional change? update the constant)", got, want)
 	}
-}
-
-// isReservedTopLevel mirrors kit's reservedSubcommands set for the
-// shape validator. Kept in sync with cli.New defaults; today only
-// `status` is reserved. If kit adds a new reserved verb, extend this
-// case list so the count lock continues to mirror validator
-// semantics.
-func isReservedTopLevel(cmd *cobra.Command) bool {
-	switch cmd.Name() {
-	case "status":
-		return true
-	}
-	return false
 }
 
 // TestFormatFlagOnlyOnRoot regression-locks T-0132: kit v0.4.0-alpha.4's
