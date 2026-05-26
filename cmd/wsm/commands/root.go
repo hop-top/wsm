@@ -13,6 +13,7 @@ import (
 	"hop.top/kit/go/console/alias"
 	"hop.top/kit/go/console/cli"
 	kitlog "hop.top/kit/go/console/log"
+	"hop.top/kit/go/console/output"
 	"hop.top/kit/go/core/upgrade"
 	"hop.top/kit/go/core/xdg"
 	"hop.top/kit/go/runtime/bus"
@@ -341,6 +342,20 @@ func NewRootCmd() *cobra.Command {
 	)
 	root := r.Cmd
 
+	// NO_COLOR honor: cli.New installs a process-wide default table style
+	// (colors lifted from r.Theme) via output.SetDefaultTableStyle. The
+	// styled-table renderer then routes through lipgloss v2's Style.Render,
+	// which always emits full-fidelity 24-bit SGR even when NO_COLOR is set
+	// (lipgloss v2 downsampling lives at the output writer layer, which
+	// kit's renderer doesn't wrap). Clobbering the default with a zero
+	// TableStyle restores plain box-drawing output for the NO_COLOR=1
+	// env case at root construction time. The --no-color flag path is
+	// handled in PersistentPreRunE below because viper only knows the
+	// flag value after cobra has parsed args.
+	if os.Getenv("NO_COLOR") != "" {
+		output.SetDefaultTableStyle(output.TableStyle{})
+	}
+
 	// Bridge kit-bound globals into opts so subcommands keep reading
 	// opts.X. Existing PersistentPreRunE chain (set by cli.New for
 	// chdir + identity) is preserved.
@@ -362,6 +377,11 @@ func NewRootCmd() *cobra.Command {
 		opts.Format = r.Viper.GetString("format")
 		opts.Quiet = r.Viper.GetBool("quiet")
 		opts.NoColor = r.Viper.GetBool("no-color")
+		// Mirror the NO_COLOR env handling in NewRootCmd for the
+		// --no-color flag path: viper only knows the parsed flag here.
+		if opts.NoColor {
+			output.SetDefaultTableStyle(output.TableStyle{})
+		}
 		// CLI conv §6.2: install kit/log as default slog handler.
 		// -V (verbose count) raises level: 0=info, 1=debug, 2+=trace.
 		slog.SetDefault(slog.New(kitlog.WithVerbose(r.Viper, r.VerboseCount())))
