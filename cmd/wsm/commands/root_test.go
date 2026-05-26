@@ -139,20 +139,28 @@ func TestLayerAAnnotationsPresent(t *testing.T) {
 	})
 }
 
-// TestTopLevelVerbCountLock pins the depth-1 runnable verb count. The
-// PR-5 deferral notes 11 verbs over kit's default MaxTopLevelVerbs=10;
-// this test prevents a 12th verb sneaking in unobserved before the
-// follow-up resolves the cap.
+// TestTopLevelVerbCountLock pins the depth-1 runnable verb count at
+// its steady-state value. kit's shape validator caps depth-1 verbs at
+// MaxTopLevelVerbs=10 but excludes reserved subcommands (`status`,
+// future kit-shipped reserved verbs) from the count — see
+// hop-top/kit T-0830, shipped in v0.4.0-alpha.6. Locking the count
+// here prevents an 11th non-reserved verb sneaking in unobserved.
 //
 // Update this constant when intentionally adding or removing a
 // top-level verb.
 func TestTopLevelVerbCountLock(t *testing.T) {
-	const want = 11
+	const want = 10
 
 	root := NewRootCmd()
 	got := 0
 	for _, c := range root.Commands() {
 		if isCobraBuiltin(c) {
+			continue
+		}
+		// Mirror kit's shape validator: reserved depth-1 verbs (status,
+		// future kit-shipped reserved verbs) do not count against
+		// MaxTopLevelVerbs. See hop-top/kit T-0830.
+		if isReservedTopLevel(c) {
 			continue
 		}
 		if !c.Runnable() {
@@ -163,6 +171,19 @@ func TestTopLevelVerbCountLock(t *testing.T) {
 	if got != want {
 		t.Fatalf("top-level verb count: got=%d want=%d (intentional change? update the constant)", got, want)
 	}
+}
+
+// isReservedTopLevel mirrors kit's reservedSubcommands set for the
+// shape validator. Kept in sync with cli.New defaults; today only
+// `status` is reserved. If kit adds a new reserved verb, extend this
+// case list so the count lock continues to mirror validator
+// semantics.
+func isReservedTopLevel(cmd *cobra.Command) bool {
+	switch cmd.Name() {
+	case "status":
+		return true
+	}
+	return false
 }
 
 // TestFormatFlagOnlyOnRoot regression-locks T-0132: kit v0.4.0-alpha.4's
