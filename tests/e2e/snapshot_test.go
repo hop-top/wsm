@@ -380,3 +380,33 @@ func TestSnapshotDelete_NoteFlag(t *testing.T) {
 		t.Fatalf("expected stderr to name the denying policy, got:\n%s", withoutNote.Combined())
 	}
 }
+
+// TestSnapshotDelete_ConfirmGate exercises kit's --confirm policy on
+// snapshot delete: --confirm=yes on non-TTY bypasses; absent --confirm
+// (and absent --force) on non-TTY refuses with UNAUTHORIZED. T-0122.
+func TestSnapshotDelete_ConfirmGate(t *testing.T) {
+	r := newRunner(t)
+	wsID := r.mustCreateWorkspace("snap-confirm")
+	r.run("event", "add", wsID, "interaction.message", "--content=m1")
+
+	// Positive: --confirm=yes succeeds without --force.
+	genYes := r.run("snapshot", "generate", wsID, "-n", "snap-yes", "--format", "json")
+	requireExitCode(t, genYes, 0)
+	var snapYes workspace.Snapshot
+	mustUnmarshalJSON(t, genYes.Stdout, &snapYes)
+	resYes := r.run("snapshot", "delete", snapYes.ID, "--confirm=yes", "--note", "cleanup")
+	requireExitCode(t, resYes, 0)
+
+	// Negative: no --confirm, no --force, non-TTY → UNAUTHORIZED.
+	r.run("event", "add", wsID, "interaction.message", "--content=m2")
+	genNo := r.run("snapshot", "generate", wsID, "-n", "snap-no", "--format", "json")
+	requireExitCode(t, genNo, 0)
+	var snapNo workspace.Snapshot
+	mustUnmarshalJSON(t, genNo.Stdout, &snapNo)
+	resNo := r.run("snapshot", "delete", snapNo.ID, "--note", "cleanup")
+	requireExitCode(t, resNo, 5)
+	if !strings.Contains(strings.ToLower(resNo.Stderr), "unauthorized") &&
+		!strings.Contains(strings.ToLower(resNo.Stderr), "confirm=no") {
+		t.Fatalf("expected UNAUTHORIZED refusal, got: %s", resNo.Stderr)
+	}
+}

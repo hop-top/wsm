@@ -1,11 +1,9 @@
 package commands
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"os"
-	"runtime"
 	"strings"
 	"time"
 
@@ -433,9 +431,22 @@ func newWorkspaceDeleteCmd(opts *globalOptions) *cobra.Command {
 		Use:   "delete <workspace>",
 		Short: "Permanently delete a workspace and its history",
 		Long: `Permanently delete a workspace and all of its events, snapshots, and metadata.
-Prompts for confirmation in TTYs unless --force is set; use --dry-run to
-preview what would be removed. Destructive and not recoverable.`,
+
+Confirmation is gated by the global --confirm flag (auto|yes|no|prompt):
+prompts on a TTY, denies on non-TTY unless --confirm=yes. Use --dry-run to
+preview what would be removed without applying. Destructive and not
+recoverable.
+
+Deprecated: --force is a backward-compat alias for --confirm=yes. New
+scripts should pass --confirm=yes directly; --force will be removed in a
+future release.`,
 		Args: cobra.ExactArgs(1),
+		PreRunE: func(cmd *cobra.Command, _ []string) error {
+			// Bridge legacy --force to kit's global --confirm=yes so the
+			// policy gate (wrapPolicyRunE → gateConfirm) accepts the
+			// invocation. Emit a one-shot deprecation hint to stderr.
+			return bridgeForceToConfirm(cmd, force)
+		},
 		RunE: func(_ *cobra.Command, args []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
 				preview, err := app.manager.DeletePreview(ctx, args[0])
@@ -454,31 +465,13 @@ preview what would be removed. Destructive and not recoverable.`,
 					return nil
 				}
 
-				if !force {
-					line := ""
-					if runtime.GOOS == "darwin" {
-						line = strings.TrimSpace(strings.ToLower(os.Getenv("WSM_DELETE_CONFIRM")))
-					}
-					if !stdoutIsTTY() && line == "" {
-						return workspace.NewErrorUsage("remove in non-TTY requires --force")
-					}
-					if line == "" {
-						// §6.3: prompt is non-data → stderr.
-						fmt.Fprintf(os.Stderr, "Remove workspace %q? [y/N]: ", preview.WorkspaceName)
-						reader := bufio.NewReader(os.Stdin)
-						line, _ = reader.ReadString('\n')
-						line = strings.TrimSpace(strings.ToLower(line))
-					}
-					if line != "y" && line != "yes" {
-						fmt.Fprintln(os.Stderr, "Aborted.")
-						return fmt.Errorf("deletion cancelled")
-					}
-				}
-
 				// Plumb --note into ctx via policy.ContextAttrsKey so
 				// the runtime policy engine can read it during pre-event
 				// veto. T-1287 wires the flag; T-1288 adds the default
-				// policy that enforces note presence.
+				// policy that enforces note presence. Note: kit's
+				// --confirm gate fires BEFORE this RunE; the note policy
+				// fires AFTER (inside manager.Delete via bus subscriber)
+				// — both gates remain effective.
 				if note != "" {
 					ctx = context.WithValue(ctx, policy.ContextAttrsKey, map[string]any{
 						"note": note,
@@ -505,11 +498,11 @@ preview what would be removed. Destructive and not recoverable.`,
 			})
 		},
 	}
-	cmd.Flags().BoolVarP(&force, "force", "f", false, "Skip confirmation prompt")
+	cmd.Flags().BoolVarP(&force, "force", "f", false, "Deprecated: alias for --confirm=yes (kept for backward compat)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Preview removal without deleting data")
 	cmd.Flags().StringVarP(&note, "note", "n", "", "Reason note (recorded for audit; future policies may require it)")
 	// idempotent: kit default (delete → Yes).
-	cli.SetSideEffect(cmd, cli.SideEffectWrite)
+	cli.SetSideEffect(cmd, cli.SideEffectDestructive)
 	return cmd
 }
 

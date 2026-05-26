@@ -1,11 +1,9 @@
 package commands
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -332,34 +330,29 @@ func newSnapshotDeleteCmd(opts *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "delete <snapshot-id-or-name>",
 		Short: "Delete a snapshot",
-		Long: `Permanently delete a snapshot resolved by ID or name. Prompts for confirmation
-in TTYs unless --force is set. The underlying event history of the workspace
-is preserved; only the snapshot projection is removed.`,
+		Long: `Permanently delete a snapshot resolved by ID or name. The underlying event
+history of the workspace is preserved; only the snapshot projection is
+removed.
+
+Confirmation is gated by the global --confirm flag (auto|yes|no|prompt):
+prompts on a TTY, denies on non-TTY unless --confirm=yes.
+
+Deprecated: --force is a backward-compat alias for --confirm=yes. New
+scripts should pass --confirm=yes directly; --force will be removed in a
+future release.`,
 		Args: cobra.ExactArgs(1),
+		PreRunE: func(cmd *cobra.Command, _ []string) error {
+			return bridgeForceToConfirm(cmd, force)
+		},
 		RunE: func(_ *cobra.Command, args []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
-				if !force {
-					snap, err := app.manager.GetSnapshot(ctx, args[0])
-					if err != nil {
-						return err
-					}
-					if !stdoutIsTTY() {
-						return workspace.NewErrorUsage("remove in non-TTY requires --force")
-					}
-					// §6.3: prompt is non-data → stderr.
-					fmt.Fprintf(os.Stderr, "Remove snapshot %q? [y/N]: ", snap.ID)
-					reader := bufio.NewReader(os.Stdin)
-					line, _ := reader.ReadString('\n')
-					line = strings.TrimSpace(strings.ToLower(line))
-					if line != "y" && line != "yes" {
-						fmt.Fprintln(os.Stderr, "Aborted.")
-						return nil
-					}
-				}
 				// Plumb --note into ctx via policy.ContextAttrsKey so
 				// the runtime policy engine can read it during pre-event
 				// veto. T-1287 wires the flag; T-1288 adds the default
-				// policy that enforces note presence.
+				// policy that enforces note presence. Note: kit's
+				// --confirm gate fires BEFORE this RunE; the note policy
+				// fires AFTER (inside manager.DeleteSnapshot via bus
+				// subscriber) — both gates remain effective.
 				if note != "" {
 					ctx = context.WithValue(ctx, policy.ContextAttrsKey, map[string]any{
 						"note": note,
@@ -385,9 +378,9 @@ is preserved; only the snapshot projection is removed.`,
 			})
 		},
 	}
-	cmd.Flags().BoolVarP(&force, "force", "f", false, "Skip confirmation")
+	cmd.Flags().BoolVarP(&force, "force", "f", false, "Deprecated: alias for --confirm=yes (kept for backward compat)")
 	cmd.Flags().StringVarP(&note, "note", "n", "", "Reason note (recorded for audit; future policies may require it)")
 	// idempotent: kit default (delete → Yes).
-	cli.SetSideEffect(cmd, cli.SideEffectWrite)
+	cli.SetSideEffect(cmd, cli.SideEffectDestructive)
 	return cmd
 }
