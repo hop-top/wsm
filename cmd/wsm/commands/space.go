@@ -203,10 +203,26 @@ func newSpaceDeleteCmd(opts *globalOptions) *cobra.Command {
 		Use:   "delete <workspace> <space-id>",
 		Short: "Dissociate a space from a workspace",
 		Long: `Dissociate an OWSF space from a workspace, resolved by workspace + space ID.
-Use --force to cascade-remove nested child spaces; --note records a reason for
-audit (and may be required by policy in the future). Removes the space binding
-from the wsm DB but leaves the underlying resource untouched.`,
+Removes the space binding from the wsm DB but leaves the underlying resource
+untouched.
+
+Confirmation is gated by the global --confirm flag (auto|yes|no|prompt):
+prompts on a TTY, denies on non-TTY unless --confirm=yes. Use --note to
+record a reason for audit (and may be required by policy in the future).
+
+--force cascade-removes nested child spaces AND, for backward compat,
+bridges to --confirm=yes (so existing scripts keep working). New scripts
+should pass --confirm=yes separately and use --force only when cascade is
+intended; the cascade meaning of --force is stable, but the implicit
+confirmation bridge is deprecated and will be removed in a future
+release.`,
 		Args: cobra.ExactArgs(2),
+		PreRunE: func(cmd *cobra.Command, _ []string) error {
+			// Bridge --force → --confirm=yes for back-compat. The flag's
+			// cascade-children semantics remain (consumed by RemoveSpace
+			// below); this PreRun only wires the kit gate.
+			return bridgeForceToConfirm(cmd, force)
+		},
 		RunE: func(_ *cobra.Command, args []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
 				// Plumb --note into ctx via policy.ContextAttrsKey so
@@ -231,9 +247,9 @@ from the wsm DB but leaves the underlying resource untouched.`,
 			})
 		},
 	}
-	cmd.Flags().BoolVarP(&force, "force", "f", false, "Force removal (cascade child spaces)")
+	cmd.Flags().BoolVarP(&force, "force", "f", false, "Cascade-remove child spaces; also bridges to --confirm=yes (deprecated)")
 	cmd.Flags().StringVarP(&note, "note", "n", "", "Reason note (recorded for audit; future policies may require it)")
-	cli.SetSideEffect(cmd, cli.SideEffectWrite)
+	cli.SetSideEffect(cmd, cli.SideEffectDestructive)
 	return cmd
 }
 
