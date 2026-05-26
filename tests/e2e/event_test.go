@@ -277,4 +277,3 @@ func TestEventShow(t *testing.T) {
 	notFound := r.run("event", "show", wsID, "99999")
 	requireExitCode(t, notFound, 3)
 }
-

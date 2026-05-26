@@ -44,9 +44,9 @@ type Space struct {
 	WriterID     string       `json:"writer_id,omitempty"` // OASF Agent Identity link
 	Type         SpaceType    `json:"type" table:"TYPE,priority=7"`
 	Parent       string       `json:"parent"`
-	Boundary     string       `json:"boundary" table:"BOUNDARY,priority=5"`  // Primary boundary identifier
-	Observables  []Observable `json:"observables,omitempty"` // OCSF Observables
-	Capabilities []string     `json:"capabilities"`          // OASF Capability Taxonomy refs
+	Boundary     string       `json:"boundary" table:"BOUNDARY,priority=5"` // Primary boundary identifier
+	Observables  []Observable `json:"observables,omitempty"`                // OCSF Observables
+	Capabilities []string     `json:"capabilities"`                         // OASF Capability Taxonomy refs
 	TrustLevel   TrustLevel   `json:"trust_level" table:"TRUST,priority=6"`
 	CreatedAt    time.Time    `json:"created_at"`
 }

@@ -19,8 +19,8 @@ type SessionContext struct {
 }
 
 var (
-	ErrMissingSessionID   = errors.New("session_id is required")
-	ErrMissingWorkspaceID = errors.New("workspace_id is required")
+	ErrMissingSessionID       = errors.New("session_id is required")
+	ErrMissingWorkspaceID     = errors.New("workspace_id is required")
 	ErrSpaceScopeMissingSpace = errors.New(
 		"space_id is required for space-scoped sessions",
 	)

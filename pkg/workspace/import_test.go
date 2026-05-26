@@ -43,7 +43,7 @@ func TestImportWorkspace_WithSpaces(t *testing.T) {
 	ctx := context.Background()
 
 	data := &ExportData{
-		Version: "1",
+		Version:   "1",
 		Workspace: WorkspaceExport{Name: "import-spaces"},
 		Spaces: []SpaceExport{
 			{

@@ -47,10 +47,10 @@ const (
 	EventDeviceAttached EventType = "device.attached"
 	EventDeviceDetached EventType = "device.detached"
 
-	EventWorkspaceDeleted  EventType = "workspace.deleted"
-	EventSnapshotCreated   EventType = "checkpoint.snapshot_created"
-	EventSnapshotUpdated   EventType = "checkpoint.snapshot_updated"
-	EventSnapshotDeleted   EventType = "checkpoint.snapshot_deleted"
+	EventWorkspaceDeleted EventType = "workspace.deleted"
+	EventSnapshotCreated  EventType = "checkpoint.snapshot_created"
+	EventSnapshotUpdated  EventType = "checkpoint.snapshot_updated"
+	EventSnapshotDeleted  EventType = "checkpoint.snapshot_deleted"
 )
 
 // Event is an immutable event-log record.

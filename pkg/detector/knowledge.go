@@ -20,10 +20,10 @@ func (d *packageRegistryDetector) Detect(
 	_ context.Context, spaceDir string,
 ) (*Result, error) {
 	markers := map[string]string{
-		"package.json":    "npm",
-		"setup.py":        "pypi",
-		"pyproject.toml":  "pypi",
-		"go.mod":          "go",
+		"package.json":   "npm",
+		"setup.py":       "pypi",
+		"pyproject.toml": "pypi",
+		"go.mod":         "go",
 	}
 
 	found := make(map[string]string)

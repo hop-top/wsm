@@ -13,8 +13,8 @@ import (
 // MemberConfig is the workspace-local member configuration file
 // stored at .wsm/members.yaml (or .hop/wsm/members.yaml).
 type MemberConfig struct {
-	Members  []model.Member               `json:"members" yaml:"members"`
-	Browsers map[string]*BrowserProfile    `json:"browsers,omitempty" yaml:"browsers,omitempty"`
+	Members  []model.Member             `json:"members" yaml:"members"`
+	Browsers map[string]*BrowserProfile `json:"browsers,omitempty" yaml:"browsers,omitempty"`
 }
 
 // LoadMemberConfig reads members.yaml from the same directory as

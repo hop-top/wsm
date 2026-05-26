@@ -10,6 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"hop.top/kit/go/console/cli"
 	"hop.top/kit/go/console/output"
 	"hop.top/wsm/pkg/backend"
 	"hop.top/wsm/pkg/workspace"
@@ -30,8 +31,12 @@ func newEventGroupCmd(opts *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "event",
 		Short: "Event operations",
-		RunE:  groupOnlyRunE,
+		Long: `Capture and inspect workspace events — the append-only audit log of session
+activity. Use add to record new events, list to query the stream with filters,
+and show to fetch a single event by sequence number.`,
+		RunE: groupOnlyRunE,
 	}
+	cli.SetTopLevelVerb(cmd)
 	cmd.AddCommand(
 		newEventListCmd(opts),
 		newEventAddCmd(opts),
@@ -47,7 +52,11 @@ func newEventListCmd(opts *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list <workspace>",
 		Short: "List workspace events with filtering",
-		Args:  cobra.ExactArgs(1),
+		Long: `List events from a workspace's append-only audit log, resolved by ID or name,
+with optional filtering by event type and sequence-number window. Output renders
+as a table by default and as JSON or YAML when --format is set; --limit caps the
+number of events returned for paging through large streams.`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
 				evTypes := make([]workspace.EventType, 0, len(types))
@@ -95,14 +104,19 @@ func newEventListCmd(opts *globalOptions) *cobra.Command {
 	cmd.Flags().Uint64Var(&afterSeq, "after-seq", 0, "Only events after this sequence number")
 	cmd.Flags().Uint64Var(&beforeSeq, "before-seq", 0, "Only events before this sequence number")
 	cmd.Flags().IntVarP(&limit, "limit", "n", 0, "Maximum number of events to list")
+	cli.SetSideEffect(cmd, cli.SideEffectRead)
 	return cmd
 }
 
 func newEventShowCmd(opts *globalOptions) *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "show <workspace> <seq-or-id>",
 		Short: "Show full event details including payload",
-		Args:  cobra.ExactArgs(2),
+		Long: `Show full details of a single event resolved by sequence number or event ID
+within a workspace, including its type, timestamp, originating device and
+session, and the decoded JSON payload. Read-only: surfaces stored event state
+without mutating the workspace.`,
+		Args: cobra.ExactArgs(2),
 		RunE: func(_ *cobra.Command, args []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
 				ev, err := app.manager.GetEvent(ctx, args[0], args[1])
@@ -139,6 +153,8 @@ func newEventShowCmd(opts *globalOptions) *cobra.Command {
 			})
 		},
 	}
+	cli.SetSideEffect(cmd, cli.SideEffectRead)
+	return cmd
 }
 
 func newEventAddCmd(opts *globalOptions) *cobra.Command {
@@ -152,7 +168,12 @@ func newEventAddCmd(opts *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "add <workspace> <type>",
 		Short: "Append an event to a workspace",
-		Args:  cobra.ExactArgs(2),
+		Long: `Append a new event of the given type to a workspace's audit log, with payload
+supplied either via --data (raw JSON) or via typed flags for the well-known
+event shapes (interaction.message, interaction.tool_*, mutation.file_patch,
+mutation.artifact, device.*). Not idempotent: each invocation mints a new event
+with a fresh ID and sequence number.`,
+		Args: cobra.ExactArgs(2),
 		RunE: func(_ *cobra.Command, args []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
 				eventType := workspace.EventType(strings.TrimSpace(args[1]))
@@ -221,6 +242,8 @@ func newEventAddCmd(opts *globalOptions) *cobra.Command {
 	cmd.Flags().StringVar(&deviceID, "device-id", "", "device.*: device identifier")
 	cmd.Flags().StringVar(&deviceName, "device-name", "", "device.*: device name")
 
+	// idempotent: kit default (add → No) matches semantics.
+	cli.SetSideEffect(cmd, cli.SideEffectWrite)
 	return cmd
 }
 

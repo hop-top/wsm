@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	expect "github.com/Netflix/go-expect"
 	backendsqlite "hop.top/wsm/pkg/backend/sqlite"
 	"hop.top/wsm/pkg/workspace"
 )
@@ -90,6 +92,21 @@ func (r *e2eRunner) runWithInput(input string, args ...string) commandResult {
 func (r *e2eRunner) runTTYWithInput(input string, args ...string) commandResult {
 	global := []string{"--data-dir", r.dataDir}
 	return r.exec(runOptions{Args: append(global, args...), Input: input, TTY: true})
+}
+
+// runTTYExpectingPrompt spawns the binary under a PTY, waits for prompt
+// to appear in the output, then writes input. Use this for interactive
+// flows where pre-buffered stdin would be consumed by fang's startup
+// terminal-capability detection (OSC 11 / DA1) before the destructive
+// confirmation reader runs.
+func (r *e2eRunner) runTTYExpectingPrompt(prompt, input string, args ...string) commandResult {
+	global := []string{"--data-dir", r.dataDir}
+	return r.exec(runOptions{
+		Args:          append(global, args...),
+		Input:         input,
+		TTY:           true,
+		PromptPattern: prompt,
+	})
 }
 
 func (r *e2eRunner) runNoGlobal(args ...string) commandResult {
@@ -166,6 +183,12 @@ type runOptions struct {
 	TTY      bool
 	ExtraEnv map[string]string
 	Timeout  time.Duration
+	// PromptPattern, when set together with TTY+Input, gates Input
+	// delivery on observing the substring in the PTY output. This
+	// avoids a startup race where fang's terminal-capability detection
+	// (lipgloss.HasDarkBackground) reads from stdin during its 2s
+	// settling window and discards any pre-buffered input.
+	PromptPattern string
 }
 
 func (r *e2eRunner) exec(opts runOptions) commandResult {
@@ -212,44 +235,91 @@ func (r *e2eRunner) exec(opts runOptions) commandResult {
 
 func (r *e2eRunner) execTTY(ctx context.Context, opts runOptions) commandResult {
 	r.t.Helper()
-	if _, err := exec.LookPath("script"); err != nil {
-		r.t.Skip("script command is required for TTY tests")
-	}
 
-	var cmd *exec.Cmd
-	if runtime.GOOS == "darwin" {
-		args := append([]string{"-q", "-e", "/dev/null", r.binary}, opts.Args...)
-		cmd = exec.CommandContext(ctx, "script", args...)
-	} else {
-		commandLine := shellJoin(append([]string{r.binary}, opts.Args...))
-		cmd = exec.CommandContext(ctx, "script", "-q", "-e", "-c", commandLine, "/dev/null")
+	// Use go-expect's PTY so we can synchronize stdin delivery against
+	// the child's prompt. The previous implementation piped Input into
+	// util-linux/BSD `script`, but bytes written there were consumed by
+	// fang's startup `lipgloss.HasDarkBackground` (OSC 11 + DA1) query
+	// before the destructive prompt's reader ever saw them, leaving the
+	// child blocked on stdin and the harness killing it (exit -1).
+	var output bytes.Buffer
+	console, err := expect.NewConsole(
+		expect.WithStdout(&output),
+		expect.WithDefaultTimeout(opts.timeoutOrDefault()),
+	)
+	if err != nil {
+		r.t.Fatalf("create pty console: %v", err)
 	}
+	defer func() { _ = console.Close() }()
+
+	cmd := exec.CommandContext(ctx, r.binary, opts.Args...)
 	cmd.Dir = r.workDir
 	cmd.Env = r.baseEnv(opts.ExtraEnv)
-	if opts.Input != "" {
-		cmd.Stdin = strings.NewReader(opts.Input)
+	tty := console.Tty()
+	cmd.Stdin = tty
+	cmd.Stdout = tty
+	cmd.Stderr = tty
+
+	if err := cmd.Start(); err != nil {
+		r.t.Fatalf("start tty command: %v", err)
 	}
 
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	err := cmd.Run()
+	if opts.Input != "" {
+		// When a prompt pattern is configured, wait for it to appear in
+		// the PTY output before sending Input — this defeats fang's
+		// startup terminal-capability query swallowing pre-buffered
+		// stdin. Without a pattern, fall back to a small settling delay
+		// (the query path times out around 2s when no DA1 response
+		// arrives) so legacy callers keep working.
+		go func() {
+			if opts.PromptPattern != "" {
+				// Best-effort: if Expect errors (timeout/close), drop
+				// the Input rather than racing with cmd.Wait. The
+				// parent goroutine will surface the hang as a deadline
+				// or non-zero exit.
+				if _, perr := console.Expect(expect.String(opts.PromptPattern)); perr != nil {
+					return
+				}
+			} else {
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(2500 * time.Millisecond):
+				}
+			}
+			_, _ = io.WriteString(console, opts.Input)
+		}()
+	}
 
-	res := commandResult{Stdout: normalizeOutput(stdout.String()), Stderr: normalizeOutput(stderr.String())}
-	if err == nil {
+	runErr := cmd.Wait()
+	// Drain remaining output so the buffer reflects everything the child
+	// produced. Closing the slave-side first lets ExpectEOF return.
+	_ = tty.Close()
+	_, _ = console.ExpectEOF()
+
+	combined := normalizeOutput(output.String())
+	res := commandResult{Stdout: combined}
+	if runErr == nil {
 		res.ExitCode = 0
 		return res
 	}
 	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) {
+	if errors.As(runErr, &exitErr) {
 		res.ExitCode = exitErr.ExitCode()
 		return res
 	}
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 		r.t.Fatalf("TTY command timed out: %v %v", r.binary, opts.Args)
 	}
-	r.t.Fatalf("run TTY command failed: %v", err)
+	r.t.Fatalf("run TTY command failed: %v", runErr)
 	return commandResult{}
+}
+
+func (o runOptions) timeoutOrDefault() time.Duration {
+	if o.Timeout > 0 {
+		return o.Timeout
+	}
+	return 20 * time.Second
 }
 
 func (r *e2eRunner) baseEnv(extra map[string]string) []string {
@@ -330,24 +400,6 @@ func normalizeOutput(s string) string {
 	clean = strings.ReplaceAll(clean, "\x08", "")
 	clean = strings.ReplaceAll(clean, "^D", "")
 	return clean
-}
-
-func shellJoin(args []string) string {
-	parts := make([]string, 0, len(args))
-	for _, a := range args {
-		parts = append(parts, shellQuote(a))
-	}
-	return strings.Join(parts, " ")
-}
-
-func shellQuote(s string) string {
-	if s == "" {
-		return "''"
-	}
-	if regexp.MustCompile(`^[a-zA-Z0-9_./:@+=,-]+$`).MatchString(s) {
-		return s
-	}
-	return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'"
 }
 
 func mustMkdirAll(t *testing.T, dir string) {

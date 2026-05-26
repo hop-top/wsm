@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+	"hop.top/kit/go/console/cli"
 	"hop.top/kit/go/core/upgrade"
 	"hop.top/kit/go/core/upgrade/skill"
 )
@@ -24,7 +25,11 @@ func newUpgradeCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "upgrade",
 		Short: "Check for and install updates",
-		Long:  `Check for a newer version of wsm and optionally install it.`,
+		Long: `Check for a newer version of wsm on GitHub releases and optionally
+install it in place. Default mode prompts before replacing the running
+binary; --auto installs without prompting; --quiet suppresses output
+when already up to date. Outcome depends on whether a newer release
+exists and on user confirmation, so re-runs are not idempotent.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return upgrade.RunCLI(cmd.Context(), newChecker(), upgrade.CLIOptions{
 				AutoUpgrade: auto,
@@ -35,6 +40,9 @@ func newUpgradeCmd() *cobra.Command {
 
 	cmd.Flags().BoolVar(&auto, "auto", false, "Install without prompting")
 	cmd.Flags().BoolVarP(&quiet, "quiet", "q", false, "Suppress output when already up to date")
+	cli.SetTopLevelVerb(cmd)
+	cli.SetSideEffect(cmd, cli.SideEffectWriteLocal)
+	cli.SetIdempotency(cmd, cli.IdempotencyConditional)
 	cmd.AddCommand(newUpgradePreambleCmd())
 	return cmd
 }
@@ -46,7 +54,10 @@ func newUpgradePreambleCmd() *cobra.Command {
 		Use:   "preamble",
 		Short: "Print the upgrade preamble fragment for skill files",
 		Long: `Print a markdown preamble fragment for embedding in WSM skill files.
-Agents read this to know how to self-upgrade wsm before executing tasks.`,
+Agents read this to know how to self-upgrade wsm before executing tasks.
+Default mode prints to stdout; --install writes the fragment to
+~/.config/wsm/skills/upgrade-preamble.md. Re-running with the same flags
+emits (or overwrites) the same content.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			level := skill.SnoozeOnce
 			if auto {
@@ -72,6 +83,12 @@ Agents read this to know how to self-upgrade wsm before executing tasks.`,
 	cmd.Flags().BoolVar(&auto, "auto", false, "Emit auto-upgrade (SnoozeNever) variant")
 	cmd.Flags().BoolVar(&never, "never", false, "Emit check-only (SnoozeAlways) variant")
 	cmd.Flags().BoolVar(&install, "install", false, "Write preamble to ~/.config/wsm/skills/")
+	// Layer-A: prints by default but --install writes a local file under
+	// ~/.config/wsm/skills. Tag conservatively at the worst-case tier the
+	// command can perform. Same inputs always produce the same fragment,
+	// and --install overwrites with that same content — idempotent.
+	cli.SetSideEffect(cmd, cli.SideEffectWriteLocal)
+	cli.SetIdempotency(cmd, cli.IdempotencyYes)
 	return cmd
 }
 
