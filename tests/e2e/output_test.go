@@ -102,14 +102,20 @@ func TestPipe_QuietIds(t *testing.T) {
 	}
 }
 
-func TestPipe_RemoveRequiresForce(t *testing.T) {
+// TestPipe_RemoveRequiresConfirm asserts that destructive `workspace
+// delete` on a non-TTY (piped) invocation, without --confirm=yes or
+// --force (the legacy bridge), is refused by kit's policy gate. T-0122
+// moves the gate from a wsm-local usage error (exit 2) to kit's
+// UNAUTHORIZED envelope (exit 5).
+func TestPipe_RemoveRequiresConfirm(t *testing.T) {
 	r := newRunner(t)
 	r.mustCreateWorkspace("pipe-remove")
 
 	res := r.run("workspace", "delete", "pipe-remove")
-	requireExitCode(t, res, 2)
-	if !strings.Contains(strings.ToLower(res.Stderr), "requires --force") {
-		t.Fatalf("expected non-tty delete usage guidance, got: %s", res.Stderr)
+	requireExitCode(t, res, 5)
+	if !strings.Contains(strings.ToLower(res.Stderr), "confirm=no") &&
+		!strings.Contains(strings.ToLower(res.Stderr), "unauthorized") {
+		t.Fatalf("expected non-tty delete confirm-gate refusal, got: %s", res.Stderr)
 	}
 }
 
