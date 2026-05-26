@@ -24,10 +24,10 @@ type ScopedSecretStore struct {
 
 // SecretPolicy defines which secret keys a scope grants access to.
 type SecretPolicy struct {
-	Scope      string   `json:"scope" yaml:"scope"`
-	AllowKeys  []string `json:"allow_keys,omitempty" yaml:"allow_keys,omitempty"`
-	DenyKeys   []string `json:"deny_keys,omitempty" yaml:"deny_keys,omitempty"`
-	AllowAll   bool     `json:"allow_all,omitempty" yaml:"allow_all,omitempty"`
+	Scope     string   `json:"scope" yaml:"scope"`
+	AllowKeys []string `json:"allow_keys,omitempty" yaml:"allow_keys,omitempty"`
+	DenyKeys  []string `json:"deny_keys,omitempty" yaml:"deny_keys,omitempty"`
+	AllowAll  bool     `json:"allow_all,omitempty" yaml:"allow_all,omitempty"`
 }
 
 // NewScopedSecretStore wraps a SecretStore with member-aware access control.

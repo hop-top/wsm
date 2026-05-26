@@ -4,22 +4,22 @@ import "hop.top/wsm/pkg/model"
 
 // Re-export public model types from the workspace package for integrators.
 type (
-	Status         = model.Status
-	Workspace      = model.Workspace
-	EventType      = model.EventType
-	Event          = model.Event
-	MessageData    = model.MessageData
-	ToolCallData   = model.ToolCallData
-	FileChangeData = model.FileChangeData
-	ArtifactData   = model.ArtifactData
-	DeviceData     = model.DeviceData
-	Snapshot            = model.Snapshot
-	SnapshotEventData   = model.SnapshotEventData
-	Space               = model.Space
-	SpaceType      = model.SpaceType
-	TrustLevel     = model.TrustLevel
-	Member         = model.Member
-	Capacity       = model.Capacity
+	Status            = model.Status
+	Workspace         = model.Workspace
+	EventType         = model.EventType
+	Event             = model.Event
+	MessageData       = model.MessageData
+	ToolCallData      = model.ToolCallData
+	FileChangeData    = model.FileChangeData
+	ArtifactData      = model.ArtifactData
+	DeviceData        = model.DeviceData
+	Snapshot          = model.Snapshot
+	SnapshotEventData = model.SnapshotEventData
+	Space             = model.Space
+	SpaceType         = model.SpaceType
+	TrustLevel        = model.TrustLevel
+	Member            = model.Member
+	Capacity          = model.Capacity
 )
 
 const (
@@ -30,20 +30,20 @@ const (
 	EventWorkspaceUpdated     = model.EventWorkspaceUpdated
 	EventWorkspaceArchived    = model.EventWorkspaceArchived
 	EventWorkspaceUnarchived  = model.EventWorkspaceUnarchived
-	EventInteractionMessage    = model.EventInteractionMessage
-	EventInteractionToolCall   = model.EventInteractionToolCall
-	EventInteractionToolDone   = model.EventInteractionToolDone
-	EventMutationFilePatch     = model.EventMutationFilePatch
-	EventMutationArtifact      = model.EventMutationArtifact
-	EventTopologySpaceCreate   = model.EventTopologySpaceCreate
-	EventTopologySpaceDestroy  = model.EventTopologySpaceDestroy
-	EventCheckpointSnapshot    = model.EventCheckpointSnapshot
-	EventDeviceAttached        = model.EventDeviceAttached
-	EventDeviceDetached        = model.EventDeviceDetached
-	EventWorkspaceDeleted      = model.EventWorkspaceDeleted
-	EventSnapshotCreated       = model.EventSnapshotCreated
-	EventSnapshotUpdated       = model.EventSnapshotUpdated
-	EventSnapshotDeleted       = model.EventSnapshotDeleted
+	EventInteractionMessage   = model.EventInteractionMessage
+	EventInteractionToolCall  = model.EventInteractionToolCall
+	EventInteractionToolDone  = model.EventInteractionToolDone
+	EventMutationFilePatch    = model.EventMutationFilePatch
+	EventMutationArtifact     = model.EventMutationArtifact
+	EventTopologySpaceCreate  = model.EventTopologySpaceCreate
+	EventTopologySpaceDestroy = model.EventTopologySpaceDestroy
+	EventCheckpointSnapshot   = model.EventCheckpointSnapshot
+	EventDeviceAttached       = model.EventDeviceAttached
+	EventDeviceDetached       = model.EventDeviceDetached
+	EventWorkspaceDeleted     = model.EventWorkspaceDeleted
+	EventSnapshotCreated      = model.EventSnapshotCreated
+	EventSnapshotUpdated      = model.EventSnapshotUpdated
+	EventSnapshotDeleted      = model.EventSnapshotDeleted
 
 	SpaceFilesystem = model.SpaceFilesystem
 	SpaceContainer  = model.SpaceContainer

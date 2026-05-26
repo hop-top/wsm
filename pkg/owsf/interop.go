@@ -9,7 +9,7 @@ import (
 
 // OASF taxonomy and URI prefixes
 const (
-	OASFAgentURIPrefix = "oasf:agent:"
+	OASFAgentURIPrefix   = "oasf:agent:"
 	OASFCapabilityPrefix = "oasf:cap:"
 )
 

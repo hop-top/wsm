@@ -26,11 +26,11 @@ type deviceRow struct {
 // deviceSessionRow is the table projection for the SESSIONS section of
 // `device show`. Mirrors backend.DeviceSession with shortened IDs.
 type deviceSessionRow struct {
-	Session       string `table:"SESSION,priority=8"       json:"session"`
-	Agent         string `table:"AGENT,priority=6"         json:"agent"`
-	Workspace     string `table:"WORKSPACE,priority=7"     json:"workspace"`
-	Events        int    `table:"EVENTS,priority=5"        json:"events"`
-	LastActivity  string `table:"LAST ACTIVITY,priority=4" json:"last_activity"`
+	Session      string `table:"SESSION,priority=8"       json:"session"`
+	Agent        string `table:"AGENT,priority=6"         json:"agent"`
+	Workspace    string `table:"WORKSPACE,priority=7"     json:"workspace"`
+	Events       int    `table:"EVENTS,priority=5"        json:"events"`
+	LastActivity string `table:"LAST ACTIVITY,priority=4" json:"last_activity"`
 }
 
 func newDeviceGroupCmd(opts *globalOptions) *cobra.Command {

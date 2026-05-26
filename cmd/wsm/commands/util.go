@@ -194,8 +194,8 @@ func newCompletionCmd(root *cobra.Command, _ *globalOptions) *cobra.Command {
 
 func newTUICmd(opts *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:    "tui",
-		Short:  "Launch terminal UI",
+		Use:   "tui",
+		Short: "Launch terminal UI",
 		Long: `Launch the bubbletea-driven workspace browser. Interactive surface
 exposes the workspace list with inspect (enter), create (c), archive
 toggle (a), and delete (d) keybindings dispatched through the same

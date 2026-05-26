@@ -9,7 +9,7 @@ import (
 
 // SpaceInference holds inferred Space fields from detector results.
 type SpaceInference struct {
-	Type         model.SpaceType `json:"type"`
+	Type         model.SpaceType  `json:"type"`
 	TrustLevel   model.TrustLevel `json:"trust_level"`
 	Capabilities []string         `json:"capabilities,omitempty"`
 }
