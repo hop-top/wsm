@@ -165,6 +165,40 @@ func TestTopLevelVerbCountLock(t *testing.T) {
 	}
 }
 
+// TestFormatFlagOnlyOnRoot regression-locks T-0132: kit v0.4.0-alpha.4's
+// "defer --format to inherited root global" fix (PR hop-top/poly-kit#80)
+// means subcommands must NOT declare their own --format flag — kit
+// registers --format as a persistent flag on the root via
+// output.RegisterFlags, and cobra inherits it through the parent chain.
+//
+// A per-subcommand --format declaration would shadow the inherited
+// persistent flag and break viper binding, silently regressing the
+// alpha.4 fix. This test walks every command in the tree and asserts
+// that the only command whose *local* flag set carries --format is the
+// root.
+func TestFormatFlagOnlyOnRoot(t *testing.T) {
+	root := NewRootCmd()
+
+	walkDepth(root, 0, func(cmd *cobra.Command, depth int) {
+		if cmd == root || isCobraBuiltin(cmd) {
+			return
+		}
+		// LocalFlags excludes inherited persistent flags; PersistentFlags
+		// on the subcommand itself would also constitute a redundant
+		// shim. Check both.
+		if f := cmd.LocalFlags().Lookup("format"); f != nil {
+			t.Errorf("subcommand %q declares its own --format flag (local); "+
+				"remove the shim — kit registers --format as a root persistent flag",
+				cmd.CommandPath())
+		}
+		if f := cmd.PersistentFlags().Lookup("format"); f != nil {
+			t.Errorf("subcommand %q declares its own --format flag (persistent); "+
+				"remove the shim — kit registers --format as a root persistent flag",
+				cmd.CommandPath())
+		}
+	})
+}
+
 // walkDepth visits every command in the subtree rooted at cmd in DFS
 // order, invoking visit with the relative depth (root = 0).
 func walkDepth(cmd *cobra.Command, depth int, visit func(*cobra.Command, int)) {
