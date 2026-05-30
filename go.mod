@@ -93,9 +93,13 @@ require (
 	modernc.org/sqlite v1.48.2 // indirect
 )
 
-// TEMPORARY: pin charm.land/lipgloss/v2 to a fork that honors NO_COLOR
-// in the compat package's init-time terminal background-color query.
-// Remove this replace once https://github.com/charmbracelet/lipgloss/pull/692
-// merges and lipgloss ships a release containing the fix.
-// Tracking: hop-top/kit T-0829, hop-top/wsm T-0139.
+// Pin charm.land/lipgloss/v2 to a fork that gates the compat package's
+// init-time terminal background-color query on NO_COLOR. Required for
+// kit's styled-table renderer (and any other lipgloss/v2/compat
+// consumer) to honor NO_COLOR — upstream lipgloss issues OSC 11 + CSI
+// DA probes to stdout at package load, which leak into command output
+// and break NO_COLOR contracts.
+//
+// Upstream proposal: https://github.com/charmbracelet/lipgloss/pull/692
+// Fork branch: github.com/jadb/lipgloss fix/compat-init-honor-no-color
 replace charm.land/lipgloss/v2 => github.com/jadb/lipgloss/v2 v2.0.4-0.20260525223628-5250cbab534f
