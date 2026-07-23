@@ -158,6 +158,35 @@ For the full design and contract, see
 [docs/superpowers/specs/2026-04-25-rux-connect-design.md](docs/superpowers/specs/2026-04-25-rux-connect-design.md)
 in the `~/.ops` workspace (section 9 covers the wsm side).
 
+### Organizational Layout Attachment
+
+Workspaces carry an optional, opaque `layout: {kind, path}` field.
+`kind` is a free-form string and `path` points at a directory; wsm
+never parses the content — external tooling interprets both. This
+keeps wsm free of any organizational vocabulary.
+
+```bash
+wsm workspace add my-org --org-package ./company     # attach on create
+wsm workspace update my-org --org-package ./company  # attach/replace
+wsm workspace update my-org --org-package -          # detach
+```
+
+| Flag | Behavior |
+|------|----------|
+| `--org-package <dir>` | Attach layout at `<dir>`; kind auto-detected: `<dir>/COMPANY.md` present → `agentcompanies/v1`, else `unknown` |
+| `--org-package-kind <kind>` | Override the detected kind |
+| `--org-package -` | Detach (update only; rejected on add) |
+
+Paths are stored as passed (cleaned, never absolutized) — resolved
+by the consuming tooling, not wsm.
+
+A matching space detector (`org-package`) checks for a root-only
+`COMPANY.md` marker at the space boundary — no recursion, no content
+heuristics — and emits a `detection.org_package` workspace event with
+best-effort `name`/`slug` from the marker's YAML frontmatter. It is
+opt-in: not part of `RegisterBuiltins`, so an unregistered detector
+plus an unset `layout` field means today's behavior, unchanged.
+
 ### With APS or Hop
 
 WSM integrates with [APS](docs/integration/aps-wsm-integration.md)
