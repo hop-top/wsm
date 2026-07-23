@@ -41,6 +41,7 @@ const (
 	EventCheckpointSnapshot   = model.EventCheckpointSnapshot
 	EventDeviceAttached       = model.EventDeviceAttached
 	EventDeviceDetached       = model.EventDeviceDetached
+	EventDetectionOrgPackage  = model.EventDetectionOrgPackage
 	EventWorkspaceDeleted     = model.EventWorkspaceDeleted
 	EventSnapshotCreated      = model.EventSnapshotCreated
 	EventSnapshotUpdated      = model.EventSnapshotUpdated
