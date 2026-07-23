@@ -146,6 +146,7 @@ func (b *Backend) Migrate(ctx context.Context) error {
 		`ALTER TABLE events ADD COLUMN causal_deps TEXT`,
 		`ALTER TABLE spaces ADD COLUMN writer_id TEXT`,
 		`ALTER TABLE spaces ADD COLUMN observables TEXT`,
+		`ALTER TABLE workspaces ADD COLUMN layout TEXT`,
 	}
 	for _, alter := range alters {
 		// Ignore "duplicate column" errors from re-migration.
@@ -164,11 +165,19 @@ func marshal[T any](v T) string {
 	return string(b)
 }
 
+// marshalLayout serializes an optional workspace layout; nil stays NULL.
+func marshalLayout(l *model.Layout) any {
+	if l == nil {
+		return nil
+	}
+	return marshal(l)
+}
+
 func (b *Backend) CreateWorkspace(ctx context.Context, ws model.Workspace) error {
 	_, err := b.db.ExecContext(ctx, `
-		INSERT INTO workspaces(id, name, status, description, tags, metadata, created_at, updated_at, archived_at)
-		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, ws.ID, ws.Name, string(ws.Status), ws.Description, marshal(ws.Tags), marshal(ws.Metadata), ws.CreatedAt.UTC(), ws.UpdatedAt.UTC(), ws.ArchivedAt)
+		INSERT INTO workspaces(id, name, status, description, tags, metadata, layout, created_at, updated_at, archived_at)
+		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, ws.ID, ws.Name, string(ws.Status), ws.Description, marshal(ws.Tags), marshal(ws.Metadata), marshalLayout(ws.Layout), ws.CreatedAt.UTC(), ws.UpdatedAt.UTC(), ws.ArchivedAt)
 	if err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "unique") {
 			return fmt.Errorf("conflict: %w", err)
@@ -179,10 +188,10 @@ func (b *Backend) CreateWorkspace(ctx context.Context, ws model.Workspace) error
 
 func scanWorkspace(row scanner) (*model.Workspace, error) {
 	var ws model.Workspace
-	var tagsJSON, metadataJSON sql.NullString
+	var tagsJSON, metadataJSON, layoutJSON sql.NullString
 	var status string
 	var archived sql.NullTime
-	if err := row.Scan(&ws.ID, &ws.Name, &status, &ws.Description, &tagsJSON, &metadataJSON, &ws.CreatedAt, &ws.UpdatedAt, &archived); err != nil {
+	if err := row.Scan(&ws.ID, &ws.Name, &status, &ws.Description, &tagsJSON, &metadataJSON, &layoutJSON, &ws.CreatedAt, &ws.UpdatedAt, &archived); err != nil {
 		return nil, err
 	}
 	ws.Status = model.Status(status)
@@ -191,6 +200,12 @@ func scanWorkspace(row scanner) (*model.Workspace, error) {
 	}
 	if metadataJSON.Valid && metadataJSON.String != "" {
 		_ = json.Unmarshal([]byte(metadataJSON.String), &ws.Metadata)
+	}
+	if layoutJSON.Valid && layoutJSON.String != "" && layoutJSON.String != "null" {
+		var l model.Layout
+		if err := json.Unmarshal([]byte(layoutJSON.String), &l); err == nil {
+			ws.Layout = &l
+		}
 	}
 	if archived.Valid {
 		t := archived.Time
@@ -205,7 +220,7 @@ type scanner interface {
 
 func (b *Backend) GetWorkspace(ctx context.Context, id string) (*model.Workspace, error) {
 	row := b.db.QueryRowContext(ctx, `
-		SELECT id, name, status, description, tags, metadata, created_at, updated_at, archived_at
+		SELECT id, name, status, description, tags, metadata, layout, created_at, updated_at, archived_at
 		FROM workspaces WHERE id = ?
 	`, id)
 	ws, err := scanWorkspace(row)
@@ -217,7 +232,7 @@ func (b *Backend) GetWorkspace(ctx context.Context, id string) (*model.Workspace
 
 func (b *Backend) GetWorkspaceByName(ctx context.Context, name string) (*model.Workspace, error) {
 	row := b.db.QueryRowContext(ctx, `
-		SELECT id, name, status, description, tags, metadata, created_at, updated_at, archived_at
+		SELECT id, name, status, description, tags, metadata, layout, created_at, updated_at, archived_at
 		FROM workspaces WHERE name = ?
 	`, name)
 	ws, err := scanWorkspace(row)
@@ -244,7 +259,7 @@ func (b *Backend) ListWorkspaces(ctx context.Context, opts backend.ListOptions) 
 		sortDir = "ASC"
 	}
 	query := `
-		SELECT id, name, status, description, tags, metadata, created_at, updated_at, archived_at
+		SELECT id, name, status, description, tags, metadata, layout, created_at, updated_at, archived_at
 		FROM workspaces
 	`
 	args := make([]any, 0, 3)
@@ -280,9 +295,9 @@ func (b *Backend) ListWorkspaces(ctx context.Context, opts backend.ListOptions) 
 func (b *Backend) UpdateWorkspace(ctx context.Context, ws model.Workspace) error {
 	_, err := b.db.ExecContext(ctx, `
 		UPDATE workspaces
-		SET name = ?, status = ?, description = ?, tags = ?, metadata = ?, updated_at = ?, archived_at = ?
+		SET name = ?, status = ?, description = ?, tags = ?, metadata = ?, layout = ?, updated_at = ?, archived_at = ?
 		WHERE id = ?
-	`, ws.Name, string(ws.Status), ws.Description, marshal(ws.Tags), marshal(ws.Metadata), ws.UpdatedAt.UTC(), ws.ArchivedAt, ws.ID)
+	`, ws.Name, string(ws.Status), ws.Description, marshal(ws.Tags), marshal(ws.Metadata), marshalLayout(ws.Layout), ws.UpdatedAt.UTC(), ws.ArchivedAt, ws.ID)
 	return err
 }
 
@@ -972,7 +987,7 @@ func (b *Backend) ListWorkspaceSpaces(ctx context.Context, workspaceID string) (
 
 func (b *Backend) ListSpaceWorkspaces(ctx context.Context, spaceID string) ([]model.Workspace, error) {
 	rows, err := b.db.QueryContext(ctx, `
-		SELECT w.id, w.name, w.status, w.description, w.tags, w.metadata, w.created_at, w.updated_at, w.archived_at
+		SELECT w.id, w.name, w.status, w.description, w.tags, w.metadata, w.layout, w.created_at, w.updated_at, w.archived_at
 		FROM workspaces w
 		JOIN workspace_spaces ws ON ws.workspace_id = w.id
 		WHERE ws.space_id = ?
