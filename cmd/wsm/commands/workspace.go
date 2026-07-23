@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -30,7 +31,8 @@ import (
 func groupOnlyRunE(cmd *cobra.Command, args []string) error {
 	if len(args) > 0 {
 		return workspace.NewErrorUsage(
-			fmt.Sprintf("unknown command %q for %q", args[0], cmd.CommandPath()))
+			fmt.Sprintf("unknown command %q for %q", args[0], cmd.CommandPath()),
+		)
 	}
 	return cmd.Help()
 }
@@ -73,6 +75,7 @@ workspaces, and to inspect per-workspace configuration via 'workspace config'.`,
 	cli.SetHierarchical(cmd)
 	cmd.AddCommand(
 		newWorkspaceAddCmd(opts),
+		newWorkspaceUpdateCmd(opts),
 		newWorkspaceListCmd(opts),
 		newWorkspaceShowCmd(opts),
 		newWorkspaceArchiveCmd(opts),
@@ -83,21 +86,61 @@ workspaces, and to inspect per-workspace configuration via 'workspace config'.`,
 	return cmd
 }
 
+// orgPackageMarker is the only file wsm inspects to detect an
+// organizational layout kind. Layout content is otherwise opaque
+// (interpreted by external tooling), so detection stays limited to
+// this single marker — never content heuristics.
+const orgPackageMarker = "COMPANY.md"
+
+// detectOrgPackageKind maps a layout directory to a layout kind using
+// only the marker-file check: <dir>/COMPANY.md → "agentcompanies/v1",
+// anything else → "unknown".
+func detectOrgPackageKind(dir string) string {
+	if fi, err := os.Stat(filepath.Join(dir, orgPackageMarker)); err == nil && fi.Mode().IsRegular() {
+		return "agentcompanies/v1"
+	}
+	return "unknown"
+}
+
+// resolveOrgPackageLayout builds the Layout for --org-package and
+// --org-package-kind flag values. Path is stored as the user passed it
+// (cleaned, never absolutized): layout paths are metadata resolved by
+// external tooling relative to its own boundary.
+func resolveOrgPackageLayout(orgPackage, kindOverride string) *model.Layout {
+	kind := kindOverride
+	if kind == "" {
+		kind = detectOrgPackageKind(orgPackage)
+	}
+	return &model.Layout{Kind: kind, Path: filepath.Clean(orgPackage)}
+}
+
 func newWorkspaceAddCmd(opts *globalOptions) *cobra.Command {
 	var description string
 	var tags []string
+	var orgPackage, orgPackageKind string
 	cmd := &cobra.Command{
 		Use:   "add <name>",
 		Short: "Create a workspace",
 		Long: `Create a new workspace under the active backend. The workspace becomes the
 container for sessions, events, and snapshots captured against it. Use
---description and --tag to attach metadata at creation time.`,
+--description and --tag to attach metadata at creation time, and
+--org-package to attach an organizational layout (kind auto-detected from
+a COMPANY.md marker, overridable via --org-package-kind).`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
+			if orgPackage == "-" {
+				return workspace.NewErrorUsage("--org-package -: nothing to detach on add")
+			}
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
 				ws, err := app.manager.Create(ctx, args[0], workspace.CreateOptions{Description: description, Tags: tags})
 				if err != nil {
 					return err
+				}
+				if orgPackage != "" {
+					layout := resolveOrgPackageLayout(orgPackage, orgPackageKind)
+					if ws, err = app.manager.SetLayout(ctx, ws.ID, layout); err != nil {
+						return err
+					}
 				}
 				if opts.Quiet {
 					fmt.Fprintln(os.Stdout, ws.ID)
@@ -120,7 +163,60 @@ container for sessions, events, and snapshots captured against it. Use
 	}
 	cmd.Flags().StringVarP(&description, "description", "d", "", "Workspace description")
 	cmd.Flags().StringArrayVarP(&tags, "tag", "t", nil, "Tags (repeatable)")
+	cmd.Flags().StringVar(&orgPackage, "org-package", "", "Attach organizational layout at <dir> (kind auto-detected)")
+	cmd.Flags().StringVar(&orgPackageKind, "org-package-kind", "", "Override detected layout kind")
 	cli.SetSideEffect(cmd, cli.SideEffectWrite)
+	return cmd
+}
+
+func newWorkspaceUpdateCmd(opts *globalOptions) *cobra.Command {
+	var orgPackage, orgPackageKind string
+	cmd := &cobra.Command{
+		Use:   "update <workspace>",
+		Short: "Update workspace metadata",
+		Long: `Update mutable workspace metadata. Currently supports the organizational
+layout: --org-package <dir> attaches (kind auto-detected from a COMPANY.md
+marker, overridable via --org-package-kind); '--org-package -' detaches.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			if orgPackage == "" {
+				return workspace.NewErrorUsage("nothing to update: pass --org-package <dir> (or '-' to detach)")
+			}
+			return withApp(opts, func(ctx context.Context, app *appContext) error {
+				var layout *model.Layout
+				if orgPackage != "-" {
+					layout = resolveOrgPackageLayout(orgPackage, orgPackageKind)
+				}
+				ws, err := app.manager.SetLayout(ctx, args[0], layout)
+				if err != nil {
+					return err
+				}
+				if opts.Quiet {
+					fmt.Fprintln(os.Stdout, ws.ID)
+					return nil
+				}
+				if opts.Format == output.JSON || opts.Format == output.YAML || !stdoutIsTTY() {
+					format := opts.Format
+					if format == "" || format == output.Table {
+						format = output.JSON
+					}
+					payload := map[string]any{"id": ws.ID, "updated_at": ws.UpdatedAt, "layout": ws.Layout}
+					return output.Render(os.Stdout, format, payload)
+				}
+				// §6.3: ack message (non-data) → stderr.
+				if layout == nil {
+					fmt.Fprintf(os.Stderr, "Detached layout from workspace %q\n", ws.Name)
+				} else {
+					fmt.Fprintf(os.Stderr, "Updated workspace %q\n", ws.Name)
+				}
+				return nil
+			})
+		},
+	}
+	cmd.Flags().StringVar(&orgPackage, "org-package", "", "Attach organizational layout at <dir>; '-' detaches")
+	cmd.Flags().StringVar(&orgPackageKind, "org-package-kind", "", "Override detected layout kind")
+	cli.SetSideEffect(cmd, cli.SideEffectWrite)
+	cli.SetIdempotency(cmd, cli.IdempotencyYes)
 	return cmd
 }
 
