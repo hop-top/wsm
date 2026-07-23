@@ -359,3 +359,82 @@ func TestSQLite_ResolveDevice(t *testing.T) {
 		}
 	})
 }
+
+func TestSQLiteBackend_WorkspaceLayoutRoundTrip(t *testing.T) {
+	ctx := context.Background()
+	b := openTestBackend(t)
+	now := time.Now().UTC()
+
+	// Without layout.
+	plain := model.Workspace{ID: "w-plain", Name: "plain", Status: model.StatusActive, CreatedAt: now, UpdatedAt: now}
+	if err := b.CreateWorkspace(ctx, plain); err != nil {
+		t.Fatalf("create plain: %v", err)
+	}
+	got, err := b.GetWorkspace(ctx, "w-plain")
+	if err != nil || got == nil {
+		t.Fatalf("get plain: %v got=%v", err, got)
+	}
+	if got.Layout != nil {
+		t.Fatalf("expected nil layout, got %+v", got.Layout)
+	}
+
+	// With layout.
+	ws := model.Workspace{
+		ID: "w-layout", Name: "with-layout", Status: model.StatusActive,
+		Layout:    &model.Layout{Kind: "agentcompanies/v1", Path: "org/"},
+		CreatedAt: now, UpdatedAt: now,
+	}
+	if err := b.CreateWorkspace(ctx, ws); err != nil {
+		t.Fatalf("create with layout: %v", err)
+	}
+	got, err = b.GetWorkspace(ctx, "w-layout")
+	if err != nil || got == nil {
+		t.Fatalf("get with layout: %v got=%v", err, got)
+	}
+	if got.Layout == nil || got.Layout.Kind != "agentcompanies/v1" || got.Layout.Path != "org/" {
+		t.Fatalf("layout round-trip mismatch: %+v", got.Layout)
+	}
+
+	// Get by name path.
+	got, err = b.GetWorkspaceByName(ctx, "with-layout")
+	if err != nil || got == nil || got.Layout == nil {
+		t.Fatalf("get by name: %v got=%v", err, got)
+	}
+
+	// List path.
+	list, err := b.ListWorkspaces(ctx, backend.ListOptions{SortBy: "name", SortDir: "asc"})
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	byID := map[string]*model.Layout{}
+	for _, w := range list {
+		byID[w.ID] = w.Layout
+	}
+	if byID["w-plain"] != nil {
+		t.Fatalf("list: expected nil layout for w-plain, got %+v", byID["w-plain"])
+	}
+	if byID["w-layout"] == nil || byID["w-layout"].Kind != "agentcompanies/v1" {
+		t.Fatalf("list: layout missing for w-layout: %+v", byID["w-layout"])
+	}
+
+	// Update attaches / detaches.
+	ws2 := *got
+	ws2.Layout = &model.Layout{Kind: "none", Path: ""}
+	ws2.UpdatedAt = time.Now().UTC()
+	if err := b.UpdateWorkspace(ctx, ws2); err != nil {
+		t.Fatalf("update layout: %v", err)
+	}
+	got, _ = b.GetWorkspace(ctx, "w-layout")
+	if got.Layout == nil || got.Layout.Kind != "none" || got.Layout.Path != "" {
+		t.Fatalf("updated layout mismatch: %+v", got.Layout)
+	}
+
+	ws2.Layout = nil
+	if err := b.UpdateWorkspace(ctx, ws2); err != nil {
+		t.Fatalf("detach layout: %v", err)
+	}
+	got, _ = b.GetWorkspace(ctx, "w-layout")
+	if got.Layout != nil {
+		t.Fatalf("expected layout detached, got %+v", got.Layout)
+	}
+}

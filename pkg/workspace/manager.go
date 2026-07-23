@@ -31,6 +31,7 @@ import (
 // (per ADR-0008 §6 and bus_test.go pattern wsm.runtime.#).
 const (
 	topicWorkspaceCreated    bus.Topic = "wsm.runtime.workspace.created"
+	topicWorkspaceUpdated    bus.Topic = "wsm.runtime.workspace.updated"
 	topicWorkspaceArchived   bus.Topic = "wsm.runtime.workspace.archived"
 	topicWorkspaceUnarchived bus.Topic = "wsm.runtime.workspace.unarchived"
 	topicWorkspaceDeleted    bus.Topic = "wsm.runtime.workspace.deleted"
@@ -713,6 +714,49 @@ func (m *Manager) Unarchive(ctx context.Context, ref string) error {
 		"updated_at": now,
 	})
 	return nil
+}
+
+// SetLayout attaches (or detaches, when layout is nil) the opaque
+// organizational layout on a workspace and records workspace.updated.
+//
+// Layout is metadata only: wsm never reads content at Layout.Path.
+// Same lifecycle shape as Archive/Unarchive — resolve → mutate →
+// domain.Service.Update (subop set_layout) → wsm-side lifecycle event
+// + alias topic (wsm.runtime.workspace.updated).
+func (m *Manager) SetLayout(ctx context.Context, ref string, layout *Layout) (*Workspace, error) {
+	if !m.caps.Can(CapWorkspaceSetLayout) {
+		return nil, aopRejection(ErrorKindForbidden, "workspace set-layout not permitted", "capability", "law5.capability_check", CapWorkspaceSetLayout, nil)
+	}
+	if layout != nil {
+		if err := layout.Validate(); err != nil {
+			return nil, usageError(err.Error())
+		}
+	}
+	ws, err := m.ResolveWorkspaceRef(ctx, ref)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now().UTC()
+	ws.Layout = layout
+	ws.UpdatedAt = now
+	if err := m.wsService.Update(domain.WithSubOp(ctx, "set_layout"), ws); err != nil {
+		return nil, unwrapDomainErr(err)
+	}
+	eventData := map[string]any{"updated_at": now}
+	if layout != nil {
+		eventData["layout"] = layout
+	} else {
+		eventData["layout"] = nil
+	}
+	if _, err := m.appendLifecycleEvent(ctx, ws.ID, EventWorkspaceUpdated, eventData); err != nil {
+		return nil, err
+	}
+	m.publish(ctx, topicWorkspaceUpdated, ws.ID, map[string]any{
+		"id":         ws.ID,
+		"name":       ws.Name,
+		"updated_at": now,
+	})
+	return ws, nil
 }
 
 // DeletePreview returns delete impact counts.

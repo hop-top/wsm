@@ -21,6 +21,7 @@ type Workspace struct {
 	Description string            `json:"description,omitempty"`
 	Tags        []string          `json:"tags,omitempty"`
 	Metadata    map[string]string `json:"metadata,omitempty"`
+	Layout      *Layout           `json:"layout,omitempty"` // nil = no layout attached
 	CreatedAt   time.Time         `json:"created_at"`
 	UpdatedAt   time.Time         `json:"updated_at" table:"UPDATED,priority=4"`
 	ArchivedAt  *time.Time        `json:"archived_at,omitempty"`
