@@ -6,6 +6,7 @@ const (
 	CapWorkspaceArchive   = "workspace.archive"
 	CapWorkspaceUnarchive = "workspace.unarchive"
 	CapWorkspaceDelete    = "workspace.delete"
+	CapWorkspaceSetLayout = "workspace.set_layout"
 )
 
 // Capabilities controls which operations a manager instance may perform.

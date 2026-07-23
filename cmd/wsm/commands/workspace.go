@@ -248,6 +248,13 @@ sessions. Read-only: surfaces stored workspace state without mutating it.`,
 				if len(ws.Tags) > 0 {
 					fmt.Fprintf(os.Stdout, "  Tags:        %s\n", strings.Join(ws.Tags, ", "))
 				}
+				if ws.Layout != nil {
+					layout := ws.Layout.Kind
+					if ws.Layout.Path != "" {
+						layout += " (" + ws.Layout.Path + ")"
+					}
+					fmt.Fprintf(os.Stdout, "  Layout:      %s\n", layout)
+				}
 				fmt.Fprintf(os.Stdout, "  Created:     %s\n", ws.CreatedAt.Format(time.RFC3339))
 				fmt.Fprintf(os.Stdout, "  Updated:     %s\n", ws.UpdatedAt.Format(time.RFC3339))
 				if ws.ArchivedAt != nil {

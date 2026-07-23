@@ -6,6 +6,7 @@ import "hop.top/wsm/pkg/model"
 type (
 	Status            = model.Status
 	Workspace         = model.Workspace
+	Layout            = model.Layout
 	EventType         = model.EventType
 	Event             = model.Event
 	MessageData       = model.MessageData
