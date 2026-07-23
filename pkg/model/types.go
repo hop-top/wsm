@@ -48,6 +48,8 @@ const (
 	EventDeviceAttached EventType = "device.attached"
 	EventDeviceDetached EventType = "device.detached"
 
+	EventDetectionOrgPackage EventType = "detection.org_package"
+
 	EventWorkspaceDeleted EventType = "workspace.deleted"
 	EventSnapshotCreated  EventType = "checkpoint.snapshot_created"
 	EventSnapshotUpdated  EventType = "checkpoint.snapshot_updated"
