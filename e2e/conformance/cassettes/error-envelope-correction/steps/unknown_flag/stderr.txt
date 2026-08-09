@@ -1,0 +1,5 @@
+          
+   ERROR  
+          
+  Usage: unknown flag: --bogus-flag — run 'wsm workspace list --help' for accepted flags.                             
+

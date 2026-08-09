@@ -1,0 +1,19 @@
+schema_version: "1"
+binary: wsm
+binary_version: 0ea6fa5
+recorder: xrr
+recorder_version: 0.1.0-alpha.3
+recorded_at: 2026-08-09T12:17:47Z
+scenario_id: wsm/workspace-add-preview
+scenario_version: 1.0.0
+story_ref:
+  story_id: wsm.conformance.workspace-add-preview
+  story_path: story.yaml
+  content_hash: sha256:c9fba774349a5e1151b6a5a580033931d04e1eac44a86dd2a957fd80418dfcdd
+steps:
+  - id: add_dry
+    cassette_dir: steps/add_dry/cassette
+    captures: steps/add_dry
+  - id: list_after_dry
+    cassette_dir: steps/list_after_dry/cassette
+    captures: steps/list_after_dry

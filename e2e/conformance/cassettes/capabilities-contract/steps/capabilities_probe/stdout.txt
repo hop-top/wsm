@@ -1,0 +1,711 @@
+{
+  "tool": "wsm",
+  "version": "unknown (built from source)",
+  "schema_version": "1.0",
+  "leaves": [
+    {
+      "path": "wsm alias add",
+      "name": "add",
+      "short": "Add or update an alias",
+      "side_effect": "write-local",
+      "idempotent": "no",
+      "dry_run_supported": true
+    },
+    {
+      "path": "wsm alias delete",
+      "name": "delete",
+      "short": "Delete an alias",
+      "side_effect": "write-local",
+      "idempotent": "yes",
+      "dry_run_supported": true
+    },
+    {
+      "path": "wsm alias list",
+      "name": "list",
+      "short": "List aliases",
+      "side_effect": "read",
+      "idempotent": "yes",
+      "dry_run_supported": false
+    },
+    {
+      "path": "wsm capabilities",
+      "name": "capabilities",
+      "short": "Emit the machine-readable command surface",
+      "side_effect": "read",
+      "idempotent": "yes",
+      "dry_run_supported": false,
+      "flags": [
+        {
+          "name": "help",
+          "short": "h",
+          "type": "bool",
+          "description": "help for capabilities",
+          "default": "false"
+        }
+      ]
+    },
+    {
+      "path": "wsm config path",
+      "name": "path",
+      "short": "Print the highest-precedence existing wsm config file",
+      "side_effect": "read",
+      "idempotent": "yes",
+      "dry_run_supported": false,
+      "flags": [
+        {
+          "name": "from",
+          "type": "string",
+          "description": "Resolve from this directory instead of os.Getwd()"
+        }
+      ]
+    },
+    {
+      "path": "wsm config paths",
+      "name": "paths",
+      "short": "Print the full wsm config resolution chain",
+      "side_effect": "read",
+      "idempotent": "yes",
+      "dry_run_supported": false,
+      "flags": [
+        {
+          "name": "from",
+          "type": "string",
+          "description": "Resolve from this directory instead of os.Getwd()"
+        }
+      ]
+    },
+    {
+      "path": "wsm config show",
+      "name": "show",
+      "short": "Show resolved configuration",
+      "side_effect": "read",
+      "idempotent": "yes",
+      "dry_run_supported": false
+    },
+    {
+      "path": "wsm device list",
+      "name": "list",
+      "short": "List all registered devices",
+      "side_effect": "read",
+      "idempotent": "yes",
+      "dry_run_supported": false
+    },
+    {
+      "path": "wsm device show",
+      "name": "show",
+      "short": "Show device details and activity",
+      "side_effect": "read",
+      "idempotent": "yes",
+      "dry_run_supported": false
+    },
+    {
+      "path": "wsm event add",
+      "name": "add",
+      "short": "Append an event to a workspace",
+      "side_effect": "write",
+      "idempotent": "no",
+      "dry_run_supported": true,
+      "flags": [
+        {
+          "name": "content",
+          "type": "string",
+          "description": "interaction.message: content text"
+        },
+        {
+          "name": "content-format",
+          "type": "string",
+          "description": "interaction.message: optional content format"
+        },
+        {
+          "name": "data",
+          "type": "string",
+          "description": "Raw JSON event payload (overrides typed flags)"
+        },
+        {
+          "name": "device-id",
+          "type": "string",
+          "description": "device.*: device identifier"
+        },
+        {
+          "name": "device-name",
+          "type": "string",
+          "description": "device.*: device name"
+        },
+        {
+          "name": "diff",
+          "type": "string",
+          "description": "mutation.file_patch: optional diff"
+        },
+        {
+          "name": "duration-ms",
+          "type": "int64",
+          "description": "interaction.tool_*: duration in milliseconds",
+          "default": "0"
+        },
+        {
+          "name": "input",
+          "type": "string",
+          "description": "interaction.tool_*: tool input as JSON"
+        },
+        {
+          "name": "operation",
+          "type": "string",
+          "description": "mutation.file_patch: operation (create|modify|delete)"
+        },
+        {
+          "name": "output",
+          "type": "string",
+          "description": "interaction.tool_*: tool output as JSON"
+        },
+        {
+          "name": "path",
+          "type": "string",
+          "description": "mutation.file_patch: path"
+        },
+        {
+          "name": "role",
+          "type": "string",
+          "description": "interaction.message: role (user|assistant|system)"
+        },
+        {
+          "name": "status",
+          "type": "string",
+          "description": "interaction.tool_*: status value"
+        },
+        {
+          "name": "tool-name",
+          "type": "string",
+          "description": "interaction.tool_*: tool name"
+        }
+      ]
+    },
+    {
+      "path": "wsm event list",
+      "name": "list",
+      "short": "List workspace events with filtering",
+      "side_effect": "read",
+      "idempotent": "yes",
+      "dry_run_supported": false,
+      "flags": [
+        {
+          "name": "after-seq",
+          "type": "uint64",
+          "description": "Only events after this sequence number",
+          "default": "0"
+        },
+        {
+          "name": "before-seq",
+          "type": "uint64",
+          "description": "Only events before this sequence number",
+          "default": "0"
+        },
+        {
+          "name": "limit",
+          "short": "n",
+          "type": "int",
+          "description": "Maximum number of events to list",
+          "default": "0"
+        },
+        {
+          "name": "type",
+          "short": "t",
+          "type": "stringSlice",
+          "description": "Filter by event types (comma-separated)",
+          "default": "[]"
+        }
+      ]
+    },
+    {
+      "path": "wsm event show",
+      "name": "show",
+      "short": "Show full event details including payload",
+      "side_effect": "read",
+      "idempotent": "yes",
+      "dry_run_supported": false
+    },
+    {
+      "path": "wsm init",
+      "name": "init",
+      "short": "Initialize local config directory",
+      "side_effect": "write-local",
+      "idempotent": "yes",
+      "dry_run_supported": true,
+      "flags": [
+        {
+          "name": "force",
+          "short": "f",
+          "type": "bool",
+          "description": "Overwrite existing config directories",
+          "default": "false"
+        },
+        {
+          "name": "hop",
+          "type": "bool",
+          "description": "Use .hop/wsm/ as primary (for hop-managed projects)",
+          "default": "false"
+        }
+      ]
+    },
+    {
+      "path": "wsm snapshot context",
+      "name": "context",
+      "short": "Output markdown summary context for LLM",
+      "side_effect": "read",
+      "idempotent": "yes",
+      "dry_run_supported": false,
+      "flags": [
+        {
+          "name": "events",
+          "type": "int",
+          "description": "Number of recent events to include",
+          "default": "5"
+        }
+      ]
+    },
+    {
+      "path": "wsm snapshot delete",
+      "name": "delete",
+      "short": "Delete a snapshot",
+      "side_effect": "destructive",
+      "idempotent": "yes",
+      "dry_run_supported": true,
+      "flags": [
+        {
+          "name": "force",
+          "short": "f",
+          "type": "bool",
+          "description": "Deprecated: alias for --confirm=yes (kept for backward compat)",
+          "default": "false"
+        },
+        {
+          "name": "note",
+          "short": "n",
+          "type": "string",
+          "description": "Reason note (recorded for audit; future policies may require it)"
+        }
+      ]
+    },
+    {
+      "path": "wsm snapshot generate",
+      "name": "generate",
+      "short": "Generate and persist a workspace snapshot",
+      "side_effect": "write",
+      "idempotent": "no",
+      "dry_run_supported": true,
+      "flags": [
+        {
+          "name": "name",
+          "short": "n",
+          "type": "string",
+          "description": "Snapshot name/alias"
+        },
+        {
+          "name": "seed",
+          "type": "bool",
+          "description": "Mark as seed snapshot",
+          "default": "false"
+        },
+        {
+          "name": "session",
+          "short": "s",
+          "type": "string",
+          "description": "Filter by session ID"
+        }
+      ]
+    },
+    {
+      "path": "wsm snapshot list",
+      "name": "list",
+      "short": "List snapshots with filtering",
+      "side_effect": "read",
+      "idempotent": "yes",
+      "dry_run_supported": false,
+      "flags": [
+        {
+          "name": "after",
+          "type": "string",
+          "description": "Snapshots after this time (RFC3339)"
+        },
+        {
+          "name": "before",
+          "type": "string",
+          "description": "Snapshots before this time (RFC3339)"
+        },
+        {
+          "name": "limit",
+          "short": "n",
+          "type": "int",
+          "description": "Maximum number of snapshots",
+          "default": "0"
+        },
+        {
+          "name": "session",
+          "short": "s",
+          "type": "stringArray",
+          "description": "Filter by session ID (repeatable)",
+          "default": "[]"
+        },
+        {
+          "name": "sort",
+          "type": "string",
+          "description": "Sort direction: asc|desc",
+          "default": "desc"
+        },
+        {
+          "name": "workspace",
+          "short": "w",
+          "type": "stringArray",
+          "description": "Filter by workspace ID or name (repeatable)",
+          "default": "[]"
+        }
+      ]
+    },
+    {
+      "path": "wsm snapshot show",
+      "name": "show",
+      "short": "Show latest snapshot",
+      "side_effect": "read",
+      "idempotent": "yes",
+      "dry_run_supported": false
+    },
+    {
+      "path": "wsm snapshot update",
+      "name": "update",
+      "short": "Update snapshot metadata",
+      "side_effect": "write",
+      "idempotent": "yes",
+      "dry_run_supported": true,
+      "flags": [
+        {
+          "name": "name",
+          "short": "n",
+          "type": "string",
+          "description": "Snapshot name/alias"
+        },
+        {
+          "name": "seed",
+          "type": "bool",
+          "description": "Mark as seed snapshot",
+          "default": "false"
+        }
+      ]
+    },
+    {
+      "path": "wsm space add",
+      "name": "add",
+      "short": "Associate a compute/storage space with a workspace",
+      "side_effect": "write",
+      "idempotent": "no",
+      "dry_run_supported": true,
+      "flags": [
+        {
+          "name": "auto",
+          "type": "bool",
+          "description": "Attempt to auto-detect space attributes from path",
+          "default": "false"
+        },
+        {
+          "name": "cap",
+          "type": "stringSlice",
+          "description": "Space capabilities (OASF URI, repeatble)",
+          "default": "[]"
+        },
+        {
+          "name": "path",
+          "type": "string",
+          "description": "Resource path (filesystem path, URL, etc.)"
+        },
+        {
+          "name": "startup-cmd",
+          "type": "string",
+          "description": "Default command rux runs when connecting (empty = $SHELL)"
+        },
+        {
+          "name": "trust",
+          "type": "string",
+          "description": "Trust level (local|verified|external|untrusted)",
+          "default": "local"
+        },
+        {
+          "name": "type",
+          "type": "string",
+          "description": "Space type (filesystem|container|vm|api|database|machine|remote)",
+          "default": "filesystem"
+        }
+      ]
+    },
+    {
+      "path": "wsm space delete",
+      "name": "delete",
+      "short": "Dissociate a space from a workspace",
+      "side_effect": "destructive",
+      "idempotent": "yes",
+      "dry_run_supported": true,
+      "flags": [
+        {
+          "name": "force",
+          "short": "f",
+          "type": "bool",
+          "description": "Cascade-remove child spaces; also bridges to --confirm=yes (deprecated)",
+          "default": "false"
+        },
+        {
+          "name": "note",
+          "short": "n",
+          "type": "string",
+          "description": "Reason note (recorded for audit; future policies may require it)"
+        }
+      ]
+    },
+    {
+      "path": "wsm space list",
+      "name": "list",
+      "short": "List spaces associated with a workspace",
+      "side_effect": "read",
+      "idempotent": "yes",
+      "dry_run_supported": false
+    },
+    {
+      "path": "wsm space show",
+      "name": "show",
+      "short": "Show space details",
+      "side_effect": "read",
+      "idempotent": "yes",
+      "dry_run_supported": false
+    },
+    {
+      "path": "wsm space sync",
+      "name": "sync",
+      "short": "Rewrite rux projects.yaml from wsm DB (recovery)",
+      "side_effect": "write",
+      "idempotent": "yes",
+      "dry_run_supported": true
+    },
+    {
+      "path": "wsm status",
+      "name": "status",
+      "short": "Show kit runtime status (profile, env, workspace, auth, config)",
+      "side_effect": "read",
+      "idempotent": "yes",
+      "dry_run_supported": false
+    },
+    {
+      "path": "wsm tui",
+      "name": "tui",
+      "short": "Launch terminal UI",
+      "side_effect": "interactive",
+      "idempotent": "conditional",
+      "dry_run_supported": false
+    },
+    {
+      "path": "wsm upgrade preamble",
+      "name": "preamble",
+      "short": "Print the upgrade preamble fragment for skill files",
+      "side_effect": "write-local",
+      "idempotent": "yes",
+      "dry_run_supported": true,
+      "flags": [
+        {
+          "name": "auto",
+          "type": "bool",
+          "description": "Emit auto-upgrade (SnoozeNever) variant",
+          "default": "false"
+        },
+        {
+          "name": "install",
+          "type": "bool",
+          "description": "Write preamble to ~/.config/wsm/skills/",
+          "default": "false"
+        },
+        {
+          "name": "never",
+          "type": "bool",
+          "description": "Emit check-only (SnoozeAlways) variant",
+          "default": "false"
+        }
+      ]
+    },
+    {
+      "path": "wsm version",
+      "name": "version",
+      "short": "Print version information",
+      "side_effect": "read",
+      "idempotent": "yes",
+      "dry_run_supported": false,
+      "flags": [
+        {
+          "name": "short",
+          "type": "bool",
+          "description": "Output only the version number",
+          "default": "false"
+        }
+      ]
+    },
+    {
+      "path": "wsm workspace add",
+      "name": "add",
+      "short": "Create a workspace",
+      "side_effect": "write",
+      "idempotent": "no",
+      "dry_run_supported": true,
+      "flags": [
+        {
+          "name": "description",
+          "short": "d",
+          "type": "string",
+          "description": "Workspace description"
+        },
+        {
+          "name": "org-package",
+          "type": "string",
+          "description": "Attach organizational layout at \u003cdir\u003e (kind auto-detected)"
+        },
+        {
+          "name": "org-package-kind",
+          "type": "string",
+          "description": "Override detected layout kind"
+        },
+        {
+          "name": "tag",
+          "short": "t",
+          "type": "stringArray",
+          "description": "Tags (repeatable)",
+          "default": "[]"
+        }
+      ]
+    },
+    {
+      "path": "wsm workspace archive",
+      "name": "archive",
+      "short": "Mark a workspace as archived (read-only)",
+      "side_effect": "write",
+      "idempotent": "yes",
+      "dry_run_supported": true,
+      "flags": [
+        {
+          "name": "note",
+          "short": "n",
+          "type": "string",
+          "description": "Reason note (recorded for audit; future policies may require it)"
+        }
+      ]
+    },
+    {
+      "path": "wsm workspace config show",
+      "name": "show",
+      "short": "Show resolved configuration",
+      "side_effect": "read",
+      "idempotent": "yes",
+      "dry_run_supported": false
+    },
+    {
+      "path": "wsm workspace delete",
+      "name": "delete",
+      "short": "Permanently delete a workspace and its history",
+      "side_effect": "destructive",
+      "idempotent": "yes",
+      "dry_run_supported": true,
+      "flags": [
+        {
+          "name": "force",
+          "short": "f",
+          "type": "bool",
+          "description": "Deprecated: alias for --confirm=yes (kept for backward compat)",
+          "default": "false"
+        },
+        {
+          "name": "note",
+          "short": "n",
+          "type": "string",
+          "description": "Reason note (recorded for audit; future policies may require it)"
+        }
+      ]
+    },
+    {
+      "path": "wsm workspace list",
+      "name": "list",
+      "short": "List workspaces",
+      "side_effect": "read",
+      "idempotent": "yes",
+      "dry_run_supported": false,
+      "flags": [
+        {
+          "name": "sort",
+          "type": "string",
+          "description": "Sort by: name|created|updated",
+          "default": "updated"
+        },
+        {
+          "name": "status",
+          "short": "s",
+          "type": "string",
+          "description": "Filter by status: active|archived"
+        }
+      ]
+    },
+    {
+      "path": "wsm workspace show",
+      "name": "show",
+      "short": "Show workspace details",
+      "side_effect": "read",
+      "idempotent": "yes",
+      "dry_run_supported": false,
+      "flags": [
+        {
+          "name": "devices",
+          "type": "bool",
+          "description": "Show attached devices",
+          "default": "false"
+        },
+        {
+          "name": "events",
+          "type": "bool",
+          "description": "Show all events instead of last 5",
+          "default": "false"
+        },
+        {
+          "name": "events-all",
+          "type": "bool",
+          "description": "Show all events instead of last 5",
+          "default": "false"
+        }
+      ]
+    },
+    {
+      "path": "wsm workspace unarchive",
+      "name": "unarchive",
+      "short": "Restore an archived workspace to active status",
+      "side_effect": "write",
+      "idempotent": "yes",
+      "dry_run_supported": true,
+      "flags": [
+        {
+          "name": "note",
+          "short": "n",
+          "type": "string",
+          "description": "Reason note (recorded for audit; future policies may require it)"
+        }
+      ]
+    },
+    {
+      "path": "wsm workspace update",
+      "name": "update",
+      "short": "Update workspace metadata",
+      "side_effect": "write",
+      "idempotent": "yes",
+      "dry_run_supported": true,
+      "flags": [
+        {
+          "name": "org-package",
+          "type": "string",
+          "description": "Attach organizational layout at \u003cdir\u003e; '-' detaches"
+        },
+        {
+          "name": "org-package-kind",
+          "type": "string",
+          "description": "Override detected layout kind"
+        }
+      ]
+    }
+  ]
+}

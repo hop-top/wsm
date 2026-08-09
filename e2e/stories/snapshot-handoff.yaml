@@ -1,0 +1,27 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/hop-top/kit/main/contracts/story-schema.json
+schema_version: "1"
+story_id: wsm.snapshot.handoff
+title: Materialize a snapshot for agent context handoff
+binary: wsm
+intent: |
+  An agent nearing its context limit hands off to a successor: it
+  materializes a snapshot of the workspace at the current sequence
+  number, then lists snapshots as JSON so the next agent can locate
+  the projection to resume from.
+steps:
+  - id: seed
+    intent: |
+      Create the workspace the snapshot projects.
+    invoke: ["wsm", "workspace", "add", "handoff", "--format", "json"]
+    capture: [exit_code, stdout]
+  - id: generate
+    intent: |
+      Materialize a point-in-time snapshot of the workspace state.
+    invoke: ["wsm", "snapshot", "generate", "handoff", "--format", "json"]
+    capture: [exit_code, stdout]
+  - id: list
+    intent: |
+      List the stored snapshots so the successor can pick the one to
+      resume from.
+    invoke: ["wsm", "snapshot", "list", "--workspace", "handoff", "--format", "json"]
+    capture: [exit_code, stdout]

@@ -1,0 +1,80 @@
+{
+  "scenario_id": "workspace-add-preview",
+  "schema_version": "1",
+  "verdict": "pass",
+  "scored_at": "2026-08-09T12:18:18.779441Z",
+  "grader_version": "1.0.0",
+  "rules_version": "2026.05.12.1",
+  "tier": 3,
+  "facets": [
+    {
+      "factor": 3,
+      "status": "pass"
+    },
+    {
+      "factor": 6,
+      "status": "pass"
+    },
+    {
+      "factor": 11,
+      "status": "pass"
+    }
+  ],
+  "assertions": [
+    {
+      "id": "preview-is-structured",
+      "kind": "stream_discipline_pass",
+      "factor": 3,
+      "status": "pass",
+      "expected": "stream discipline OK"
+    },
+    {
+      "id": "preview-names-the-command",
+      "kind": "output_field_equals",
+      "factor": 6,
+      "status": "pass",
+      "observed": "wsm workspace add",
+      "expected": "wsm workspace add"
+    },
+    {
+      "id": "preview-names-the-write",
+      "kind": "output_field_equals",
+      "factor": 6,
+      "status": "pass",
+      "observed": "create",
+      "expected": "create"
+    },
+    {
+      "id": "preview-names-the-target",
+      "kind": "output_field_equals",
+      "factor": 6,
+      "status": "pass",
+      "observed": "workspace:preview-target",
+      "expected": "workspace:preview-target"
+    },
+    {
+      "id": "preview-declares-one-effect",
+      "kind": "output_field_count",
+      "factor": 6,
+      "status": "pass",
+      "observed": 1,
+      "expected": 1
+    },
+    {
+      "id": "no-mutation-under-dry-run",
+      "kind": "output_field_equals",
+      "factor": 6,
+      "status": "pass",
+      "observed": 0,
+      "expected": 0
+    },
+    {
+      "id": "dry-run-exits-zero",
+      "kind": "exit_code_equals",
+      "factor": 11,
+      "status": "pass",
+      "observed": 0,
+      "expected": 0
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/hop-top/kit/main/contracts/story-schema.json
+schema_version: "1"
+story_id: wsm.event.capture
+title: Append session events and read the audit log back
+binary: wsm
+intent: |
+  A coding agent records what it did during a session so the work is
+  auditable and resumable on another device: it appends an interaction
+  message to the workspace log, then reads the log back as structured
+  data to confirm the sequence number advanced.
+steps:
+  - id: seed
+    intent: |
+      Create the workspace the events attach to.
+    invoke: ["wsm", "workspace", "add", "session-log", "--format", "json"]
+    capture: [exit_code, stdout]
+  - id: append
+    intent: |
+      Append one interaction message to the workspace audit log.
+    invoke: ["wsm", "event", "add", "session-log", "interaction.message", "--role", "user", "--content", "start the build", "--format", "json"]
+    capture: [exit_code, stdout]
+  - id: read_back
+    intent: |
+      Read the event log back as JSON to confirm the append landed with
+      a fresh sequence number.
+    invoke: ["wsm", "event", "list", "session-log", "--format", "json"]
+    capture: [exit_code, stdout]

@@ -1,0 +1,20 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/hop-top/kit/main/contracts/story-schema.json
+schema_version: "1"
+story_id: wsm.capabilities.agent-discovery
+title: Discover the invocable surface before delegating workspace work
+binary: wsm
+intent: |
+  An orchestrator about to hand session bookkeeping to wsm probes what
+  the binary may do: it fetches the machine-readable capability
+  listing to learn every invocable leaf, each leaf's side-effect tier
+  and idempotency contract, and which leaves honor a dry-run preview —
+  all without scraping help text. Knowing which verbs are destructive
+  up front decides what the orchestrator may run unattended.
+steps:
+  - id: capabilities_json
+    intent: |
+      Fetch the capability document mirroring the live command tree:
+      leaf paths, side-effect and idempotency contracts, dry-run
+      support, and per-leaf flags.
+    invoke: ["wsm", "capabilities", "--format", "json"]
+    capture: [exit_code, stdout]

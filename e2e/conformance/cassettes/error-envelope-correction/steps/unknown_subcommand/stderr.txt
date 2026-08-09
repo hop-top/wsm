@@ -1,0 +1,7 @@
+USAGE: unknown command "frobnicate" for "wsm workspace" — run 'wsm workspace --help' to see available commands
+Fix: run 'wsm workspace --help' to see available commands
+          
+   ERROR  
+          
+  Usage: unknown command "frobnicate" for "wsm workspace" — run 'wsm workspace --help' to see available commands.     
+

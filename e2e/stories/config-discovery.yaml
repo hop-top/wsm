@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/hop-top/kit/main/contracts/story-schema.json
+schema_version: "1"
+story_id: wsm.config.discovery
+title: Confirm which config layer wsm actually resolved
+binary: wsm
+intent: |
+  An operator debugging a workspace that wrote to the wrong data
+  directory asks wsm which config it actually loaded: the effective
+  values it resolved, and the full precedence chain (project, user,
+  system) showing which candidate files exist and which one won.
+steps:
+  - id: show
+    intent: |
+      Print the effective configuration after walking the precedence
+      chain — backend, data directory, and the source file used.
+    invoke: ["wsm", "config", "show", "--format", "json"]
+    capture: [exit_code, stdout]
+  - id: paths
+    intent: |
+      Print the full resolution chain so the operator sees every
+      candidate path and which ones exist.
+    invoke: ["wsm", "config", "paths", "--format", "json"]
+    capture: [exit_code, stdout]

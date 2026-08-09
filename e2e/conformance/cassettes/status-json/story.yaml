@@ -1,0 +1,19 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/hop-top/kit/main/contracts/story-schema.json
+schema_version: "1"
+story_id: wsm.conformance.status-json
+title: Inspect every piece of implicit runtime state as JSON
+binary: wsm
+intent: |
+  An agent about to delegate session bookkeeping inspects the state
+  wsm would write with: which profile and identity are active, which
+  config the process resolved, and which validation posture the CLI
+  runs under. It requests JSON so each section is a structured field
+  to branch on, not a report to scrape.
+steps:
+  - id: status_json
+    intent: |
+      Render every status section — profile, environment, auth,
+      effective config, and kit annotations — as one JSON document on
+      stdout, exiting clean.
+    invoke: ["wsm", "status", "--format", "json"]
+    capture: [exit_code, stdout, stderr]

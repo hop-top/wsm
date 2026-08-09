@@ -1,0 +1,35 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/hop-top/kit/main/contracts/story-schema.json
+schema_version: "1"
+story_id: wsm.workspace.lifecycle
+title: Create a workspace and walk it through its lifecycle
+binary: wsm
+intent: |
+  A developer starting a new project registers a workspace so session
+  events and snapshots have somewhere to land, confirms it appears in
+  the listing, then archives it when the project goes dormant.
+  Archiving is reversible and read-only rather than destructive, so
+  the history survives for later audit.
+steps:
+  - id: create
+    intent: |
+      Register the workspace and read back its assigned ID as JSON so
+      the caller can reference it later.
+    invoke: ["wsm", "workspace", "add", "atlas", "--format", "json"]
+    capture: [exit_code, stdout]
+  - id: list
+    intent: |
+      Confirm the workspace is now in the active listing.
+    invoke: ["wsm", "workspace", "list", "--format", "json"]
+    capture: [exit_code, stdout]
+  - id: archive
+    intent: |
+      Flip the workspace to archived (read-only) with an audit note
+      recording why.
+    invoke: ["wsm", "workspace", "archive", "atlas", "--note", "project dormant"]
+    capture: [exit_code, stdout]
+  - id: show_archived
+    intent: |
+      Verify the status flipped and the event history survived the
+      archive.
+    invoke: ["wsm", "workspace", "show", "atlas", "--format", "json"]
+    capture: [exit_code, stdout]

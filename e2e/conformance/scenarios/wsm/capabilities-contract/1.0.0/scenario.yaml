@@ -1,0 +1,90 @@
+schema_version: "1"
+scenario_id: capabilities-contract
+description: >-
+  Declared contracts must hold: the binary serves a machine-readable
+  capability listing naming every invocable leaf with its side-effect
+  tier, honors a pinned schema version, and loudly refuses an output
+  format outside the declared registry.
+binary: wsm
+factor_coverage: [5, 11]
+tier: 3
+story_ref:
+  story_id: wsm.conformance.capabilities-contract
+  story_path: stories/capabilities-contract.yaml
+  content_hash: "sha256:9f33108ba0e59f52d0e035717fc8d078f54354ecdd45ee6c77baaa1d67fef229"
+steps:
+  - id: capabilities_probe
+    invoke: ["wsm", "capabilities", "--format", "json"]
+    capture: [exit_code, stdout, stderr]
+  - id: api_version_ok
+    invoke: ["wsm", "workspace", "list", "--api-version", "1.0", "--format", "json"]
+    capture: [exit_code, stdout, stderr]
+  - id: format_refused
+    invoke: ["wsm", "workspace", "list", "--format", "xml"]
+    capture: [exit_code, stdout, stderr]
+assertions:
+  - id: capabilities-machine-readable
+    kind: capability_roundtrip
+    on: capabilities_probe
+    factor: 5
+    leaves:
+      - "wsm workspace add"
+      - "wsm workspace list"
+      - "wsm workspace show"
+      - "wsm workspace delete"
+      - "wsm event add"
+      - "wsm snapshot generate"
+      - "wsm space add"
+      - "wsm device list"
+      - "wsm config show"
+      - "wsm capabilities"
+      - "wsm status"
+  # A destructive leaf must say so in the manifest: this is the field
+  # an orchestrator reads to decide what it may run unattended.
+  - id: destructive-leaf-declares-contract
+    kind: output_field_equals
+    on: capabilities_probe
+    factor: 5
+    path: 'leaves.#(path=="wsm workspace delete").side_effect'
+    value: "destructive"
+  - id: write-leaf-declares-contract
+    kind: output_field_equals
+    on: capabilities_probe
+    factor: 5
+    path: 'leaves.#(path=="wsm workspace add").side_effect'
+    value: "write"
+  - id: read-leaf-declares-contract
+    kind: output_field_equals
+    on: capabilities_probe
+    factor: 5
+    path: 'leaves.#(path=="wsm workspace list").side_effect'
+    value: "read"
+  # Non-idempotent writes must be distinguishable from safely
+  # retryable ones: appending an event mints a new sequence number
+  # every time, so a blind retry duplicates history.
+  - id: non-idempotent-leaf-declares-contract
+    kind: output_field_equals
+    on: capabilities_probe
+    factor: 5
+    path: 'leaves.#(path=="wsm event add").idempotent'
+    value: "no"
+  - id: capabilities-exit-zero
+    kind: exit_code_equals
+    on: capabilities_probe
+    factor: 11
+    value: 0
+  - id: api-version-pin-honored
+    kind: exit_code_equals
+    on: api_version_ok
+    factor: 5
+    value: 0
+  - id: format-contract-enforced
+    kind: stderr_contains
+    on: format_refused
+    factor: 5
+    value: "invalid --format"
+  - id: format-refusal-usage-class
+    kind: exit_code_class
+    on: format_refused
+    factor: 11
+    classes: [USAGE]

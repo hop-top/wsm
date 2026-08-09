@@ -1,0 +1,25 @@
+schema_version: "1"
+binary: wsm
+binary_version: 0ea6fa5
+recorder: xrr
+recorder_version: 0.1.0-alpha.3
+recorded_at: 2026-08-09T12:17:48Z
+scenario_id: wsm/workspace-archive-idempotent
+scenario_version: 1.0.0
+story_ref:
+  story_id: wsm.conformance.workspace-archive-idempotent
+  story_path: story.yaml
+  content_hash: sha256:4c9955f86d5f7e5cd62bd0e9ed8635b36d1f8c8acc77f0e45719d74254fa1f13
+steps:
+  - id: seed
+    cassette_dir: steps/seed/cassette
+    captures: steps/seed
+  - id: read_first
+    cassette_dir: steps/read_first/cassette
+    captures: steps/read_first
+  - id: read_again
+    cassette_dir: steps/read_again/cassette
+    captures: steps/read_again
+  - id: list_converged
+    cassette_dir: steps/list_converged/cassette
+    captures: steps/list_converged

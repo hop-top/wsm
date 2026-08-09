@@ -1,0 +1,71 @@
+schema_version: "1"
+scenario_id: workspace-archive-idempotent
+description: >-
+  Repeat reads converge: reading the same workspace twice exits clean
+  both times and reports identical state, and the listing still holds
+  exactly one entry — blind re-reads are safe to retry.
+binary: wsm
+factor_coverage: [7, 11]
+tier: 3
+story_ref:
+  story_id: wsm.conformance.workspace-archive-idempotent
+  story_path: stories/workspace-archive-idempotent.yaml
+  content_hash: "sha256:4c9955f86d5f7e5cd62bd0e9ed8635b36d1f8c8acc77f0e45719d74254fa1f13"
+steps:
+  - id: seed
+    invoke: ["wsm", "workspace", "add", "steady", "--format", "json"]
+    capture: [exit_code, stdout, stderr]
+  - id: read_first
+    invoke: ["wsm", "workspace", "show", "steady", "--format", "json"]
+    capture: [exit_code, stdout, stderr]
+  - id: read_again
+    invoke: ["wsm", "workspace", "show", "steady", "--format", "json"]
+    capture: [exit_code, stdout, stderr]
+  - id: list_converged
+    invoke: ["wsm", "workspace", "list", "--format", "json"]
+    capture: [exit_code, stdout, stderr]
+assertions:
+  - id: first-read-clean
+    kind: exit_code_equals
+    on: read_first
+    factor: 7
+    value: 0
+  - id: reread-clean
+    kind: exit_code_equals
+    on: read_again
+    factor: 7
+    value: 0
+  # The re-read must observe the same status and the same event count:
+  # a read that advanced the log would prove the observation itself
+  # mutated state.
+  - id: reread-same-status
+    kind: output_field_equals
+    on: read_again
+    factor: 7
+    path: "workspace.status"
+    value: "active"
+  - id: reread-same-event-count
+    kind: output_field_equals
+    on: read_again
+    factor: 7
+    path: "event_count"
+    value: 1
+  - id: reread-no-snapshot-created
+    kind: output_field_equals
+    on: read_again
+    factor: 7
+    path: "snapshot_count"
+    value: 0
+  # gjson "#" on a bare array yields its length; equals-1 pins "the
+  # repeated reads left exactly one workspace".
+  - id: converged-single-entry
+    kind: output_field_equals
+    on: list_converged
+    factor: 7
+    path: "#"
+    value: 1
+  - id: readback-exits-zero
+    kind: exit_code_equals
+    on: list_converged
+    factor: 11
+    value: 0

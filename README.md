@@ -11,6 +11,7 @@
 
 [![Go Module](https://img.shields.io/badge/module-hop.top%2Fwsm-blue)](https://hop.top/wsm)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![12fc](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/hop-top/wsm/main/.12fc.json)](https://github.com/hop-top/wsm/actions/workflows/12fcc.yaml)
 
 > Your workspace state doesn't belong to your IDE.
 

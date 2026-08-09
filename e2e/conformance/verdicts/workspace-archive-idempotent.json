@@ -1,0 +1,77 @@
+{
+  "scenario_id": "workspace-archive-idempotent",
+  "schema_version": "1",
+  "verdict": "pass",
+  "scored_at": "2026-08-09T12:18:18.842297Z",
+  "grader_version": "1.0.0",
+  "rules_version": "2026.05.12.1",
+  "tier": 3,
+  "facets": [
+    {
+      "factor": 7,
+      "status": "pass"
+    },
+    {
+      "factor": 11,
+      "status": "pass"
+    }
+  ],
+  "assertions": [
+    {
+      "id": "first-read-clean",
+      "kind": "exit_code_equals",
+      "factor": 7,
+      "status": "pass",
+      "observed": 0,
+      "expected": 0
+    },
+    {
+      "id": "reread-clean",
+      "kind": "exit_code_equals",
+      "factor": 7,
+      "status": "pass",
+      "observed": 0,
+      "expected": 0
+    },
+    {
+      "id": "reread-same-status",
+      "kind": "output_field_equals",
+      "factor": 7,
+      "status": "pass",
+      "observed": "active",
+      "expected": "active"
+    },
+    {
+      "id": "reread-same-event-count",
+      "kind": "output_field_equals",
+      "factor": 7,
+      "status": "pass",
+      "observed": 1,
+      "expected": 1
+    },
+    {
+      "id": "reread-no-snapshot-created",
+      "kind": "output_field_equals",
+      "factor": 7,
+      "status": "pass",
+      "observed": 0,
+      "expected": 0
+    },
+    {
+      "id": "converged-single-entry",
+      "kind": "output_field_equals",
+      "factor": 7,
+      "status": "pass",
+      "observed": 1,
+      "expected": 1
+    },
+    {
+      "id": "readback-exits-zero",
+      "kind": "exit_code_equals",
+      "factor": 11,
+      "status": "pass",
+      "observed": 0,
+      "expected": 0
+    }
+  ]
+}

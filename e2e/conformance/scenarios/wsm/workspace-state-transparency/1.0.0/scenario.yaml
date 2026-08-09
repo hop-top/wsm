@@ -1,0 +1,71 @@
+schema_version: "1"
+scenario_id: workspace-state-transparency
+description: >-
+  Stored workspace state is inspectable rather than inferred: status,
+  event and snapshot counts, and the event log itself surface as typed
+  JSON fields, and the append that produced them reports its own
+  sequence number.
+binary: wsm
+factor_coverage: [3, 8, 11]
+tier: 3
+story_ref:
+  story_id: wsm.conformance.workspace-state-transparency
+  story_path: stories/workspace-state-transparency.yaml
+  content_hash: "sha256:d66c028172db5d15f9d5b9602cf665898c4ef09069405a780eb89cf2b878c9ec"
+steps:
+  - id: seed
+    invoke: ["wsm", "workspace", "add", "inspect-me", "--format", "json"]
+    capture: [exit_code, stdout, stderr]
+  - id: append_event
+    invoke: ["wsm", "event", "add", "inspect-me", "interaction.message", "--role", "user", "--content", "resume here", "--format", "json"]
+    capture: [exit_code, stdout, stderr]
+  - id: inspect
+    invoke: ["wsm", "workspace", "show", "inspect-me", "--format", "json"]
+    capture: [exit_code, stdout, stderr]
+assertions:
+  - id: inspect-stdout-is-json
+    kind: stream_discipline_pass
+    on: inspect
+    factor: 3
+  # The append reports the sequence number it minted, so a writer can
+  # correlate its own write with the log without re-reading.
+  - id: append-reports-sequence
+    kind: output_field_present
+    on: append_event
+    factor: 8
+    path: "seq_num"
+  - id: status-inspectable
+    kind: output_field_equals
+    on: inspect
+    factor: 8
+    path: "workspace.status"
+    value: "active"
+  # Creation event plus the appended interaction: the count is the
+  # cheap handle agents branch on before pulling the whole log.
+  - id: event-count-inspectable
+    kind: output_field_equals
+    on: inspect
+    factor: 8
+    path: "event_count"
+    value: 2
+  - id: snapshot-count-inspectable
+    kind: output_field_equals
+    on: inspect
+    factor: 8
+    path: "snapshot_count"
+    value: 0
+  - id: event-log-inspectable
+    kind: output_field_present
+    on: inspect
+    factor: 8
+    path: "events.0.type"
+  - id: append-exits-zero
+    kind: exit_code_equals
+    on: append_event
+    factor: 11
+    value: 0
+  - id: inspect-exits-zero
+    kind: exit_code_equals
+    on: inspect
+    factor: 11
+    value: 0

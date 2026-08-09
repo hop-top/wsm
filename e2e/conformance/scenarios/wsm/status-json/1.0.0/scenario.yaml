@@ -1,0 +1,71 @@
+schema_version: "1"
+scenario_id: status-json
+description: >-
+  Implicit state is inspectable as structured data: the active
+  profile, resolved identity, effective configuration, and the
+  validation posture the CLI runs under all surface as JSON fields,
+  and the report exits clean.
+binary: wsm
+factor_coverage: [3, 8, 11]
+tier: 3
+story_ref:
+  story_id: wsm.conformance.status-json
+  story_path: stories/status-json.yaml
+  content_hash: "sha256:0df30e7ccdf9e90c5fa789c59ec364d59b142550bbd653bed39e5ba3aedbb984"
+steps:
+  - id: status_json
+    invoke: ["wsm", "status", "--format", "json"]
+    capture: [exit_code, stdout, stderr]
+assertions:
+  - id: stdout-is-json
+    kind: stream_discipline_pass
+    on: status_json
+    factor: 3
+  - id: profile-inspectable
+    kind: output_field_present
+    on: status_json
+    factor: 8
+    path: 'sections.#(title=="profile").data.user'
+  - id: identity-inspectable
+    kind: output_field_present
+    on: status_json
+    factor: 8
+    path: 'sections.#(title=="auth").data.identity'
+  # The backend the process would write through is the single most
+  # load-bearing piece of implicit state wsm carries: it decides where
+  # every workspace lands. Asserted against the wsm section (resolved
+  # config) rather than kit's effective-config section, which reports
+  # raw flag values and reads empty whenever the flag is unset.
+  - id: resolved-backend-inspectable
+    kind: output_field_equals
+    on: status_json
+    factor: 8
+    path: 'sections.#(title=="wsm").data.backend'
+    value: "sqlite"
+  # Where workspaces land is state an operator must be able to read
+  # back before trusting a write.
+  - id: resolved-data-dir-inspectable
+    kind: output_field_present
+    on: status_json
+    factor: 8
+    path: 'sections.#(title=="wsm").data.data_dir'
+  # Which config layer won is the difference between "wrote nothing"
+  # and "wrote somewhere unexpected".
+  - id: config-source-inspectable
+    kind: output_field_present
+    on: status_json
+    factor: 8
+    path: 'sections.#(title=="wsm").data.config_source'
+  # Layer-A strict validation is on: the shape contract is enforced at
+  # Execute() time rather than merely documented.
+  - id: validation-posture-inspectable
+    kind: output_field_equals
+    on: status_json
+    factor: 8
+    path: 'sections.#(title=="kit-annotations").data.enforce_validate'
+    value: true
+  - id: exits-zero
+    kind: exit_code_equals
+    on: status_json
+    factor: 11
+    value: 0

@@ -1,6 +1,7 @@
 export GOFLAGS ?= -buildvcs=false
 
-.PHONY: help build test test-e2e test-integration test-ubuntu-docker verify-no-ui-leak fmt setup-aps-wsm
+.PHONY: help build test test-e2e test-integration test-ubuntu-docker verify-no-ui-leak fmt setup-aps-wsm \
+  12fcc-record 12fcc-grade 12fcc-badge
 
 help:
 	@echo "Targets:"
@@ -50,3 +51,14 @@ fmt:
 setup-aps-wsm: ## Set up APS + WSM integration
 	@echo "Setting up APS + WSM integration..."
 	@bash scripts/setup-aps-wsm.sh
+
+# Conformance grading (12fcc service tier). KIT_BIN must point at a
+# kit binary built from hop.top/kit cmd/kit.
+12fcc-record: ## Re-record conformance cassettes from real binary runs
+	@./scripts/12fcc-record.sh
+
+12fcc-grade: ## Grade recorded cassettes (STRICT=1 to fail on fail verdicts)
+	@./scripts/12fcc-grade.sh
+
+12fcc-badge: ## Regenerate .12fc.json from verify leaves + graded verdicts
+	@./scripts/12fcc-badge.sh

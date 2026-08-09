@@ -1,0 +1,15 @@
+{
+  "id": "01KZK7AD5QQ00EN4MKVKQ4HH5V",
+  "workspace_id": "01KZK7ACYP9113HCQE5482ZA8A",
+  "type": "interaction.message",
+  "device_id": "5192D2B6-B136-5C8F-8925-30500E9A9D06",
+  "agent_id": "user",
+  "writer_id": "oasf:agent:wsm-internal",
+  "lamport_clock": 1,
+  "timestamp": "2026-08-09T12:17:48.727558Z",
+  "data": {
+    "role": "user",
+    "content": "resume here"
+  },
+  "seq_num": 2
+}

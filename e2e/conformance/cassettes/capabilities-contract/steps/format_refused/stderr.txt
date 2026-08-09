@@ -1,0 +1,5 @@
+          
+   ERROR  
+          
+  Usage: invalid --format "xml" (valid: csv, human, json, table, text, yaml).                                         
+

@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/hop-top/kit/main/contracts/story-schema.json
+schema_version: "1"
+story_id: wsm.status.machine-readable-output
+title: Consume wsm status as JSON from an automation
+binary: wsm
+intent: |
+  An automation embedding wsm into a session-capture pipeline needs to
+  verify the runtime state the binary would write with: which profile
+  is active, which environment it resolved, and which config files it
+  discovered. It requests JSON so the monitor branches on structured
+  fields rather than scraping the human report.
+steps:
+  - id: status_json
+    intent: |
+      Render every status section — profile, environment, and config
+      discovery — as one JSON document on stdout.
+    invoke: ["wsm", "status", "--format", "json"]
+    capture: [exit_code, stdout]

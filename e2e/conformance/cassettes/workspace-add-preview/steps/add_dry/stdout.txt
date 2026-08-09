@@ -1,0 +1,15 @@
+{
+  "command": "wsm workspace add",
+  "args": {
+    "name": "preview-target"
+  },
+  "effects": [
+    {
+      "kind": "create",
+      "target": "workspace:preview-target",
+      "reversible": true,
+      "detail": "create workspace preview-target in the active backend"
+    }
+  ],
+  "generated_at": "2026-08-09T12:17:47.220063Z"
+}

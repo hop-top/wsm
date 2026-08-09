@@ -1,0 +1,11 @@
+{
+  "code": "NOT_FOUND",
+  "message": "workspace \"ghost\" not found",
+  "suggested_fix": "Run 'wsm workspace list' to see available workspaces.",
+  "exit_code": 3
+}
+          
+   ERROR  
+          
+  Not_found: workspace "ghost" not found.                                                                             
+

@@ -1,0 +1,110 @@
+{
+  "scenario_id": "error-envelope-correction",
+  "schema_version": "1",
+  "verdict": "pass",
+  "scored_at": "2026-08-09T12:18:18.65978Z",
+  "grader_version": "1.0.0",
+  "rules_version": "2026.05.12.1",
+  "tier": 3,
+  "facets": [
+    {
+      "factor": 4,
+      "status": "pass"
+    },
+    {
+      "factor": 11,
+      "status": "pass"
+    }
+  ],
+  "assertions": [
+    {
+      "id": "envelope-has-code",
+      "kind": "stderr_contains",
+      "factor": 4,
+      "status": "pass",
+      "expected": "\"code\""
+    },
+    {
+      "id": "envelope-offers-correction",
+      "kind": "stderr_contains",
+      "factor": 4,
+      "status": "pass",
+      "expected": "\"suggested_fix\""
+    },
+    {
+      "id": "envelope-names-recovery-command",
+      "kind": "stderr_contains",
+      "factor": 4,
+      "status": "pass",
+      "expected": "wsm workspace list"
+    },
+    {
+      "id": "envelope-echoes-input",
+      "kind": "stderr_contains",
+      "factor": 4,
+      "status": "pass",
+      "expected": "ghost"
+    },
+    {
+      "id": "missing-workspace-not-found-class",
+      "kind": "exit_code_class",
+      "factor": 11,
+      "status": "pass",
+      "observed": 3,
+      "expected": [
+        "NOT_FOUND"
+      ]
+    },
+    {
+      "id": "unknown-flag-correction-hint",
+      "kind": "stderr_contains",
+      "factor": 4,
+      "status": "pass",
+      "expected": "--help"
+    },
+    {
+      "id": "unknown-flag-usage-class",
+      "kind": "exit_code_class",
+      "factor": 11,
+      "status": "pass",
+      "observed": 2,
+      "expected": [
+        "USAGE"
+      ]
+    },
+    {
+      "id": "unknown-command-rejected",
+      "kind": "stderr_contains",
+      "factor": 4,
+      "status": "pass",
+      "expected": "unknown command"
+    },
+    {
+      "id": "unknown-command-usage-class",
+      "kind": "exit_code_class",
+      "factor": 11,
+      "status": "pass",
+      "observed": 2,
+      "expected": [
+        "USAGE"
+      ]
+    },
+    {
+      "id": "unknown-subcommand-rejected",
+      "kind": "stderr_contains",
+      "factor": 4,
+      "status": "pass",
+      "expected": "unknown command"
+    },
+    {
+      "id": "unknown-subcommand-usage-class",
+      "kind": "exit_code_class",
+      "factor": 11,
+      "status": "pass",
+      "observed": 2,
+      "expected": [
+        "USAGE"
+      ]
+    }
+  ]
+}

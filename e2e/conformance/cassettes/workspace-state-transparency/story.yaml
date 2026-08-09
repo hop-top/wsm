@@ -1,0 +1,28 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/hop-top/kit/main/contracts/story-schema.json
+schema_version: "1"
+story_id: wsm.conformance.workspace-state-transparency
+title: Inspect stored workspace state as typed fields
+binary: wsm
+intent: |
+  An agent resuming someone else's session needs the stored state to
+  be inspectable rather than inferred: how many events and snapshots
+  the workspace holds, what status it carries, and the event log
+  itself — each a structured field it can branch on without parsing a
+  human report.
+steps:
+  - id: seed
+    intent: |
+      Create the workspace whose state will be inspected.
+    invoke: ["wsm", "workspace", "add", "inspect-me", "--format", "json"]
+    capture: [exit_code, stdout, stderr]
+  - id: append_event
+    intent: |
+      Append an interaction event so the log has observable content.
+    invoke: ["wsm", "event", "add", "inspect-me", "interaction.message", "--role", "user", "--content", "resume here", "--format", "json"]
+    capture: [exit_code, stdout, stderr]
+  - id: inspect
+    intent: |
+      Read the workspace detail: status, event and snapshot counts,
+      and the event log, as one JSON document.
+    invoke: ["wsm", "workspace", "show", "inspect-me", "--format", "json"]
+    capture: [exit_code, stdout, stderr]

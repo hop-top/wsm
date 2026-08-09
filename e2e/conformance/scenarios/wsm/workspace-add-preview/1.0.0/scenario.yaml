@@ -1,0 +1,65 @@
+schema_version: "1"
+scenario_id: workspace-add-preview
+description: >-
+  Dry-run of a workspace write: the preview must be a structured plan
+  naming the resource and the single create effect, must exit clean,
+  and must not mutate state — the follow-up listing still shows zero
+  entries.
+binary: wsm
+factor_coverage: [3, 6, 11]
+tier: 3
+story_ref:
+  story_id: wsm.conformance.workspace-add-preview
+  story_path: stories/workspace-add-preview.yaml
+  content_hash: "sha256:c9fba774349a5e1151b6a5a580033931d04e1eac44a86dd2a957fd80418dfcdd"
+steps:
+  - id: add_dry
+    invoke: ["wsm", "workspace", "add", "preview-target", "--dry-run", "--format", "json"]
+    capture: [exit_code, stdout, stderr]
+  - id: list_after_dry
+    invoke: ["wsm", "workspace", "list", "--format", "json"]
+    capture: [exit_code, stdout, stderr]
+assertions:
+  - id: preview-is-structured
+    kind: stream_discipline_pass
+    on: add_dry
+    factor: 3
+  - id: preview-names-the-command
+    kind: output_field_equals
+    on: add_dry
+    factor: 6
+    path: "command"
+    value: "wsm workspace add"
+  - id: preview-names-the-write
+    kind: output_field_equals
+    on: add_dry
+    factor: 6
+    path: "effects.0.kind"
+    value: "create"
+  - id: preview-names-the-target
+    kind: output_field_equals
+    on: add_dry
+    factor: 6
+    path: "effects.0.target"
+    value: "workspace:preview-target"
+  # A preview must declare exactly the effects it would apply — an
+  # under- or over-stated plan is as misleading as no plan.
+  - id: preview-declares-one-effect
+    kind: output_field_count
+    on: add_dry
+    factor: 6
+    path: "effects"
+    equals: 1
+  # gjson "#" on a bare array yields its length; equals-0 pins "the
+  # listing is empty" against the empty-array document.
+  - id: no-mutation-under-dry-run
+    kind: output_field_equals
+    on: list_after_dry
+    factor: 6
+    path: "#"
+    value: 0
+  - id: dry-run-exits-zero
+    kind: exit_code_equals
+    on: add_dry
+    factor: 11
+    value: 0

@@ -1,0 +1,87 @@
+schema_version: "1"
+scenario_id: error-envelope-correction
+description: >-
+  Flawed invocations must yield structured, corrective errors and
+  class-accurate exit codes: not-found for a missing workspace, usage
+  for an unknown flag, an unknown command, and an unknown subcommand
+  under a real group.
+binary: wsm
+factor_coverage: [4, 11]
+tier: 3
+story_ref:
+  story_id: wsm.conformance.error-envelope-correction
+  story_path: stories/error-envelope-correction.yaml
+  content_hash: "sha256:9a1d88beae93ec94350464d64bbf3ef79b94a9351f9541d99903b4e2e71cd2ce"
+steps:
+  - id: show_missing
+    invoke: ["wsm", "workspace", "show", "ghost", "--format", "json"]
+    capture: [exit_code, stdout, stderr]
+  - id: unknown_flag
+    invoke: ["wsm", "workspace", "list", "--bogus-flag"]
+    capture: [exit_code, stdout, stderr]
+  - id: unknown_command
+    invoke: ["wsm", "frobnicate"]
+    capture: [exit_code, stdout, stderr]
+  - id: unknown_subcommand
+    invoke: ["wsm", "workspace", "frobnicate"]
+    capture: [exit_code, stdout, stderr]
+assertions:
+  - id: envelope-has-code
+    kind: stderr_contains
+    on: show_missing
+    factor: 4
+    value: '"code"'
+  - id: envelope-offers-correction
+    kind: stderr_contains
+    on: show_missing
+    factor: 4
+    value: '"suggested_fix"'
+  # The remedy must name a runnable command, not just describe the
+  # failure: an agent recovers by executing it.
+  - id: envelope-names-recovery-command
+    kind: stderr_contains
+    on: show_missing
+    factor: 4
+    value: "wsm workspace list"
+  - id: envelope-echoes-input
+    kind: stderr_contains
+    on: show_missing
+    factor: 4
+    value: "ghost"
+  - id: missing-workspace-not-found-class
+    kind: exit_code_class
+    on: show_missing
+    factor: 11
+    classes: [NOT_FOUND]
+  - id: unknown-flag-correction-hint
+    kind: stderr_contains
+    on: unknown_flag
+    factor: 4
+    value: "--help"
+  - id: unknown-flag-usage-class
+    kind: exit_code_class
+    on: unknown_flag
+    factor: 11
+    classes: [USAGE]
+  - id: unknown-command-rejected
+    kind: stderr_contains
+    on: unknown_command
+    factor: 4
+    value: "unknown command"
+  - id: unknown-command-usage-class
+    kind: exit_code_class
+    on: unknown_command
+    factor: 11
+    classes: [USAGE]
+  # Group nodes are the easy place to regress: cobra's default is
+  # help-and-exit-0, which reads as success to an agent.
+  - id: unknown-subcommand-rejected
+    kind: stderr_contains
+    on: unknown_subcommand
+    factor: 4
+    value: "unknown command"
+  - id: unknown-subcommand-usage-class
+    kind: exit_code_class
+    on: unknown_subcommand
+    factor: 11
+    classes: [USAGE]

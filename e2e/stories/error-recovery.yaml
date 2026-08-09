@@ -1,0 +1,27 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/hop-top/kit/main/contracts/story-schema.json
+schema_version: "1"
+story_id: wsm.errors.corrective-recovery
+title: Recover from a mistyped workspace reference
+binary: wsm
+intent: |
+  An agent references a workspace that does not exist — a typo, or one
+  deleted since it last looked. It needs the failure to be
+  distinguishable from a crash and to carry its own remedy: a
+  not-found classification separate from usage errors, the failing
+  input echoed back, and a named command to run to discover the valid
+  set.
+steps:
+  - id: show_missing
+    intent: |
+      Reference a workspace that does not exist and read the
+      corrective error envelope: a not-found code, the failing name
+      echoed, and the listing command that would reveal valid
+      references.
+    invoke: ["wsm", "workspace", "show", "ghost", "--format", "json"]
+    capture: [exit_code, stdout, stderr]
+  - id: recover
+    intent: |
+      Follow the suggested fix to discover which workspaces actually
+      exist.
+    invoke: ["wsm", "workspace", "list", "--format", "json"]
+    capture: [exit_code, stdout]

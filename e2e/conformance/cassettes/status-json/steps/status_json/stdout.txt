@@ -1,0 +1,97 @@
+{
+  "sections": [
+    {
+      "title": "profile",
+      "data": {
+        "user": "jadb"
+      },
+      "status": "ok",
+      "priority": 100
+    },
+    {
+      "title": "env",
+      "status": "empty",
+      "sensitive": true,
+      "priority": 200
+    },
+    {
+      "title": "workspace",
+      "status": "unavailable",
+      "priority": 300
+    },
+    {
+      "title": "auth",
+      "data": {
+        "identity": "anonymous",
+        "renewable": false,
+        "source": "none"
+      },
+      "status": "ok",
+      "sensitive": true,
+      "priority": 400
+    },
+    {
+      "title": "effective-config",
+      "data": {
+        "agent-id": "user",
+        "api-version": "",
+        "backend": "",
+        "backend-url": "",
+        "chdir": "",
+        "cols": [],
+        "columns": [],
+        "config": "",
+        "confirm": "",
+        "data-dir": "",
+        "format": "json",
+        "format-help": false,
+        "format-opt": [],
+        "instance": "",
+        "kit": {
+          "dry_run": false
+        },
+        "max-ops": 0,
+        "no-color": false,
+        "no-hints": false,
+        "offline": false,
+        "output": "",
+        "policy": "",
+        "profile": "",
+        "progress-format": "human",
+        "quiet": false,
+        "session-id": "",
+        "template": "",
+        "verbose": "0"
+      },
+      "status": "ok",
+      "sensitive": true,
+      "priority": 500
+    },
+    {
+      "title": "kit-annotations",
+      "data": {
+        "enforce_validate": true,
+        "reserved_subcommands": [
+          "help",
+          "status"
+        ]
+      },
+      "status": "ok",
+      "priority": 600
+    },
+    {
+      "title": "wsm",
+      "data": {
+        "backend": "sqlite",
+        "data_dir": "/tmp/wsm-12fcc-record/status-json/data",
+        "cache_dir": "/tmp/wsm-12fcc-record/status-json/xdg-cache/wsm",
+        "state_dir": "/tmp/wsm-12fcc-record/status-json/xdg-state/wsm",
+        "config_file": "/tmp/wsm-12fcc-record/status-json/xdg/wsm/config.yaml",
+        "config_file_found": false,
+        "config_source": "env"
+      },
+      "status": "ok",
+      "priority": 1000
+    }
+  ]
+}

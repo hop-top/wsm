@@ -1,0 +1,33 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/hop-top/kit/main/contracts/story-schema.json
+schema_version: "1"
+story_id: wsm.conformance.error-envelope-correction
+title: Read corrective errors off flawed invocations
+binary: wsm
+intent: |
+  An agent driving wsm unattended needs every rejection to be
+  self-correcting and class-accurate: a missing workspace must
+  classify as not-found and name the command that reveals valid
+  references, while an unknown flag and an unknown command must
+  classify as usage errors pointing at the right help surface. Without
+  that, the agent cannot tell a typo from an outage.
+steps:
+  - id: show_missing
+    intent: |
+      Reference a workspace that does not exist.
+    invoke: ["wsm", "workspace", "show", "ghost", "--format", "json"]
+    capture: [exit_code, stdout, stderr]
+  - id: unknown_flag
+    intent: |
+      Pass a flag the leaf does not declare.
+    invoke: ["wsm", "workspace", "list", "--bogus-flag"]
+    capture: [exit_code, stdout, stderr]
+  - id: unknown_command
+    intent: |
+      Invoke a command that does not exist.
+    invoke: ["wsm", "frobnicate"]
+    capture: [exit_code, stdout, stderr]
+  - id: unknown_subcommand
+    intent: |
+      Invoke an unknown subcommand under a real group.
+    invoke: ["wsm", "workspace", "frobnicate"]
+    capture: [exit_code, stdout, stderr]

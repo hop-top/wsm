@@ -1,0 +1,25 @@
+schema_version: "1"
+binary: wsm
+binary_version: 0ea6fa5
+recorder: xrr
+recorder_version: 0.1.0-alpha.3
+recorded_at: 2026-08-09T12:17:46Z
+scenario_id: wsm/error-envelope-correction
+scenario_version: 1.0.0
+story_ref:
+  story_id: wsm.conformance.error-envelope-correction
+  story_path: story.yaml
+  content_hash: sha256:9a1d88beae93ec94350464d64bbf3ef79b94a9351f9541d99903b4e2e71cd2ce
+steps:
+  - id: show_missing
+    cassette_dir: steps/show_missing/cassette
+    captures: steps/show_missing
+  - id: unknown_flag
+    cassette_dir: steps/unknown_flag/cassette
+    captures: steps/unknown_flag
+  - id: unknown_command
+    cassette_dir: steps/unknown_command/cassette
+    captures: steps/unknown_command
+  - id: unknown_subcommand
+    cassette_dir: steps/unknown_subcommand/cassette
+    captures: steps/unknown_subcommand

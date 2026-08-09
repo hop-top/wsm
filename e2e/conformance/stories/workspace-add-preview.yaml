@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/hop-top/kit/main/contracts/story-schema.json
+schema_version: "1"
+story_id: wsm.conformance.workspace-add-preview
+title: Preview a workspace write before applying it
+binary: wsm
+intent: |
+  An agent pre-validates a workspace creation it is not yet authorized
+  to apply. It asks for the plan, reads back the single declared
+  effect naming the resource it would create, and confirms the
+  listing is still empty afterwards — the preview wrote nothing.
+steps:
+  - id: add_dry
+    intent: |
+      Request the structured plan for creating the workspace.
+    invoke: ["wsm", "workspace", "add", "preview-target", "--dry-run", "--format", "json"]
+    capture: [exit_code, stdout, stderr]
+  - id: list_after_dry
+    intent: |
+      Confirm the preview applied nothing — the listing is empty.
+    invoke: ["wsm", "workspace", "list", "--format", "json"]
+    capture: [exit_code, stdout, stderr]

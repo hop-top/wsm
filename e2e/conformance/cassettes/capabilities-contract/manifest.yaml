@@ -1,0 +1,22 @@
+schema_version: "1"
+binary: wsm
+binary_version: 0ea6fa5
+recorder: xrr
+recorder_version: 0.1.0-alpha.3
+recorded_at: 2026-08-09T12:17:46Z
+scenario_id: wsm/capabilities-contract
+scenario_version: 1.0.0
+story_ref:
+  story_id: wsm.conformance.capabilities-contract
+  story_path: story.yaml
+  content_hash: sha256:9f33108ba0e59f52d0e035717fc8d078f54354ecdd45ee6c77baaa1d67fef229
+steps:
+  - id: capabilities_probe
+    cassette_dir: steps/capabilities_probe/cassette
+    captures: steps/capabilities_probe
+  - id: api_version_ok
+    cassette_dir: steps/api_version_ok/cassette
+    captures: steps/api_version_ok
+  - id: format_refused
+    cassette_dir: steps/format_refused/cassette
+    captures: steps/format_refused

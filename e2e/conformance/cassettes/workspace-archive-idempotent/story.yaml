@@ -1,0 +1,31 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/hop-top/kit/main/contracts/story-schema.json
+schema_version: "1"
+story_id: wsm.conformance.workspace-archive-idempotent
+title: Re-read workspace state without perturbing it
+binary: wsm
+intent: |
+  An agent polling workspace state needs blind re-reads to be safe:
+  reading the same workspace twice must report identical state, and
+  the listing must still show exactly one entry afterwards. Nothing
+  about observing a workspace may change it.
+steps:
+  - id: seed
+    intent: |
+      Create the workspace the reads observe.
+    invoke: ["wsm", "workspace", "add", "steady", "--format", "json"]
+    capture: [exit_code, stdout, stderr]
+  - id: read_first
+    intent: |
+      Read the workspace state once.
+    invoke: ["wsm", "workspace", "show", "steady", "--format", "json"]
+    capture: [exit_code, stdout, stderr]
+  - id: read_again
+    intent: |
+      Re-read the same workspace and expect identical state.
+    invoke: ["wsm", "workspace", "show", "steady", "--format", "json"]
+    capture: [exit_code, stdout, stderr]
+  - id: list_converged
+    intent: |
+      Confirm the repeated reads left exactly one workspace.
+    invoke: ["wsm", "workspace", "list", "--format", "json"]
+    capture: [exit_code, stdout, stderr]

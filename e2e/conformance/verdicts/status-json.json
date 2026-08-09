@@ -1,0 +1,88 @@
+{
+  "scenario_id": "status-json",
+  "schema_version": "1",
+  "verdict": "pass",
+  "scored_at": "2026-08-09T12:18:18.720578Z",
+  "grader_version": "1.0.0",
+  "rules_version": "2026.05.12.1",
+  "tier": 3,
+  "facets": [
+    {
+      "factor": 3,
+      "status": "pass"
+    },
+    {
+      "factor": 8,
+      "status": "pass"
+    },
+    {
+      "factor": 11,
+      "status": "pass"
+    }
+  ],
+  "assertions": [
+    {
+      "id": "stdout-is-json",
+      "kind": "stream_discipline_pass",
+      "factor": 3,
+      "status": "pass",
+      "expected": "stream discipline OK"
+    },
+    {
+      "id": "profile-inspectable",
+      "kind": "output_field_present",
+      "factor": 8,
+      "status": "pass",
+      "observed": "sections.#(title==\"profile\").data.user",
+      "expected": "present"
+    },
+    {
+      "id": "identity-inspectable",
+      "kind": "output_field_present",
+      "factor": 8,
+      "status": "pass",
+      "observed": "sections.#(title==\"auth\").data.identity",
+      "expected": "present"
+    },
+    {
+      "id": "resolved-backend-inspectable",
+      "kind": "output_field_equals",
+      "factor": 8,
+      "status": "pass",
+      "observed": "sqlite",
+      "expected": "sqlite"
+    },
+    {
+      "id": "resolved-data-dir-inspectable",
+      "kind": "output_field_present",
+      "factor": 8,
+      "status": "pass",
+      "observed": "sections.#(title==\"wsm\").data.data_dir",
+      "expected": "present"
+    },
+    {
+      "id": "config-source-inspectable",
+      "kind": "output_field_present",
+      "factor": 8,
+      "status": "pass",
+      "observed": "sections.#(title==\"wsm\").data.config_source",
+      "expected": "present"
+    },
+    {
+      "id": "validation-posture-inspectable",
+      "kind": "output_field_equals",
+      "factor": 8,
+      "status": "pass",
+      "observed": true,
+      "expected": true
+    },
+    {
+      "id": "exits-zero",
+      "kind": "exit_code_equals",
+      "factor": 11,
+      "status": "pass",
+      "observed": 0,
+      "expected": 0
+    }
+  ]
+}

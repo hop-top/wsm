@@ -1,0 +1,30 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/hop-top/kit/main/contracts/story-schema.json
+schema_version: "1"
+story_id: wsm.workspace.delete-preview
+title: Preview a destructive delete before committing to it
+binary: wsm
+intent: |
+  An agent asked to clean up stale workspaces refuses to run an
+  irreversible delete blind. It first requests a dry-run preview to
+  learn the blast radius — which workspace resolves, and how many
+  events and snapshots would go with it — confirms nothing was
+  applied, and only then decides whether to re-issue for real.
+steps:
+  - id: seed
+    intent: |
+      Create the workspace that will be the delete target.
+    invoke: ["wsm", "workspace", "add", "scratch", "--format", "json"]
+    capture: [exit_code, stdout]
+  - id: delete_dry
+    intent: |
+      Request the structured plan for the delete: the effect names the
+      resource, declares itself irreversible, and reports the event and
+      snapshot counts that would be destroyed.
+    invoke: ["wsm", "workspace", "delete", "scratch", "--dry-run", "--format", "json"]
+    capture: [exit_code, stdout]
+  - id: list_after_dry
+    intent: |
+      Confirm the preview applied nothing — the workspace is still
+      listed.
+    invoke: ["wsm", "workspace", "list", "--format", "json"]
+    capture: [exit_code, stdout]

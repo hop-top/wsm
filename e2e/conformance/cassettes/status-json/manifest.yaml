@@ -1,0 +1,16 @@
+schema_version: "1"
+binary: wsm
+binary_version: 0ea6fa5
+recorder: xrr
+recorder_version: 0.1.0-alpha.3
+recorded_at: 2026-08-09T12:17:47Z
+scenario_id: wsm/status-json
+scenario_version: 1.0.0
+story_ref:
+  story_id: wsm.conformance.status-json
+  story_path: story.yaml
+  content_hash: sha256:0df30e7ccdf9e90c5fa789c59ec364d59b142550bbd653bed39e5ba3aedbb984
+steps:
+  - id: status_json
+    cassette_dir: steps/status_json/cassette
+    captures: steps/status_json

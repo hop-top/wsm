@@ -1,0 +1,5 @@
+          
+   ERROR  
+          
+  Usage: unknown command "frobnicate" for "wsm" — run 'wsm --help' to see available commands.                         
+

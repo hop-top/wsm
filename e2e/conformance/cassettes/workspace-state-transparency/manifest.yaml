@@ -1,0 +1,22 @@
+schema_version: "1"
+binary: wsm
+binary_version: 0ea6fa5
+recorder: xrr
+recorder_version: 0.1.0-alpha.3
+recorded_at: 2026-08-09T12:17:48Z
+scenario_id: wsm/workspace-state-transparency
+scenario_version: 1.0.0
+story_ref:
+  story_id: wsm.conformance.workspace-state-transparency
+  story_path: story.yaml
+  content_hash: sha256:d66c028172db5d15f9d5b9602cf665898c4ef09069405a780eb89cf2b878c9ec
+steps:
+  - id: seed
+    cassette_dir: steps/seed/cassette
+    captures: steps/seed
+  - id: append_event
+    cassette_dir: steps/append_event/cassette
+    captures: steps/append_event
+  - id: inspect
+    cassette_dir: steps/inspect/cassette
+    captures: steps/inspect

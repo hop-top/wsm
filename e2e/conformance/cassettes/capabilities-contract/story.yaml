@@ -1,0 +1,29 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/hop-top/kit/main/contracts/story-schema.json
+schema_version: "1"
+story_id: wsm.conformance.capabilities-contract
+title: Read the declared command contract and hold it to its word
+binary: wsm
+intent: |
+  An orchestrator refuses to invoke a CLI whose contract it cannot
+  read. It fetches the machine-readable capability listing naming
+  every invocable leaf with its side-effect tier, checks that a
+  requested schema-version pin is honored, and confirms an output
+  format outside the declared registry is refused loudly rather than
+  silently coerced.
+steps:
+  - id: capabilities_probe
+    intent: |
+      Fetch the capability document mirroring the live command tree.
+    invoke: ["wsm", "capabilities", "--format", "json"]
+    capture: [exit_code, stdout, stderr]
+  - id: api_version_ok
+    intent: |
+      Pin the CLI schema version and confirm the request is honored.
+    invoke: ["wsm", "workspace", "list", "--api-version", "1.0", "--format", "json"]
+    capture: [exit_code, stdout, stderr]
+  - id: format_refused
+    intent: |
+      Request an output format outside the declared registry and
+      confirm it is refused as a usage error.
+    invoke: ["wsm", "workspace", "list", "--format", "xml"]
+    capture: [exit_code, stdout, stderr]
