@@ -340,6 +340,12 @@ func NewRootCmd() *cobra.Command {
 	)
 	root := r.Cmd
 
+	// kit's effective-config section reports raw flag values, so the
+	// backend and data dir wsm actually resolved stay invisible when
+	// the flags are unset. Register a wsm section carrying the
+	// resolved state the next command would read and write with.
+	r.RegisterStatusProvider("wsm", wsmStatusProvider)
+
 	// NO_COLOR honor: cli.New installs a process-wide default table style
 	// (colors lifted from r.Theme) via output.SetDefaultTableStyle. The
 	// styled-table renderer then routes through lipgloss v2's Style.Render,
