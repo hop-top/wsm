@@ -356,6 +356,13 @@ func NewRootCmd() *cobra.Command {
 	// env case at root construction time. The --no-color flag path is
 	// handled in PersistentPreRunE below because viper only knows the
 	// flag value after cobra has parsed args.
+	//
+	// Caveat (kit-side, not addressable here): lipgloss compat init runs
+	// `HasDarkBackground(os.Stdin, os.Stdout)` at package load time,
+	// emitting OSC 11 + CSI DA terminal probes to stdout. That happens
+	// before any wsm code can run, so fully ANSI-free NO_COLOR output on
+	// a TTY requires kit/lipgloss work. Tests asserting an ANSI-free TTY
+	// capture must account for those probes.
 	if os.Getenv("NO_COLOR") != "" {
 		output.SetDefaultTableStyle(output.TableStyle{})
 	}
