@@ -174,7 +174,7 @@ event shapes (interaction.message, interaction.tool_*, mutation.file_patch,
 mutation.artifact, device.*). Not idempotent: each invocation mints a new event
 with a fresh ID and sequence number.`,
 		Args: cobra.ExactArgs(2),
-		RunE: func(_ *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
 				eventType := workspace.EventType(strings.TrimSpace(args[1]))
 				if !isKnownEventType(eventType) {
@@ -182,6 +182,21 @@ with a fresh ID and sequence number.`,
 				}
 				if !isUserAppendableEventType(eventType) {
 					return workspace.NewErrorUsage("event type " + string(eventType) + " is reserved for system lifecycle operations")
+				}
+				// Preview after type validation so a dry run still
+				// rejects an unknown or reserved event type: an agent
+				// pre-validating with --dry-run must see the same
+				// refusal the real invocation would give.
+				if done, err := previewDryRun(cmd,
+					map[string]any{"workspace": args[0], "type": string(eventType)},
+					cli.Effect{
+						Kind:       "create",
+						Target:     "event:" + string(eventType),
+						Reversible: false,
+						Detail:     "append one " + string(eventType) + " event to workspace " + args[0],
+					},
+				); done {
+					return err
 				}
 
 				payload, err := buildEventAddPayload(eventType, eventAddPayloadInput{

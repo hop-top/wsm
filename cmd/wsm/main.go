@@ -32,6 +32,11 @@ func main() {
 		if !errors.As(err, &oe) {
 			fmt.Fprintln(os.Stderr, "Error:", err)
 		}
+		// Context cancellation is the one signal not modeled as an
+		// envelope (it comes from the cobra/fang plumbing).
+		if errors.Is(err, context.Canceled) {
+			os.Exit(130)
+		}
 		os.Exit(exitCodeForError(err))
 	}
 }
@@ -80,5 +85,6 @@ func isCobraUsageError(err error) bool {
 	msg := strings.ToLower(err.Error())
 	return strings.Contains(msg, "accepts") ||
 		strings.Contains(msg, "unknown flag") ||
+		strings.Contains(msg, "unknown command") ||
 		strings.Contains(msg, "required flag")
 }

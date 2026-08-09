@@ -25,14 +25,20 @@ import (
 // Why a RunE + manual arg check (not cobra.NoArgs alone): without a
 // RunE, cobra short-circuits to flag.ErrHelp before Args validation
 // (cobra/command.go: !c.Runnable() → ErrHelp) — so the bug repros even
-// with cobra.NoArgs set. Returning the unknown-command error as
-// workspace.NewErrorUsage routes through main's exitCodeForError to
-// produce exit 2, per CLI conventions §8.1.
+// with cobra.NoArgs set. The unknown positional returns a structured
+// usage envelope (exit 2, per CLI conventions §8.1) whose Message
+// carries the corrective --help pointer: kit's framework renderer
+// prints only Code + Message, so guidance parked in SuggestedFix alone
+// would never reach stderr.
 func groupOnlyRunE(cmd *cobra.Command, args []string) error {
 	if len(args) > 0 {
-		return workspace.NewErrorUsage(
-			fmt.Sprintf("unknown command %q for %q", args[0], cmd.CommandPath()),
-		)
+		fix := "run '" + cmd.CommandPath() + " --help' to see available commands"
+		return &output.Error{
+			Code:         output.CodeUsage,
+			Message:      fmt.Sprintf("unknown command %q for %q — %s", args[0], cmd.CommandPath(), fix),
+			SuggestedFix: fix,
+			ExitCode:     2,
+		}
 	}
 	return cmd.Help()
 }
@@ -127,9 +133,20 @@ container for sessions, events, and snapshots captured against it. Use
 --org-package to attach an organizational layout (kind auto-detected from
 a COMPANY.md marker, overridable via --org-package-kind).`,
 		Args: cobra.ExactArgs(1),
-		RunE: func(_ *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			if orgPackage == "-" {
 				return workspace.NewErrorUsage("--org-package -: nothing to detach on add")
+			}
+			if done, err := previewDryRun(cmd,
+				map[string]any{"name": args[0]},
+				cli.Effect{
+					Kind:       "create",
+					Target:     "workspace:" + args[0],
+					Reversible: true,
+					Detail:     "create workspace " + args[0] + " in the active backend",
+				},
+			); done {
+				return err
 			}
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
 				ws, err := app.manager.Create(ctx, args[0], workspace.CreateOptions{Description: description, Tags: tags})
@@ -178,9 +195,24 @@ func newWorkspaceUpdateCmd(opts *globalOptions) *cobra.Command {
 layout: --org-package <dir> attaches (kind auto-detected from a COMPANY.md
 marker, overridable via --org-package-kind); '--org-package -' detaches.`,
 		Args: cobra.ExactArgs(1),
-		RunE: func(_ *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			if orgPackage == "" {
 				return workspace.NewErrorUsage("nothing to update: pass --org-package <dir> (or '-' to detach)")
+			}
+			detail := "attach layout " + orgPackage
+			if orgPackage == "-" {
+				detail = "detach the attached layout"
+			}
+			if done, err := previewDryRun(cmd,
+				map[string]any{"workspace": args[0], "org_package": orgPackage},
+				cli.Effect{
+					Kind:       "update",
+					Target:     "workspace:" + args[0],
+					Reversible: true,
+					Detail:     detail,
+				},
+			); done {
+				return err
 			}
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
 				var layout *model.Layout
@@ -436,7 +468,18 @@ func newWorkspaceArchiveCmd(opts *globalOptions) *cobra.Command {
 list views. Idempotent: re-running on an already-archived workspace yields the
 same state. Use 'workspace unarchive' to restore active status.`,
 		Args: cobra.ExactArgs(1),
-		RunE: func(_ *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if done, err := previewDryRun(cmd,
+				map[string]any{"workspace": args[0], "note": note},
+				cli.Effect{
+					Kind:       "update",
+					Target:     "workspace:" + args[0],
+					Reversible: true,
+					Detail:     "flip status to archived (reverse with 'wsm workspace unarchive')",
+				},
+			); done {
+				return err
+			}
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
 				ws, err := app.manager.ResolveWorkspaceRef(ctx, args[0])
 				if err != nil {
@@ -444,8 +487,7 @@ same state. Use 'workspace unarchive' to restore active status.`,
 				}
 				// Plumb --note into ctx via policy.ContextAttrsKey so
 				// the runtime policy engine can read it during pre-event
-				// veto. T-1287 wires the flag; T-1288 adds the default
-				// policy that enforces note presence.
+				// veto.
 				if note != "" {
 					ctx = context.WithValue(ctx, policy.ContextAttrsKey, map[string]any{
 						"note": note,
@@ -486,7 +528,18 @@ func newWorkspaceUnarchiveCmd(opts *globalOptions) *cobra.Command {
 Idempotent: re-running on an already-active workspace yields the same state.
 Inverse of 'workspace archive'.`,
 		Args: cobra.ExactArgs(1),
-		RunE: func(_ *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if done, err := previewDryRun(cmd,
+				map[string]any{"workspace": args[0], "note": note},
+				cli.Effect{
+					Kind:       "update",
+					Target:     "workspace:" + args[0],
+					Reversible: true,
+					Detail:     "flip status to active (reverse with 'wsm workspace archive')",
+				},
+			); done {
+				return err
+			}
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
 				ws, err := app.manager.ResolveWorkspaceRef(ctx, args[0])
 				if err != nil {
@@ -494,8 +547,7 @@ Inverse of 'workspace archive'.`,
 				}
 				// Plumb --note into ctx via policy.ContextAttrsKey so
 				// the runtime policy engine can read it during pre-event
-				// veto. T-1287 wires the flag; T-1288 adds the default
-				// policy that enforces note presence.
+				// veto.
 				if note != "" {
 					ctx = context.WithValue(ctx, policy.ContextAttrsKey, map[string]any{
 						"note": note,
@@ -528,7 +580,7 @@ Inverse of 'workspace archive'.`,
 }
 
 func newWorkspaceDeleteCmd(opts *globalOptions) *cobra.Command {
-	var force, dryRun bool
+	var force bool
 	var note string
 	cmd := &cobra.Command{
 		Use:   "delete <workspace>",
@@ -550,22 +602,36 @@ future release.`,
 			// invocation. Emit a one-shot deprecation hint to stderr.
 			return bridgeForceToConfirm(cmd, force)
 		},
-		RunE: func(_ *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
 				preview, err := app.manager.DeletePreview(ctx, args[0])
 				if err != nil {
 					return err
 				}
 
-				if dryRun {
-					if opts.Format == output.JSON || opts.Format == output.YAML {
-						return output.Render(os.Stdout, opts.Format,
-							map[string]any{"dry_run": true, "preview": preview})
-					}
-					fmt.Fprintf(os.Stdout, "Would remove workspace %q (%s):\n", preview.WorkspaceName, preview.WorkspaceID)
-					fmt.Fprintf(os.Stdout, "  - %d events\n", preview.EventCount)
-					fmt.Fprintf(os.Stdout, "  - %d snapshots\n", preview.SnapshotCount)
-					return nil
+				// --dry-run is kit's global flag (kit's confirm gate
+				// short-circuits on it, so no confirmation is demanded
+				// for a preview). The plan counts what the real run
+				// would destroy — resolved from the backend because
+				// blast radius is the whole point of previewing a
+				// destructive verb.
+				if done, err := previewDryRun(cmd,
+					map[string]any{
+						"workspace":     args[0],
+						"events":        preview.EventCount,
+						"snapshots":     preview.SnapshotCount,
+						"resolved_id":   preview.WorkspaceID,
+						"resolved_name": preview.WorkspaceName,
+					},
+					cli.Effect{
+						Kind:       "delete",
+						Target:     "workspace:" + preview.WorkspaceID,
+						Reversible: false,
+						Detail: fmt.Sprintf("remove workspace %q with %d events and %d snapshots",
+							preview.WorkspaceName, preview.EventCount, preview.SnapshotCount),
+					},
+				); done {
+					return err
 				}
 
 				// Plumb --note into ctx via policy.ContextAttrsKey so
@@ -602,7 +668,9 @@ future release.`,
 		},
 	}
 	cmd.Flags().BoolVarP(&force, "force", "f", false, "Deprecated: alias for --confirm=yes (kept for backward compat)")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Preview removal without deleting data")
+	// --dry-run is kit's global (registered on the root persistent flag
+	// set); a local redeclaration would shadow it and break the plan
+	// contract, so this leaf deliberately declares none.
 	cmd.Flags().StringVarP(&note, "note", "n", "", "Reason note (recorded for audit; future policies may require it)")
 	// idempotent: kit default (delete → Yes).
 	cli.SetSideEffect(cmd, cli.SideEffectDestructive)

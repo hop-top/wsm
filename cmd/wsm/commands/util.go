@@ -34,18 +34,29 @@ Re-running on an already-initialized directory fails with an
 "already exists" error unless --force is passed, in which case the
 existing directory is replaced with the same minimal config.yaml.`,
 		Args: cobra.NoArgs,
-		RunE: func(_ *cobra.Command, _ []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			dir, err := os.Getwd()
 			if err != nil {
 				return fmt.Errorf("get working directory: %w", err)
 			}
-			configPath, err := config.InitLocalConfig(dir, hop, force)
-			if err != nil {
-				return err
-			}
 			mode := ".wsm/"
 			if hop {
 				mode = ".hop/wsm/"
+			}
+			if done, err := previewDryRun(cmd,
+				map[string]any{"dir": dir, "layout": mode, "force": force},
+				cli.Effect{
+					Kind:       "create",
+					Target:     filepath.Join(dir, mode),
+					Reversible: true,
+					Detail:     "write a minimal config.yaml and symlink the companion path",
+				},
+			); done {
+				return err
+			}
+			configPath, err := config.InitLocalConfig(dir, hop, force)
+			if err != nil {
+				return err
 			}
 			// §6.3: ack message (non-data) → stderr.
 			fmt.Fprintf(os.Stderr, "Initialized %s in %s\n", mode, dir)
@@ -105,7 +116,17 @@ global --format flag for JSON or YAML output.`,
 	cmd := &cobra.Command{
 		Use:   "config",
 		Short: "Configuration commands",
+		Long: `Inspect the resolved wsm configuration and the precedence chain it came
+from. Use show for the effective values and path/paths to see which config
+files exist and win. Read-only surface.`,
+		// Usage-harden the group: an unmatched positional is a usage
+		// error (exit 2), not cobra's help-and-exit-0. The RunE makes
+		// this a runnable depth-1 verb per kit's shape validator, so it
+		// carries kit/top-level-verb and counts against
+		// Config.MaxTopLevelVerbs (see NewRootCmd).
+		RunE: groupOnlyRunE,
 	}
+	cli.SetTopLevelVerb(cmd)
 	cmd.AddCommand(showCmd)
 	// kit/cli/config: shared `path` and `paths` subcommands that walk
 	// the precedence chain. wsmConfigResolver mirrors pkg/config.Load

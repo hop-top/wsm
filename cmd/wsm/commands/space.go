@@ -47,7 +47,24 @@ VM, API endpoint, database, or remote resource scoped by capabilities and a
 trust level. Optionally write-through to rux projects.yaml for IDE integration
 and use --auto to attempt detection of attributes from the resource path.`,
 		Args: cobra.ExactArgs(2),
-		RunE: func(_ *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if done, err := previewDryRun(cmd,
+				map[string]any{
+					"workspace": args[0],
+					"space":     args[1],
+					"type":      typ,
+					"path":      path,
+					"trust":     trustLevel,
+				},
+				cli.Effect{
+					Kind:       "create",
+					Target:     "space:" + args[1],
+					Reversible: true,
+					Detail:     "bind a " + typ + " space to workspace " + args[0] + " and write it through to rux projects.yaml",
+				},
+			); done {
+				return err
+			}
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
 				s := workspace.Space{
 					ID:           args[1],
@@ -223,12 +240,26 @@ release.`,
 			// below); this PreRun only wires the kit gate.
 			return bridgeForceToConfirm(cmd, force)
 		},
-		RunE: func(_ *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) error {
+			detail := "unbind space " + args[1] + " from workspace " + args[0] + " (underlying resource untouched)"
+			if force {
+				detail += "; --force also cascade-removes nested child spaces"
+			}
+			if done, err := previewDryRun(cmd,
+				map[string]any{"workspace": args[0], "space": args[1], "cascade": force, "note": note},
+				cli.Effect{
+					Kind:       "delete",
+					Target:     "space:" + args[1],
+					Reversible: true,
+					Detail:     detail,
+				},
+			); done {
+				return err
+			}
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
 				// Plumb --note into ctx via policy.ContextAttrsKey so
 				// the runtime policy engine can read it during pre-event
-				// veto. T-1287 wires the flag; T-1288 adds the default
-				// policy that enforces note presence.
+				// veto.
 				if note != "" {
 					ctx = context.WithValue(ctx, policy.ContextAttrsKey, map[string]any{
 						"note": note,
@@ -271,10 +302,25 @@ after a partial write failure during 'space add', a fresh checkout where the
 file is missing, or to recover from drift. Idempotent: re-running at steady
 state yields the same projects.yaml; existing StartupCmd values are preserved.`,
 		Args: cobra.NoArgs,
-		RunE: func(_ *cobra.Command, _ []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
 				spaces, err := app.manager.ListSpaces(ctx, "")
 				if err != nil {
+					return err
+				}
+				// Plan counts the rows the rewrite would touch, so the
+				// preview names the real blast radius rather than a
+				// generic "would sync".
+				if done, err := previewDryRun(cmd,
+					map[string]any{"spaces": len(spaces)},
+					cli.Effect{
+						Kind:       "update",
+						Target:     "rux:projects.yaml",
+						Reversible: true,
+						Detail: fmt.Sprintf("rewrite %d space entries from the wsm DB (StartupCmd values preserved)",
+							len(spaces)),
+					},
+				); done {
 					return err
 				}
 				// Read current entries to preserve StartupCmd values

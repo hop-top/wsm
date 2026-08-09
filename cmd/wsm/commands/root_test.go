@@ -143,13 +143,26 @@ func TestLayerAAnnotationsPresent(t *testing.T) {
 // its steady-state value. kit's shape validator caps depth-1 verbs at
 // MaxTopLevelVerbs=10 but excludes reserved subcommands (`status`,
 // future kit-shipped reserved verbs) from the count — see
-// hop-top/kit T-0830, shipped in v0.4.0-alpha.6. Locking the count
-// here prevents an 11th non-reserved verb sneaking in unobserved.
+// kit's shape validator, but excludes reserved subcommands (`status`,
+// future kit-shipped reserved verbs) from the count. Locking the count
+// here prevents an unintended verb sneaking in unobserved.
+//
+// The steady-state count is 12, two over kit's default cap of 10, so
+// NewRootCmd raises Config.MaxTopLevelVerbs to match. Both additions
+// are deliberate:
+//
+//   - capabilities: the machine-readable command surface agents read
+//     instead of scraping help text. Must be a depth-1 verb — it
+//     describes the whole tree, so it belongs to no noun group.
+//   - config: pre-existing group, now runnable so an unmatched
+//     positional is a usage error (exit 2) instead of cobra's
+//     help-and-exit-0. Runnability is what makes it count; the verb
+//     itself is not new surface.
 //
 // Update this constant when intentionally adding or removing a
 // top-level verb.
 func TestTopLevelVerbCountLock(t *testing.T) {
-	const want = 10
+	const want = 12
 
 	root := NewRootCmd()
 	// kitRootInstance is populated by NewRootCmd. Use its IsReserved

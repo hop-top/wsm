@@ -145,7 +145,22 @@ point-in-time projection — session metadata, file changes, tool calls, and
 device list — and persist it under a fresh ID. Not idempotent: each invocation
 mints a new snapshot reflecting the current sequence number.`,
 		Args: cobra.MaximumNArgs(1),
-		RunE: func(_ *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) error {
+			target := "the most recently updated workspace"
+			if len(args) == 1 {
+				target = args[0]
+			}
+			if done, err := previewDryRun(cmd,
+				map[string]any{"workspace": target, "name": name, "seed": isSeed},
+				cli.Effect{
+					Kind:       "create",
+					Target:     "snapshot:" + target,
+					Reversible: true,
+					Detail:     "materialize a new snapshot of " + target + " at the current sequence number",
+				},
+			); done {
+				return err
+			}
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
 				var ws workspace.Workspace
 				if len(args) == 0 {
@@ -289,6 +304,17 @@ currently the snapshot name/alias and the is_seed flag. Idempotent: re-running
 with the same flag values yields the same observable state.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(c *cobra.Command, args []string) error {
+			if done, err := previewDryRun(c,
+				map[string]any{"snapshot": args[0], "name": name, "seed": isSeed},
+				cli.Effect{
+					Kind:       "update",
+					Target:     "snapshot:" + args[0],
+					Reversible: true,
+					Detail:     "rewrite the mutable metadata (name, seed flag) of snapshot " + args[0],
+				},
+			); done {
+				return err
+			}
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
 				uOpts := workspace.UpdateSnapshotOptions{}
 				if c.Flags().Changed("name") {
@@ -344,15 +370,25 @@ future release.`,
 		PreRunE: func(cmd *cobra.Command, _ []string) error {
 			return bridgeForceToConfirm(cmd, force)
 		},
-		RunE: func(_ *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if done, err := previewDryRun(cmd,
+				map[string]any{"snapshot": args[0], "note": note},
+				cli.Effect{
+					Kind:       "delete",
+					Target:     "snapshot:" + args[0],
+					Reversible: false,
+					Detail:     "remove the snapshot projection (workspace event history is preserved)",
+				},
+			); done {
+				return err
+			}
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
 				// Plumb --note into ctx via policy.ContextAttrsKey so
 				// the runtime policy engine can read it during pre-event
-				// veto. T-1287 wires the flag; T-1288 adds the default
-				// policy that enforces note presence. Note: kit's
-				// --confirm gate fires BEFORE this RunE; the note policy
-				// fires AFTER (inside manager.DeleteSnapshot via bus
-				// subscriber) — both gates remain effective.
+				// veto. Note: kit's --confirm gate fires BEFORE this
+				// RunE; the note policy fires AFTER (inside
+				// manager.DeleteSnapshot via bus subscriber) — both
+				// gates remain effective.
 				if note != "" {
 					ctx = context.WithValue(ctx, policy.ContextAttrsKey, map[string]any{
 						"note": note,

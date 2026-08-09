@@ -2,10 +2,13 @@ package commands
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime/debug"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -68,18 +71,19 @@ func aliasStorePath() string {
 // commandGroups maps top-level subcommand name to its kit group ID per
 // CLI conventions §4. management is auto-hidden by kit unless --help-all.
 var commandGroups = map[string]string{
-	"init":       "interact",
-	"tui":        "interact",
-	"workspace":  "organize",
-	"space":      "organize",
-	"device":     "organize",
-	"config":     "management",
-	"event":      "capture",
-	"snapshot":   "capture",
-	"completion": "management",
-	"version":    "management",
-	"upgrade":    "management",
-	"alias":      "management",
+	"init":         "interact",
+	"tui":          "interact",
+	"workspace":    "organize",
+	"space":        "organize",
+	"device":       "organize",
+	"config":       "management",
+	"event":        "capture",
+	"snapshot":     "capture",
+	"completion":   "management",
+	"version":      "management",
+	"upgrade":      "management",
+	"alias":        "management",
+	"capabilities": "management",
 }
 
 // applyCommandGroups assigns GroupID to each top-level subcommand based
@@ -291,6 +295,11 @@ func NewRootCmd() *cobra.Command {
 		// (override XDG config file location); suppress the built-in so the
 		// custom global below remains the sole --config flag.
 		Disable: cli.Disable{Config: true},
+		// Two intentional additions over kit's default cap of 10:
+		// `capabilities` (machine-readable command surface, F5) and the
+		// hardened `config` group (usage-erroring RunE makes it a
+		// runnable depth-1 verb). Locked by TestTopLevelVerbCountLock.
+		MaxTopLevelVerbs: 12,
 		Help: cli.HelpConfig{
 			Disclaimer: "Workspace & Session Manager (wsm) for IDE-agnostic session storage.",
 			// management is pre-registered + auto-hidden by cli.New;
@@ -345,11 +354,31 @@ func NewRootCmd() *cobra.Command {
 		output.SetDefaultTableStyle(output.TableStyle{})
 	}
 
+	// Flag-parse failures are usage errors (exit 2), and the
+	// corrective guidance must ride in Message: the framework-level
+	// renderer prints only Code + Message, so guidance parked in
+	// SuggestedFix alone would never reach stderr.
+	root.SetFlagErrorFunc(func(cmd *cobra.Command, err error) error {
+		fix := "run '" + cmd.CommandPath() + " --help' for accepted flags"
+		return &output.Error{
+			Code:         output.CodeUsage,
+			Message:      err.Error() + " — " + fix,
+			SuggestedFix: fix,
+			ExitCode:     2,
+		}
+	})
+
 	// Bridge kit-bound globals into opts so subcommands keep reading
 	// opts.X. Existing PersistentPreRunE chain (set by cli.New for
 	// chdir + identity) is preserved.
 	prev := root.PersistentPreRunE
 	root.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
+		// The declared output contract is closed: a --format value
+		// outside kit's formatter registry is refused loudly as a
+		// usage error, never silently coerced to the default.
+		if err := validateFormatFlag(cmd); err != nil {
+			return err
+		}
 		if prev != nil {
 			if err := prev(cmd, args); err != nil {
 				return err
@@ -399,8 +428,22 @@ func NewRootCmd() *cobra.Command {
 		_, _ = w.Write([]byte("\nRun 'wsm --help' for full command reference.\n"))
 		return nil
 	}
-	// cli.New sets Args: cobra.NoArgs; relax for the bare-invocation hint.
-	root.Args = cobra.NoArgs
+	// CLI conv §8.1: an unmatched top-level positional is a usage error
+	// (exit 2) with a corrective envelope, never cobra.NoArgs' plain
+	// error (which main can only map to the generic exit 1). The bare
+	// invocation (len(args)==0) stays on the quick-start hint path.
+	root.Args = func(cmd *cobra.Command, args []string) error {
+		if len(args) == 0 {
+			return nil
+		}
+		fix := "run 'wsm --help' to see available commands"
+		return &output.Error{
+			Code:         output.CodeUsage,
+			Message:      fmt.Sprintf("unknown command %q for %q — %s", args[0], cmd.CommandPath(), fix),
+			SuggestedFix: fix,
+			ExitCode:     2,
+		}
+	}
 
 	root.AddCommand(
 		newInitCmd(&opts),
@@ -414,6 +457,7 @@ func NewRootCmd() *cobra.Command {
 		newTUICmd(&opts),
 		newUpgradeCmd(),
 		newVersionCmd(),
+		newCapabilitiesCmd(r),
 	)
 
 	// kit/console/alias: YAML-backed user alias store at
@@ -429,6 +473,34 @@ func NewRootCmd() *cobra.Command {
 	registerWorkspaceCompletion(root, &opts)
 	kitRootInstance = r
 	return root
+}
+
+// validateFormatFlag refuses --format values outside kit's formatter
+// registry with a usage envelope. Only explicitly set flags are
+// checked, so per-leaf defaults stay untouched.
+func validateFormatFlag(cmd *cobra.Command) error {
+	f := cmd.Flag("format")
+	if f == nil || !f.Changed {
+		return nil
+	}
+	val := f.Value.String()
+	if val == "" {
+		return nil
+	}
+	keys := output.Default.Keys()
+	sort.Strings(keys)
+	for _, k := range keys {
+		if val == k {
+			return nil
+		}
+	}
+	valid := strings.Join(keys, ", ")
+	return &output.Error{
+		Code:         output.CodeUsage,
+		Message:      fmt.Sprintf("invalid --format %q (valid: %s)", val, valid),
+		SuggestedFix: "pass one of: " + valid,
+		ExitCode:     2,
+	}
 }
 
 // Execute runs the root command through kit/cli (fang-styled help, version,

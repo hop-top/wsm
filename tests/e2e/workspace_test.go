@@ -297,27 +297,60 @@ func TestWorkspaceRemove_DryRun(t *testing.T) {
 		t.Fatalf("snapshot: %v", err)
 	}
 
+	// --dry-run renders kit's structured cli.Plan (F6): a declared
+	// effect naming the resource and its blast radius. The earlier
+	// bespoke {dry_run, preview} envelope was wsm-private and not
+	// machine-gradable; the assertions below pin the same facts
+	// (resolved name, non-zero event/snapshot counts, nothing
+	// mutated) against the plan contract instead.
 	res := r.run("workspace", "delete", "dry-run-work", "--dry-run", "--format", "json")
 	requireExitCode(t, res, 0)
-	var payload struct {
-		DryRun  bool `json:"dry_run"`
-		Preview struct {
-			WorkspaceID   string `json:"workspace_id"`
-			WorkspaceName string `json:"workspace_name"`
-			EventCount    uint64 `json:"event_count"`
-			SnapshotCount uint64 `json:"snapshot_count"`
-		} `json:"preview"`
+	var plan struct {
+		Command string `json:"command"`
+		Args    struct {
+			ResolvedName  string `json:"resolved_name"`
+			EventCount    uint64 `json:"events"`
+			SnapshotCount uint64 `json:"snapshots"`
+		} `json:"args"`
+		Effects []struct {
+			Kind       string `json:"kind"`
+			Target     string `json:"target"`
+			Reversible bool   `json:"reversible"`
+			Detail     string `json:"detail"`
+		} `json:"effects"`
 	}
-	mustUnmarshalJSON(t, res.Stdout, &payload)
-	if !payload.DryRun {
-		t.Fatalf("expected dry_run=true payload: %s", res.Stdout)
+	mustUnmarshalJSON(t, res.Stdout, &plan)
+	if plan.Command != "wsm workspace delete" {
+		t.Fatalf("expected plan.command 'wsm workspace delete', got %q", plan.Command)
 	}
-	if payload.Preview.WorkspaceName != "dry-run-work" || payload.Preview.EventCount == 0 || payload.Preview.SnapshotCount == 0 {
-		t.Fatalf("unexpected dry-run preview payload: %+v", payload.Preview)
+	if plan.Args.ResolvedName != "dry-run-work" || plan.Args.EventCount == 0 || plan.Args.SnapshotCount == 0 {
+		t.Fatalf("unexpected dry-run plan args: %+v", plan.Args)
+	}
+	if len(plan.Effects) != 1 {
+		t.Fatalf("expected exactly one planned effect, got %d: %s", len(plan.Effects), res.Stdout)
+	}
+	if plan.Effects[0].Kind != "delete" {
+		t.Fatalf("expected a delete effect, got %q", plan.Effects[0].Kind)
+	}
+	if plan.Effects[0].Reversible {
+		t.Fatal("expected workspace deletion to be declared irreversible")
+	}
+	if !strings.Contains(plan.Effects[0].Target, id) {
+		t.Fatalf("expected effect target to name the resolved workspace id %q, got %q", id, plan.Effects[0].Target)
 	}
 
-	showRes := r.run("workspace", "show", "dry-run-work")
+	// The preview applied nothing: the workspace and its history survive.
+	showRes := r.run("workspace", "show", "dry-run-work", "--format", "json")
 	requireExitCode(t, showRes, 0)
+	var detail struct {
+		EventCount    uint64 `json:"event_count"`
+		SnapshotCount uint64 `json:"snapshot_count"`
+	}
+	mustUnmarshalJSON(t, showRes.Stdout, &detail)
+	if detail.EventCount != plan.Args.EventCount || detail.SnapshotCount != plan.Args.SnapshotCount {
+		t.Fatalf("dry-run mutated state: planned %d events/%d snapshots, now %d/%d",
+			plan.Args.EventCount, plan.Args.SnapshotCount, detail.EventCount, detail.SnapshotCount)
+	}
 }
 
 func TestWorkspaceFullLifecycle(t *testing.T) {
