@@ -43,6 +43,14 @@ jobs:
       - uses: hop-top/spec-12fc@main
         with:
           command: all
+          # Directory scope. Note the two leaves read this differently:
+          # verify-stories walks the directory (8 story docs), while
+          # verify-no-leak scans only explicitly named FILES and
+          # reports scanned_files=0 for a directory — so its leg is a
+          # no-op here rather than a real scan. The authoritative F10
+          # measurement is the file-expanded run in scripts/12fcc-badge.sh
+          # (which hard-errors on a zero-file scan); this job's value is
+          # the story leg plus SARIF/PR annotation.
           paths: e2e/stories
           diff: ""            # scan paths, not PR diff; --diff+--paths are mutually exclusive
           fail-on: 2,3,5
@@ -92,6 +100,14 @@ jobs:
       - uses: hop-top/spec-12fc@main
         with:
           command: all
+          # Directory scope. Note the two leaves read this differently:
+          # verify-stories walks the directory (8 story docs), while
+          # verify-no-leak scans only explicitly named FILES and
+          # reports scanned_files=0 for a directory — so its leg is a
+          # no-op here rather than a real scan. The authoritative F10
+          # measurement is the file-expanded run in scripts/12fcc-badge.sh
+          # (which hard-errors on a zero-file scan); this job's value is
+          # the story leg plus SARIF/PR annotation.
           paths: e2e/stories
           diff: ""            # scan paths, not PR diff; --diff+--paths are mutually exclusive
           fail-on: 2,3,5

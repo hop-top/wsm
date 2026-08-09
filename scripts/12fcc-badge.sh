@@ -50,30 +50,56 @@ trap 'rm -rf "$TMP"' EXIT
 # Run a verify leaf and map kit's exit contract (0 clean / 2 findings)
 # to a factor status. Any other exit means measurement broke: abort
 # rather than guess.
+#
+# $2 is the --paths value. The two leaves disagree on what --paths
+# accepts: verify-stories walks a directory, while verify-no-leak
+# scans only explicitly named FILES and silently reports
+# scanned_files=0 for a directory. Passing a directory to the leak
+# leaf therefore yields a vacuous exit 0 — a green F10 that measured
+# nothing — so callers expand the story files themselves.
+#
+# The scanned_files guard below turns that silent no-op into a hard
+# error: a leaf that inspected zero files cannot substantiate a pass.
 run_leaf() {
-  local leaf="$1" rc
+  local leaf="$1" paths="$2" rc scanned
   set +e
   (cd "$REPO_ROOT" && "$KIT_BIN" conformance "$leaf" \
-    --paths="$STORY_PATHS" --format=json) >"$TMP/$leaf.json" 2>&1
+    --paths="$paths" --format=json) >"$TMP/$leaf.json" 2>&1
   rc=$?
   set -e
   case "$rc" in
-    0) echo pass ;;
-    2) echo fail ;;
+    0|2) ;;
     *)
       echo "ERROR: '$KIT_BIN conformance $leaf' exited $rc (want 0 or 2):" >&2
       cat "$TMP/$leaf.json" >&2
       exit 1
       ;;
   esac
+  scanned="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("scanned_files", 0))' "$TMP/$leaf.json" 2>/dev/null || echo 0)"
+  if [ "$scanned" -eq 0 ]; then
+    echo "ERROR: '$leaf' scanned 0 files; a pass would be vacuous. Check the --paths expansion." >&2
+    cat "$TMP/$leaf.json" >&2
+    exit 1
+  fi
+  case "$rc" in
+    0) echo pass ;;
+    2) echo fail ;;
+  esac
 }
 
-echo "==> verify-no-leak ($STORY_PATHS)"
-NO_LEAK_STATUS="$(run_leaf verify-no-leak)"
+# verify-no-leak needs a comma-separated file list, not a directory.
+STORY_FILES="$(cd "$REPO_ROOT" && find $STORY_PATHS -type f -name '*.yaml' | sort | tr '\n' ',' | sed 's/,$//')"
+if [ -z "$STORY_FILES" ]; then
+  echo "ERROR: no story YAML found under $STORY_PATHS" >&2
+  exit 1
+fi
+
+echo "==> verify-no-leak ($STORY_PATHS, file-expanded)"
+NO_LEAK_STATUS="$(run_leaf verify-no-leak "$STORY_FILES")"
 echo "    $NO_LEAK_STATUS"
 
 echo "==> verify-stories ($STORY_PATHS)"
-STORIES_STATUS="$(run_leaf verify-stories)"
+STORIES_STATUS="$(run_leaf verify-stories "$STORY_PATHS")"
 echo "    $STORIES_STATUS"
 
 echo "==> assembling per-factor matrix from verdicts/"
