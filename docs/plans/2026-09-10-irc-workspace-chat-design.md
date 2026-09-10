@@ -34,12 +34,13 @@ same CLI in both modes.
 | Capture | bot records channel messages → `interaction.message`; degrades per negotiated caps |
 | Backfill | `CHATHISTORY` when the server offers it; otherwise reported unsupported |
 | Export | none from ergo (verified); wsm is system of record |
+| Sharing | a managed server may host other workspaces: `--shared-with`, guests, halfop-capped delegation |
 | Exit codes | story 015 (2 usage, 3 not found, 4 conflict, 5 backend, 6 forbidden) + new 7 prerequisite |
 
 ## Non-goals (v1)
 
 - `atheme` / `anope` adapters (interface is designed for them; not shipped here)
-- Multi-workspace single ergo, channel-prefix namespacing
+- Namespacing several *managed* workspaces inside one ergo (sharing is host + guests, below)
 - Hosting a web client (Gamja/Kiwi); wsm prints the `wss://` URL only
 - DM capture; bot sits in channels only
 - Grant-based channel roles: wsm has no grant persistence yet; roles come from `Capacity`
@@ -71,7 +72,8 @@ Probe before coding (implementation plan carries these as first tasks): `api.lis
 accepts `host:port` only vs unix socket; `mkcerts` output paths; `gentoken` format; oper class
 only via config; `saregister` response for existing account; `/v1/list` shape; `CS AMODE`
 listing and `CS INFO` line formats; `CHATHISTORY` paging at the limit; `NAMES` prefix output
-with `multi-prefix` for the plain provider.
+with `multi-prefix` for the plain provider; whether a halfop/chanop may set `CS AMODE` at or
+below its own level (delegation persistence).
 
 ## Architecture
 
@@ -198,10 +200,13 @@ irc:
     tls: true
     insecure_skip_verify: false
     ergo_api: ""            # external+ergo: https://host:port of ergo HTTP API (optional)
+    ergo_api_token_ref: ""  # aps secret key holding the API bearer token (else secrets.yaml)
   bot:
     account: wsm            # both; external: must already exist on the server
     secret_ref: ""          # external: aps secret key holding bot password; else secrets.yaml
   channels:                 # template; {{ws}} = workspace name slug
+    # per channel, optional (see Sharing): guests: [{profile, role}],
+    # delegates: [{workspace, bot, max_role}]; guest side: borrowed: {host, channel, members}
     - name: "#{{ws}}"
       members: all          # all | principals
       modes: "+ntRi"
@@ -327,6 +332,48 @@ already present in events (backend paged backwards by sequence until older than
 `last_time - 1h`); record in order; report `{channel, fetched, recorded, skipped, gap,
 unsupported}`.
 
+## Sharing a server between workspaces
+
+A managed server (host workspace A) can serve other workspaces (guests, B). Everything below is
+enforced by ergo's own channel privileges; the host never trusts the guest's wsm.
+
+**Attach**: `wsm irc enable B --shared-with A` (same machine, A managed). Records
+`host_workspace: A` in B's profile and `shared_with: [B]` in A's; renders a second oper-less
+bot account for B on A's ergo (A has account creation), stores B's bot password in B's
+secrets, sets B's `server` to A's listener (loopback, or A's remote listener when B is on
+another host: then attach is `--external` with `server.ergo_api_token_ref`), and gives B a
+`channel_prefix`. A's archive/delete refuse while `shared_with` is non-empty unless
+`--force`, and warn B via its status (`host_state`).
+
+**Guests (host-owned allow list)**: on a host channel template entry,
+`guests: [{profile: <id>, role: voice|op}]`. Host reconcile resolves the profile to an
+account on its server (resolver chain) and applies a persistent role; `+v` bypasses `+i`.
+No account is created for a guest; unresolved guests are reported. Removal from the list
+strips the role on next reconcile.
+
+**Provenance-tracked roles**: the host records the roles it authored per channel
+(`profile.yaml` `authored_roles[channel][account]`). `DiffRoles` removes only authored roles
+that are no longer desired; foreign roles are reported, never touched. Required so host and
+guest bots do not fight.
+
+**Delegation (guest admin decides)**: host entry
+`delegates: [{workspace: B, bot: <B bot account>, max_role: voice|op}]`. Host applies a
+persistent `+h` (halfop) to B's bot for `max_role: voice`, or `+o` for `op`. IRC privilege
+rules cap what B's bot can hand out: a halfop may voice but not op. On the guest side the
+channel is `borrowed: {host: A, channel: "#a-dev", members: all|principals}`: B's bot never
+registers it, applies roles to B's members up to its own privilege (persistent `CS AMODE`
+when ergo allows it at that level, else live `MODE` re-applied on join), and reports
+`foreign` in status. Revoking the delegate drops B's bot privilege and strips every
+non-authored role on that channel in the same host reconcile.
+
+**Attribution**: the host bot records guest messages; `AgentID` resolves only if the reverse
+lookup reaches aps by account (see the aps task), otherwise `Attribution: account` with an
+empty `AgentID`.
+
+**CLI**: `wsm irc guest add|rm|list <host-ws> <guest-ws> [--max-role voice|op]
+[--channel <#c>]` edits the host's delegate entries and reconciles; `wsm irc channel add`
+gains `--guest <profile>[:role]` and `--borrowed <host-ws>:<#c>`.
+
 ## Lifecycle mapping
 
 Hook subscribes to `wsm.runtime.workspace.#` in the CLI process when `auto_provision` is on
@@ -336,9 +383,9 @@ Hook subscribes to `wsm.runtime.workspace.#` in the CLI process when `auto_provi
 |-----------------|----------------------|
 | `created` | `enable` (provision + start); `wsm workspace add` may block ≤ 15 s for readiness |
 | `updated` | topics refreshed on next reconcile |
-| `archived` | `stop` daemon; data kept |
+| `archived` | `stop` daemon; data kept; refused while `shared_with` non-empty unless `--force` |
 | `unarchived` | `start` |
-| `deleted` | `stop` + remove `$DataDir/irc/<id>` and `$StateDir/irc/<id>` |
+| `deleted` | `stop` + remove `$DataDir/irc/<id>` and `$StateDir/irc/<id>`; same guard |
 
 Manager drops `Publish` errors; the hook logs failures with the retry command. New capability
 constants `irc.enable`, `irc.disable`, `irc.purge` in `pkg/workspace/capabilities.go`, checked
@@ -443,6 +490,7 @@ must match `go.mod` before the ergo job is added.
 | 051 | IRC message capture and backfill | integrator |
 | 052 | IRC remote access over WebSocket/TLS | system-integrator |
 | 053 | IRC provider adapter contract | integrator |
+| 054 | IRC shared servers: guests and delegation | operations-manager |
 
 Story 015 gains exit code 7. Plan `docs/plans/01i-irc-implementation.md` sequences them.
 
