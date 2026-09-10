@@ -1,0 +1,25 @@
+sequenceDiagram
+  participant U as operator
+  participant C as wsm irc enable
+  participant P as provision
+  participant E as ergo (child)
+  participant D as wsm irc daemon
+  participant B as bot
+
+  U->>C: wsm irc enable <ws>
+  C->>P: preflight (ergo on PATH, port free, tls if remote)
+  P->>P: allocate ports, write profile.yaml
+  P->>P: render ergo.yaml (oper hash, api token, listeners)
+  P->>P: ergo mkcerts (if remote && no cert)
+  P->>P: ergo initdb
+  C->>D: spawn detached (setsid), wait pidfile
+  D->>E: spawn ergo run --conf, wait /v1/status
+  D->>P: reconcile()
+  P->>E: POST /v1/ns/saregister per member (+ bot)
+  P->>P: write secrets.yaml (0600)
+  D->>B: connect, SASL PLAIN, OPER
+  B->>E: JOIN #ws → CS REGISTER → CS SET/TOPIC → AMODE per grant
+  B->>E: repeat per channel template
+  D->>B: capture loop (message-tags, account-tag, msgid)
+  B-->>D: PRIVMSG → RecordEvent(interaction.message)
+  C-->>U: {status: running, url, channels, members}

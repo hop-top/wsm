@@ -1,0 +1,32 @@
+flowchart LR
+  subgraph cli["wsm CLI (per invocation)"]
+    IRCCMD["wsm irc *"]
+    WSMGR["workspace.Manager<br/>bus: wsm.runtime.workspace.#"]
+    PROV["pkg/irc/provision<br/>reconcile(desired, actual)"]
+  end
+
+  subgraph daemon["wsm irc daemon &lt;ws&gt; (detached, one per workspace)"]
+    SUP["supervisor<br/>spawn/health/stop ergo child"]
+    BOT["bot (irc-go)<br/>oper: chanreg samode accreg"]
+    CAP["capture<br/>PRIVMSG → interaction.message"]
+    BF["backfill<br/>CHATHISTORY AFTER cursor"]
+  end
+
+  ERGO["ergo (child process)<br/>127.0.0.1:port  ws/tls:port+1  api:port+2"]
+  DB[("wsm.db<br/>events, grants")]
+  FS[("$DataDir/irc/&lt;ws&gt;/<br/>ergo.yaml ircd.db tls/ secrets.yaml")]
+  ST[("$StateDir/irc/&lt;ws&gt;/<br/>daemon.pid ergo.log cursors.yaml")]
+  AGENTS["agents / humans<br/>any IRC client, SASL PLAIN"]
+
+  IRCCMD --> PROV
+  WSMGR -- created/archived/deleted --> PROV
+  PROV -- render, saregister (HTTP) --> FS
+  PROV -- start/stop/SIGHUP --> SUP
+  SUP --> ERGO
+  BOT -- REGISTER, AMODE, TOPIC --> ERGO
+  ERGO -- messages --> CAP --> DB
+  BF --> ERGO
+  BF --> DB
+  SUP --> ST
+  AGENTS -- 6700+ / wss --> ERGO
+  PROV -. reads members, grants .-> DB
