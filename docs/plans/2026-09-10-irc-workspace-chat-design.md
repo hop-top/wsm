@@ -1,6 +1,6 @@
-# Workspace IRC — ergo-backed chat per workspace
+# Workspace IRC — provider-agnostic chat per workspace, ergo native
 
-**Status**: design, awaiting review
+**Status**: design v2, awaiting review
 **Author**: $USER
 **Date**: 2026-09-10
 **Diagrams**: [components](2026-09-10-irc-workspace-chat-design/components-v1.mmd),
@@ -8,123 +8,202 @@
 
 ## Purpose
 
-One IRC server per workspace. wsm provisions it: channels from a template, one account per
-member (agent or human), per-channel roles from grants. Any standard IRC client connects. Optional
-WebSocket/TLS listener for agents on other hosts. wsm records every channel message as a workspace
-event; ergo history is a client replay cache only.
+wsm gives every workspace an IRC presence: channels from a template, one account per member
+(agent or human) where the server allows it, per-channel roles from member capacity, and every
+channel message recorded as a workspace event. Any standard IRC client connects.
+
+Two modes. **Managed**: wsm runs an ergo server per workspace and administers it fully.
+**External**: wsm attaches to a server that already exists and administers whatever the
+configured provider adapter supports; anything else is bring-your-own. Same bot, same capture,
+same CLI in both modes.
 
 ## Decisions (settled)
 
 | Question | Decision |
 |----------|----------|
-| Server | [ergo](https://github.com/ergochat/ergo) ≥ 2.19, MIT, single Go binary |
-| Binary | bring-your-own on `PATH` (or `irc.binary`); preflight via `access.Enforce` |
-| Topology | one ergo process per workspace; no multi-tenancy |
-| Supervision | wsm owns it: `wsm irc daemon <ws>` detached, ergo as its child |
-| Embedding | subprocess only; `ergo/irc` in-process import rejected (undocumented, blocking) |
-| Agent auth | SASL PLAIN, wsm-issued passphrases; accounts via ergo HTTP `/v1/ns/saregister` |
-| Channels | template in config; default `#<ws>` (all members), `#<ws>-ops` (principals) |
-| History | capture live via bot → `interaction.message`; `CHATHISTORY` backfill after bot gaps |
-| Export | none from ergo (verified: no CLI/HTTP export); wsm is system of record |
+| Native server | [ergo](https://github.com/ergochat/ergo) ≥ 2.19, MIT, single Go binary, on `PATH` |
+| Modes | `irc.mode: managed \| external`; managed implies provider `ergo` |
+| Provider seam | `AccountProvider` + `RoleProvider` interfaces in `pkg/irc/provider`, capability bitset |
+| Providers v1 | `ergo` (accounts + persistent roles), `plain` (no accounts, live modes only) |
+| Providers later | `atheme`, `anope` as separate tracks against the same interfaces |
+| Accounts, managed | wsm creates via ergo HTTP `/v1/ns/saregister`, passphrases in wsm secrets |
+| Accounts, external | bring-your-own; account name resolved from the member's profile |
+| Multi-server creds | aps profile carries `irc.servers[]`; wsm reads, never writes, in v1 |
+| Supervision | managed only: `wsm irc daemon <ws>` detached, ergo as its child |
+| Embedding | subprocess only; `ergo/irc` in-process import rejected |
+| Capture | bot records channel messages → `interaction.message`; degrades per negotiated caps |
+| Backfill | `CHATHISTORY` when the server offers it; otherwise reported unsupported |
+| Export | none from ergo (verified); wsm is system of record |
+| Exit codes | story 015 (2 usage, 3 not found, 4 conflict, 5 backend, 6 forbidden) + new 7 prerequisite |
 
 ## Non-goals (v1)
 
+- `atheme` / `anope` adapters (interface is designed for them; not shipped here)
 - Multi-workspace single ergo, channel-prefix namespacing
 - Hosting a web client (Gamja/Kiwi); wsm prints the `wss://` URL only
 - DM capture; bot sits in channels only
+- Grant-based channel roles: wsm has no grant persistence yet; roles come from `Capacity`
 - Read-only enforcement (`+m`); v1 has two levels: member (`+v`), operator (`+o`)
-- Squad-derived channels; `SquadID` lives on `scope.Assignment`, not `Member`
+- Squad-derived channels
 - Watching `members.yaml` for changes; reconcile on start, `SIGHUP`, `wsm irc sync`
-- Matrix/Slack bridges, federation, ergo persistent history backends
+- wsm writing credentials into aps profiles; wsm pushing wsm events into channels
+- Bridges (Matrix/Slack), federation, persistent ergo history backends
 
 ## Ergo facts relied on
 
 Verified against ergo v2.19.1 docs and source (MANUAL.md, API.md, default.yaml, `irc/*.go`).
 
-- Accounts: `POST /v1/ns/saregister {accountName, passphrase}`; bearer-token API, `api.listener`
+- Accounts: `POST /v1/ns/saregister {accountName, passphrase}`, `/v1/ns/passwd`, `/v1/status`,
+  `/v1/list` (registered flag, user count), `/v1/rehash`; bearer-token API on `api.listener`
 - No channel HTTP API. `CS REGISTER` requires caller opped in-channel. First joiner gets `+o`
 - `chanreg` oper cap: `CS SET/AMODE/TRANSFER/PURGE` on any registered channel, no presence
 - `CS AMODE #c +o|+v account` persistent; `+v` bypasses `+i`
 - `accounts.registration.enabled: false` + `require-sasl: true` = closed system
 - WebSocket listener native (`websocket: true`, `allowed-origins`), TLS, reverse-proxy friendly
-- 41 IRCv3 caps; plain clients degrade. Needed by bot: `sasl message-tags account-tag
-  server-time echo-message batch draft/chathistory labeled-response`
+- IRCv3 caps used: `sasl message-tags account-tag server-time echo-message batch
+  draft/chathistory labeled-response`; plain clients degrade
 - `CHATHISTORY AFTER <target> timestamp=<ts> <limit>`; cap `chathistory-maxmessages` (1000)
 - Default history in RAM (2048/channel), lost on restart; `restrictions.expire-time` 1w
-- Message ids: `msgid` tag on every message when `message-tags` negotiated
 - `ergo initdb|mkcerts|gentoken|genpasswd|run --conf`; oper passwords bcrypt
-- Go client lib: `github.com/ergochat/irc-go` (ircevent, ircmsg)
+- Go client lib: `github.com/ergochat/irc-go` (ircevent: SASL, labeled response, batches)
 
-Probe before coding (implementation plan must include these as first tasks):
-`api.listener` accepts `host:port` only vs unix socket; `mkcerts` output paths; `gentoken`
-format; whether `saregister` accepts an oper-class assignment (assumed no → oper via config).
+Probe before coding (implementation plan carries these as first tasks): `api.listener`
+accepts `host:port` only vs unix socket; `mkcerts` output paths; `gentoken` format; oper class
+only via config; `saregister` response for existing account; `/v1/list` shape; `CS AMODE`
+listing and `CS INFO` line formats; `CHATHISTORY` paging at the limit; `NAMES` prefix output
+with `multi-prefix` for the plain provider.
 
 ## Architecture
 
-Two runtime pieces plus one library package. See components diagram.
+Library packages under `pkg/irc` (no UI deps, `verify-no-ui-leak` applies), one hidden daemon
+subcommand, one CLI group. See components diagram.
 
-### `pkg/irc` (library, no UI deps, `verify-no-ui-leak` applies)
+| Package | Responsibility | Mode |
+|---------|----------------|------|
+| `pkg/irc` | `Config`, `Profile`, paths, account/channel name sanitizing, ports, backoff | both |
+| `pkg/irc/provider` | `AccountProvider`, `RoleProvider`, `Caps`, `ErrUnsupported`, registry, `AccountResolver` | both |
+| `pkg/irc/provider/ergo` | ergo adapter: HTTP client for accounts, `CS` commands for roles | both |
+| `pkg/irc/provider/plain` | services-less adapter: no accounts, live `MODE +o/+v`, `NAMES` as truth | external |
+| `pkg/irc/provider/conformance` | one test set run against every provider behind an env var | test |
+| `pkg/irc/ergo` | render `ergo.yaml`, preflight, `mkcerts`/`initdb`/`gentoken` wrappers | managed |
+| `pkg/irc/supervisor` | spawn/stop/health ergo child, pidfile | managed |
+| `pkg/irc/bot` | irc-go transport: connect, SASL, caps, labeled send, raw subscribe, JOIN/MODE/TOPIC | both |
+| `pkg/irc/bot` capture + backfill | messages → events with cap-aware degradation; `CHATHISTORY` paging | both |
+| `pkg/irc/provision` | desired state (template × members × resolver), diff, reconcile via providers | both |
+| `pkg/irc/daemon` | long-running process: (managed: supervisor) + bot + reconcile + capture | both |
+| `cmd/wsm/commands/irc*.go` | `wsm irc` group, thin | both |
 
-| Subpackage | Responsibility | Depends on |
-|------------|----------------|------------|
-| `pkg/irc` | `Config`, `Profile`, port allocation, nick sanitization, paths | `pkg/config` |
-| `pkg/irc/ergo` | render `ergo.yaml`, preflight, HTTP API client, `mkcerts`/`initdb` wrappers | `os/exec`, `net/http` |
-| `pkg/irc/supervisor` | spawn/stop/health ergo child, pidfile, log rotation-free append | `os/exec` |
-| `pkg/irc/bot` | irc-go connection; register channels, apply modes, capture, backfill | `irc-go`, `pkg/workspace` |
-| `pkg/irc/provision` | compute desired state from members + grants + template; reconcile | all above, `pkg/access`, `pkg/config` |
+### Provider interfaces
 
-`cmd/wsm/commands/irc.go` — `wsm irc` group (group `organize`). Thin: flag parsing, output.
+```go
+// pkg/irc/provider
+type Caps uint32
+const (
+    CapCreateAccount Caps = 1 << iota
+    CapSetPassword
+    CapSuspendAccount
+    CapPersistentRoles   // roles survive bot absence (services)
+    CapRegisterChannel
+)
+
+type AccountProvider interface {
+    Caps() Caps
+    CreateAccount(ctx, account, passphrase string) error   // ErrExists ok
+    SetPassword(ctx, account, passphrase string) error
+    Suspend(ctx, account string) error
+}
+
+type RoleProvider interface {
+    Caps() Caps
+    EnsureChannel(ctx, ch Channel) error                   // join/register/modes/topic
+    ListRoles(ctx, channel string) (map[string]Role, error) // account→role (or nick→role)
+    ApplyRoles(ctx, channel string, add, remove []ModeChange) error
+}
+
+var ErrUnsupported = errors.New("irc: operation not supported by provider")
+```
+
+Every method on a provider that lacks the capability returns `ErrUnsupported`; reconcile
+treats that as "skip and report", never as failure. Registry: `provider.Open(name, deps)` for
+`ergo` and `plain`; unknown name → config validation error. No autodetection.
+
+`AccountResolver` answers "which account does member X use on server S":
+
+```go
+type AccountResolver interface {
+    AccountFor(ctx, profileID, serverID string) (account string, found bool, err error)
+}
+```
+
+Implementations: `ProfileResolver` (managed: wsm's own `Profile.Accounts` map),
+`MembersFileResolver` (`members.yaml` per-member `irc_accounts: {<server-id>: <account>}`),
+`APSResolver` (runs `aps profile show <id> --json`, reads `irc.servers[]` by `id`). Chain:
+managed → Profile only; external → aps, then members.yaml. Member with no account in
+external mode → reported `unresolved`, excluded from role apply, not fatal.
 
 ### Processes
 
 - **CLI invocation** — `wsm irc enable|start|stop|sync|…`. Short-lived. Provisions files,
-  creates accounts over HTTP, signals the daemon.
-- **`wsm irc daemon <ws>`** — hidden subcommand, spawned detached (`setsid`, stdio to log).
-  Owns ergo as a child (`ergo run --conf`), runs the bot in-process, reconciles on start and
-  `SIGHUP`, exits on `SIGTERM` after stopping ergo. Daemon death kills ergo (child) — accepted.
-- **ergo** — child of daemon. Listeners: plaintext `127.0.0.1:<port>`; TLS+WebSocket
-  `<bind>:<port+1>` when `remote.enabled`; HTTP API `127.0.0.1:<port+2>` bearer-token.
+  creates accounts through the provider, signals the daemon.
+- **`wsm irc daemon <ws>`** — hidden, spawned detached (`setsid`, stdio to log). Managed:
+  owns ergo as a child. Both modes: runs the bot, reconciles on start and `SIGHUP`, captures,
+  writes `status.json`. Exits on `SIGTERM` after stopping the child (if any).
+- **ergo** (managed only) — child of daemon. Listeners: plaintext `127.0.0.1:<port>`;
+  TLS+WebSocket `<bind>:<port+1>` when `remote.enabled`; HTTP API `127.0.0.1:<port+2>`.
 
 ### On-disk layout
 
 ```
 $DataDir/irc/<workspace-id>/        durable
-  profile.yaml      ports, bind, remote flag, bot account, created_at
-  ergo.yaml         rendered; regenerated on every enable/sync (never hand-edited)
-  ircd.db           ergo buntdb (accounts, registered channels)
-  tls/              fullchain.pem key.pem (self-signed via mkcerts unless supplied)
-  api.token         0600, ergo API bearer token
-  secrets.yaml      0600, {account: passphrase} incl. bot + oper
+  profile.yaml      mode, server id, root (workspace dir), ports, bot account, account map
+  ergo.yaml         managed: rendered; regenerated on enable/sync (never hand-edited)
+  ircd.db           managed: ergo buntdb
+  tls/              managed: fullchain.pem key.pem (mkcerts unless supplied)
+  api.token         managed: 0600, ergo API bearer token
+  secrets.yaml      0600, {account: passphrase}; managed: all members; external: bot only
 $StateDir/irc/<workspace-id>/       volatile
   daemon.pid  ergo.pid  daemon.log  ergo.log
+  status.json       daemon state + last reconcile report + cursors summary
   cursors.yaml      per channel: {last_msgid, last_time}
 ```
 
-No per-workspace dir exists in wsm today; this introduces `<DataDir|StateDir>/irc/<id>/` as the
-convention. Workspace ID = ULID, never the name.
+Workspace ID = ULID, never the name. `profile.root` records the directory holding `.wsm/`
+at enable time (or `--dir`), because the daemon and other-cwd invocations cannot discover
+`members.yaml` otherwise.
 
 ## Configuration
 
-Global `config.yaml` (`WSM_IRC_*` env, flags per existing precedence):
+Global `config.yaml` (`WSM_IRC_*` env overrides for scalars, flags per existing precedence):
 
 ```yaml
 irc:
-  enabled: false            # feature flag; all `wsm irc` cmds error exit 2 when false
-  auto_provision: false     # provision on workspace.created / stop on archived / purge on deleted
-  binary: ergo              # PATH lookup or absolute
-  port_range: [6700, 6799]  # 3 consecutive ports per workspace
-  bind: 127.0.0.1           # remote listener bind; plaintext always 127.0.0.1
-  server_name: wsm.local    # ergo network/server name suffixed with workspace name
-  bot_account: wsm
-  remote:
+  enabled: false            # feature flag; all `wsm irc` cmds exit 2 when false
+  mode: managed             # managed | external
+  provider: ergo            # ergo | plain ; managed forces ergo
+  auto_provision: false     # managed: enable on created, stop on archived, purge on deleted
+  binary: ergo              # managed: PATH lookup or absolute
+  port_range: [6700, 6799]  # managed: 3 consecutive ports per workspace
+  bind: 127.0.0.1           # managed: remote listener bind
+  server_name: wsm.local    # managed: ergo server name
+  remote:                   # managed
     enabled: false
-    host: ""                # advertised hostname in `wsm irc url`; required when enabled
+    host: ""                # advertised hostname; required when enabled
     tls_cert: ""            # empty → mkcerts self-signed
     tls_key: ""
-    allowed_origins: []     # websocket origins
+    allowed_origins: []
+  server:                   # external
+    id: ""                  # stable server id used in aps profiles; default host:port
+    host: ""
+    port: 6697
+    tls: true
+    insecure_skip_verify: false
+    ergo_api: ""            # external+ergo: https://host:port of ergo HTTP API (optional)
+  bot:
+    account: wsm            # both; external: must already exist on the server
+    secret_ref: ""          # external: aps secret key holding bot password; else secrets.yaml
   channels:                 # template; {{ws}} = workspace name slug
     - name: "#{{ws}}"
-      members: all          # all | principals | grants
+      members: all          # all | principals
       modes: "+ntRi"
       topic: "{{ws}} — {{description}}"
     - name: "#{{ws}}-ops"
@@ -132,231 +211,246 @@ irc:
       modes: "+ntRi"
 ```
 
-Per-workspace override: `.wsm/config.yaml` `irc:` block, same shape, merged over global.
-`irc.channels` override replaces the list (no merge).
+Validation: `mode: managed` ⇒ `provider: ergo`; `mode: external` ⇒ `server.host` set;
+`provider: ergo` + external + account creation requested ⇒ `server.ergo_api` set, else
+account ops report unsupported. Per-workspace override in `.wsm/config.yaml` `irc:` block,
+same shape; `irc.channels` replaces the list. Provider `plain` + `modes` containing `R` is a
+validation warning (mode may not exist on that server), applied best-effort.
 
-Rendered `ergo.yaml` (fixed choices, not user-configurable in v1):
-
-- `accounts.registration.enabled: false`, `require-sasl: true`, `authentication-enabled: true`
-- `accounts.multiclient.enabled: true`, `always-on: opt-in` (agents may set `always-on`)
-- `channels.registration.enabled: true`, `default-modes: +ntR`
-- `history.enabled: true`, in-memory, `chathistory-maxmessages: 1000`
-- `opers.<bot>`: class `wsm` with caps `accreg chanreg sajoin samode kill rehash history`,
-  password bcrypt of generated secret, `auto: true` when SASL account matches
-- `api.enabled: true`, `listener: 127.0.0.1:<port+2>`, `bearer-tokens: [<api.token>]`
-- `server.enforce-utf8: true`, `websockets.allowed-origins` from config
-- `logging`: `stderr` only; daemon appends to `ergo.log`
+Rendered `ergo.yaml` (managed, fixed): registration disabled, `require-sasl`, strict nick
+reservation, multiclient `always-on: opt-in`, channel registration on, `default-modes +ntR`,
+in-memory history with `chathistory-maxmessages: 1000`, oper class `wsm` with caps
+`accreg chanreg sajoin samode kill rehash history` and bcrypt password, `api.enabled` on
+loopback with one bearer token, `enforce-utf8`, `websockets.allowed-origins`, logging to stderr.
 
 ## Identity and accounts
 
-Source: `.wsm/members.yaml` `Member` (`pkg/model/member.go`). One ergo account per member.
+Source of members: `.wsm/members.yaml` `Member` (`pkg/model/member.go`).
 
-- Account name = `AuditLabel` if set, else `ProfileID`, sanitized: lowercase, `[a-z0-9_-]`,
-  leading letter, ≤ 32 chars, collisions suffixed `-2`. Mapping persisted in `profile.yaml`
-  so renames never orphan accounts.
-- Nick = account name (ergo enforces nick ownership via `nick-reservation`).
-- Realname = `"<ProfileID> (<Capacity>[ for <DelegateFor>])"`.
-- Passphrase: 32 bytes random, base64url. Written to `secrets.yaml` 0600. Never logged.
-- Creation: HTTP `saregister`; idempotent (`ACCOUNT_EXISTS` → keep existing secret).
-- Rotation: `wsm irc creds <ws> <member> --rotate` → HTTP `/v1/ns/passwd`.
-- Removal: member gone from `members.yaml` → `NS SUSPEND` (not delete) on reconcile; channel
-  modes cleared. Keeps event attribution stable.
-- Humans: same path. A human is a `Member` with an aps profile. Same `creds` command.
-- Bot account + oper: created first; oper block rendered before ergo starts, so bot can `OPER`.
+**Managed** (`ergo` provider, `CapCreateAccount`):
 
-Secrets today live in a wsm-owned file; migration to aps `SecretStore` (keyed by
-`Member.SecretsScope`) is a follow-up, not v1.
+- Account name = `AuditLabel` if set, else `ProfileID`, sanitized: lowercase `[a-z0-9_-]`,
+  leading letter, ≤ 32 chars, collisions suffixed `-2`. Mapping persisted in `profile.yaml`.
+- Passphrase 32 random bytes base64url, `secrets.yaml` 0600, never logged.
+- Create via provider; `ErrExists` keeps the existing secret. Rotate via `SetPassword`.
+- Member removed → `Suspend` (not delete); event attribution stays stable.
+- Bot account + oper rendered before ergo starts.
+- Realname set by the bot for itself only; member clients set their own.
+
+**External** (any provider):
+
+- Accounts are bring-your-own. wsm never creates them unless the provider has
+  `CapCreateAccount` and the operator runs `wsm irc account create <ws> <member>`.
+- Account name via `AccountResolver` chain (aps profile, then `members.yaml`). Unresolved
+  members are listed in the reconcile report and `status`.
+- Bot credentials: `bot.secret_ref` (aps secret) or `secrets.yaml[bot.account]` written by
+  `wsm irc enable --bot-password-stdin`.
+- `wsm irc creds` prints what wsm holds; for members it prints the resolved account name and
+  the aps server id, never a password wsm does not own.
+
+**aps profile schema wsm reads** (owned by aps; recorded here as the contract):
+
+```yaml
+irc:
+  servers:
+    - id: "wsm://<workspace-id>/irc"   # or any operator-chosen id matching irc.server.id
+      host: irc.example.com
+      port: 6697
+      tls: true
+      account: reed-forge
+      secret_ref: irc/reed-forge       # aps SecretStore key for the password
+```
+
+An agent picks the entry by `id` to connect to the right server; several entries = several
+servers. wsm only reads `account` for its `server.id` in v1.
 
 ## Channels and roles
 
-Desired state = template × members × grants.
+Desired state = template × members × resolver.
 
-- Channel name slug: workspace name lowercased, `[a-z0-9-]`, prefixed `#`. Collisions
-  impossible (one ergo per workspace).
-- Membership set per channel from `members:`:
-  - `all` → every member
-  - `principals` → `Capacity == principal`
-  - `grants` → members holding any `access.Grant` on `ResourceType: "irc.channel"`,
-    `ResourceID: <#chan>`
-- Role per member per channel, first match wins:
+- Channel slug: workspace name lowercased, `[a-z0-9-]`, prefixed `#`. External mode adds an
+  optional `channel_prefix` per workspace override to avoid collisions on shared servers.
+- Membership per template: `all` → every member; `principals` → `Capacity == principal`.
+- Role: principal → `+o`, delegate → `+v`. Not in set → none; `+i` blocks join where
+  supported. Bot holds founder (`+q`) on ergo; on `plain` the bot keeps `+o` and stays present.
 
-| Source | ergo mode |
-|--------|-----------|
-| grant `admin` on channel | `+o` |
-| grant `write` or `read` on channel | `+v` |
-| no grant, `Capacity == principal` | `+o` |
-| no grant, `Capacity == delegate` | `+v` |
-| not in membership set | none (and `+i` blocks join) |
+Apply, per channel, by `RoleProvider`:
 
-Bot holds `+q` (founder) on every channel; never transferred.
+| Step | `ergo` | `plain` |
+|------|--------|---------|
+| ensure channel | `JOIN`, `CS INFO`, `CS REGISTER` (transfer if foreign), `CS SET`, `TOPIC` | `JOIN`, `MODE` best-effort, `TOPIC` if bot opped |
+| list roles | `CS AMODE #c` (account → role) | `NAMES` with `multi-prefix` (nick → role) |
+| apply roles | `CS AMODE` deltas, persistent | live `MODE +o/+v nick` for present members; re-applied on their `JOIN` |
+| persistence | `CapPersistentRoles` | none; bot must stay in channel to keep ops |
 
-Apply, per channel, by bot:
+`plain` maps account → nick through the resolver (nick assumed = account); a member whose
+nick is not present gets roles on next join (bot subscribes to `JOIN`).
 
-1. `JOIN #c` (first joiner opped) → `CS REGISTER #c` (skip if `CS INFO` shows registered)
-2. `CS SET #c` modes from template; `TOPIC`
-3. `CS AMODE #c` diff: desired vs `CS AMODE #c` listing; add/remove only deltas
-4. `SAJOIN` never used; members join themselves. Persistent `+v/+o` bypass `+i`
-
-`wsm irc channel add <ws> <#c> [--members …]` writes into workspace-local `irc.channels`
-override, then reconciles. `channel rm` sets `+i` and clears amodes but leaves registration
-(data safety); `--purge` runs `CS PURGE`.
-
-Grants and members are read from the wsm backend and `members.yaml` on each reconcile.
-Grant changes require `wsm irc sync` (or `SIGHUP`) in v1.
+`wsm irc channel add|rm|list` edits the workspace-local `irc.channels` override then signals
+reconcile. `rm` clears roles and, where supported, sets `+i`; `--purge` drops registration
+(`CS PURGE` on ergo, no-op elsewhere).
 
 ## Capture and backfill
 
-Bot negotiates `message-tags account-tag server-time msgid echo-message batch
-draft/chathistory labeled-response`. Sits in every template channel.
+Bot negotiates `sasl message-tags account-tag server-time echo-message batch
+draft/chathistory labeled-response multi-prefix`; records which were granted. Sits in every
+template channel.
 
-Each `PRIVMSG`/`NOTICE` to a channel → `Manager.RecordEvent`:
+Each channel `PRIVMSG`/`NOTICE` → one `interaction.message` event, appended directly through
+the backend (`AppendEvent` after OWSF align), not via `Manager.RecordEvent`, so per-message
+`AgentID` and server timestamp are honoured:
 
-- `Type: interaction.message`
-- `AgentID`: profile ID resolved from `account` tag (unknown account → `AgentID` empty,
-  `Nick` kept)
-- `Timestamp`: `time` tag (server-time), not receipt time
-- `Data: MessageData{Role: "member", Content, Format: "text/irc", Channel, Nick, MsgID}`
+- `AgentID`: profile ID resolved from `account` tag via the resolver's reverse map
+- `Timestamp`: `time` tag
+- `Data: MessageData{Role: "member", Content, Format: "text/irc", Channel, Nick, MsgID,
+  Attribution}`
 
-`MessageData` gains three optional fields (`Channel`, `Nick`, `MsgID`, all `omitempty`).
-Additive; existing consumers (snapshots, adapters) unaffected. Channel messages then appear in
-snapshot context for free.
+`MessageData` gains optional fields `Channel`, `Nick`, `MsgID`, `Attribution` (`omitempty`,
+additive). `Attribution` ∈ `account` (from `account-tag`) | `nick` (resolver by nick, weaker)
+| `none`.
 
-Bot's own messages skipped (compare `account` tag to bot account). Bot posts notices on
-lifecycle changes (`archived`, `member suspended`) — not recorded.
+Degradation, decided per negotiated cap:
 
-Cursor: after each recorded message, `cursors.yaml[#c] = {last_msgid, last_time}`. Fsync-free
-write, worst case duplicate on crash, handled by dedupe.
+| Missing cap | Effect |
+|-------------|--------|
+| `msgid` (via `message-tags`) | `MsgID` = `sha256(time, nick, content)[:16]`, prefixed `h:` |
+| `account-tag` | `AgentID` by nick → member map; `Attribution: nick` |
+| `server-time` | receipt time |
+| `draft/chathistory` | backfill reports `unsupported: true`; gap noted; nothing else |
 
-Backfill (`wsm irc backfill <ws>`, and automatically on daemon start when cursor exists):
+Bot's own messages skipped. Cursor per channel `{last_msgid, last_time}` written after each
+record (no fsync; crash → duplicate handled by dedupe).
 
-1. Per channel `CHATHISTORY AFTER #c timestamp=<last_time> 1000`, page until batch < 1000
-2. Dedupe: skip `msgid` already present in events since `last_time - 1h` (query backend,
-   filter `Format == text/irc`); skip `msgid == last_msgid`
-3. Record in order; advance cursor
-4. Report `{channel, fetched, recorded, skipped}`; history older than ergo retention is gone —
-   surface as `gap: true` when first page starts after `last_time + 1s`
+Backfill (daemon start, bot reconnect, `wsm irc backfill`): `CHATHISTORY AFTER #c
+timestamp=<last_time> 1000`, page until short batch; skip `msgid` equal to the cursor or
+already present in events (backend paged backwards by sequence until older than
+`last_time - 1h`); record in order; report `{channel, fetched, recorded, skipped, gap,
+unsupported}`.
 
 ## Lifecycle mapping
 
-Provisioning subscribes to `wsm.runtime.workspace.#` on the kit bus inside the CLI process
-(bus is in-process; wsm has no long-running server). Only active when `irc.auto_provision`.
+Hook subscribes to `wsm.runtime.workspace.#` in the CLI process when `auto_provision` is on
+(managed only; external servers are never auto-attached).
 
-| Workspace event | IRC action |
-|-----------------|------------|
-| `created` | `enable` (provision + start) |
-| `updated` (name/description) | re-render topics on next reconcile; ports unchanged |
+| Workspace event | IRC action (managed) |
+|-----------------|----------------------|
+| `created` | `enable` (provision + start); `wsm workspace add` may block ≤ 15 s for readiness |
+| `updated` | topics refreshed on next reconcile |
 | `archived` | `stop` daemon; data kept |
 | `unarchived` | `start` |
 | `deleted` | `stop` + remove `$DataDir/irc/<id>` and `$StateDir/irc/<id>` |
 
-Without `auto_provision`, same actions via explicit `wsm irc …`. Delete path reuses the
-workspace delete confirmation; no second prompt.
-
-New capability constants in `pkg/workspace/capabilities.go`: `irc.enable`, `irc.disable`,
-`irc.purge`. Gate identical to existing `CapWorkspace*`.
+Manager drops `Publish` errors; the hook logs failures with the retry command. New capability
+constants `irc.enable`, `irc.disable`, `irc.purge` in `pkg/workspace/capabilities.go`, checked
+by the CLI; denied → exit 6.
 
 ## CLI surface
 
 ```
-wsm irc enable  <ws> [--remote] [--port N]     provision + start; idempotent
-wsm irc disable <ws> [--purge]                 stop; --purge removes data dirs
-wsm irc start|stop|restart|status <ws>
-wsm irc sync <ws>                              SIGHUP daemon; runs reconcile inline if stopped
-wsm irc creds <ws> <member> [--rotate] [--env] passphrase; --env prints WSM_IRC_* exports
-wsm irc url <ws> [--web]                       irc://127.0.0.1:port  |  wss://host:port+1
-wsm irc channel add|rm|list <ws> [<#c>] [--members all|principals|grants] [--purge]
+wsm irc enable  <ws> [--remote] [--port N] [--dir <root>]         managed: provision + start
+wsm irc enable  <ws> --external [--bot-password-stdin] [--dir]   external: verify + start bot
+wsm irc disable <ws> [--purge]                                     stop; --purge removes data dirs
+wsm irc start|stop|restart|status <ws>                             daemon control (both modes)
+wsm irc sync <ws>                                                  SIGHUP daemon
+wsm irc account create|rotate|suspend <ws> <member>          via provider; unsupported → 7
+wsm irc creds <ws> <member> [--env]                                what wsm holds / resolved account
+wsm irc url <ws> [--web]                                           irc://… | wss://…
+wsm irc channel add|rm|list <ws> [<#c>] [--members all|principals] [--purge]
 wsm irc backfill <ws> [--channel <#c>]
-wsm irc daemon <ws>                            hidden; foreground
+wsm irc daemon <ws>                                                hidden; foreground
 ```
 
-Output contract per stories 013/014/015: `--json` stable shapes, `--quiet`, exit codes
-`0` ok, `1` runtime failure, `2` usage/config (`irc.enabled=false`, unknown workspace),
-`3` preflight failure (binary missing, port busy, no TLS for remote).
+Output contract per stories 013/014/015: `--json` stable shapes, `--quiet`. Exit codes:
+`0` ok, `1` runtime failure, `2` usage / `irc.enabled=false` / command invalid for mode,
+`3` workspace not found, `6` capability denied, `7` prerequisite failed (binary missing, port
+busy, TLS missing, external server unreachable, provider lacks capability).
 
 `wsm irc status --json`:
 
 ```json
-{"workspace":"…","state":"running|stopped|degraded","pid":123,"ergo_pid":124,
- "ports":{"plain":6700,"remote":6701,"api":6702},"remote":false,
+{"workspace":"…","mode":"managed","provider":"ergo","state":"running|stopped|degraded",
+ "pid":123,"ergo_pid":124,"ports":{"plain":6700,"remote":6701,"api":6702},"remote":false,
+ "server":{"id":"wsm://…/irc","host":"127.0.0.1","port":6700,"tls":false},
+ "caps":{"negotiated":["sasl","message-tags"],"provider":["create_account","persistent_roles"]},
  "channels":[{"name":"#ws","registered":true,"members":4}],
- "accounts":5,"cursor":{"#ws":"2026-09-10T12:00:00Z"},"ergo_version":"2.19.1"}
+ "accounts":{"managed":5,"unresolved":[]},
+ "cursor":{"#ws":"2026-09-10T12:00:00Z"},"ergo_version":"2.19.1",
+ "last_reconcile":{"accounts":{"created":0,"existing":5,"suspended":0,"failed":[]},
+                   "channels":[{"name":"#ws","registered":true,"added":0,"removed":0}]}}
 ```
 
-`degraded` = daemon alive, ergo `/v1/status` unreachable or bot disconnected.
+`degraded` = daemon alive but ergo unreachable (managed), or bot disconnected > 30 s.
 
 ## Error handling
 
-- Preflight failures abort before any file written; exit 3 with `SuggestedFix`
-  (`brew install ergo`, `--port`, `--remote` needs `irc.remote.host`).
-- Port allocation: scan `port_range` in steps of 3, bind-test all three; record in
-  `profile.yaml`; reuse on restart; conflict on restart → exit 3, never silently reallocate.
-- ergo exits unexpectedly → daemon restarts it, backoff 1s→30s, 5 attempts, then `degraded`
-  and daemon stays up (status still answerable).
-- Bot disconnect → reconnect with same backoff; on reconnect run backfill from cursor.
-- HTTP API errors → typed: `ACCOUNT_EXISTS` (ok), `401` (token mismatch → re-render + rehash),
-  other → fail reconcile for that member, continue others, report list.
-- `CS REGISTER` refused (already registered by someone else) → `CS TRANSFER` to bot via
-  `chanreg`; log warning.
-- Stale pidfile (process gone) → treated as stopped; pidfile replaced.
-- `members.yaml` invalid → reconcile aborts, daemon keeps previous state, status `degraded`
-  with reason.
-- Secrets file unreadable/missing for a known account → `creds` exits 1 with `--rotate` hint.
+- Preflight failures abort before any file is written; exit 7 with the fix in the message
+  (`brew install ergo`, `--port`, `irc.remote.host`, `irc.server.host unreachable`).
+- Port allocation scans `port_range` in steps of 3, bind-tests all three (TOCTOU accepted),
+  records in `profile.yaml`; conflict on restart → exit 7, never silently reallocate.
+- ergo exits unexpectedly → daemon restarts it, backoff 1 s → 30 s, 5 attempts, then
+  `degraded` and daemon stays up. Bot disconnect → same backoff; reconnect runs backfill.
+- Provider `ErrUnsupported` → reconcile skips the step, report lists it, exit 0; explicit
+  `wsm irc account create` on such a provider → exit 7.
+- External server unreachable at `enable` → exit 7; during run → `degraded`.
+- HTTP API `401` → managed: re-render token + rehash once, retry; external: report.
+- `CS REGISTER` refused (registered by someone else) → `CS TRANSFER` via `chanreg`; on
+  external ergo without `chanreg` → report `foreign_channel`, roles applied live only.
+- Stale pidfile (process gone) → stopped; pidfile replaced.
+- `members.yaml` invalid → reconcile aborts, daemon keeps previous state, `degraded` with reason.
+- Secrets missing for a known account → `creds` exits 1 with `account rotate` hint (managed) or
+  the aps `secret_ref` (external).
 
 ## Security
 
-- Plaintext listener bound `127.0.0.1` only. Remote listener TLS mandatory.
-- Registration closed, SASL required, channels `+R +i`, membership by persistent amode.
-- API listener loopback only; token 0600; never passed on argv.
-- `secrets.yaml`, `api.token`, `tls/key.pem` 0600; dirs 0700.
-- Oper caps limited to the bot class; no `oper` for members.
-- Passphrases never logged; `creds` output marked sensitive in `--json` (`"sensitive": true`).
+- Managed: plaintext listener loopback only; remote listener TLS mandatory; registration
+  closed; SASL required; channels `+R +i`; API loopback only; token 0600; oper caps limited to
+  the bot class.
+- External: TLS on by default; `insecure_skip_verify` is a loud warning in `status`; wsm holds
+  only the bot password unless it created member accounts itself.
+- `secrets.yaml`, `api.token`, `tls/key.pem` 0600; dirs 0700; passphrases never logged;
+  `creds --json` carries `"sensitive": true`.
 - `--purge` and workspace delete are the only data-removing paths; both confirmed.
 
 ## Testing
 
-Unit (`pkg/irc/...`, no ergo needed):
+Unit (`pkg/irc/...`, no server needed): config validation per mode/provider matrix; render
+golden files; name sanitizing; port allocation; desired state and diff tables; capture parsing
+with every cap combination; backfill paging and dedupe with scripted batches; supervisor
+backoff and pidfile with a fake binary; reconcile with fake providers incl. `ErrUnsupported`;
+resolver chain (aps output fixture, members.yaml, miss).
 
-- `ergo.RenderConfig` golden files per option set; `Validate` rejects bad ranges/hosts
-- `SanitizeAccount` table: unicode, collisions, length, leading digit
-- `provision.Desired` table: template × members × grants → channel/mode matrix
-- `provision.Diff` amode add/remove only deltas
-- `bot.Capture` parse `PRIVMSG` with tags → `MessageData`, self-skip, unknown account
-- `backfill` dedupe with overlapping pages, crash-duplicate cursor
-- `supervisor` pidfile stale detection, backoff schedule (clock injected)
+Provider conformance (`pkg/irc/provider/conformance`, skipped unless `IRC_CONFORMANCE_<NAME>`
+points at a live server): create/exists/suspend (or `ErrUnsupported`), ensure channel
+idempotent, list/apply roles round trip, foreign channel case. Run for `ergo` and `plain`
+(plain against an ergo with services unused) in CI.
 
-Integration (`tests/integration/irc`, skipped unless `ERGO_BIN` set; CI job installs ergo):
+Integration (`tests/integration/irc`, skipped unless `ERGO_BIN`): managed enable → creds →
+client SASL join + speak → event with msgid → stop/start → backfill records nothing new;
+external mode against the same ergo with `server.ergo_api` set and without it; member removed
+→ suspended; principal added → `+o` after sync; remote wss handshake with self-signed cert.
 
-- enable → status running → creds → client connect via `irc-go` SASL PLAIN → join →
-  speak → event recorded with msgid → stop → start → backfill records nothing new
-- member removed → suspended, amode cleared
-- grant admin added → `+o` after sync
-- remote enabled → wss handshake with self-signed cert
-
-E2E (`tests/e2e`): JSON contract and exit codes for every subcommand, `irc.enabled=false` path.
-Consider `xrr` cassettes for the HTTP API client to keep unit tests hermetic.
-
-Gates: `verify-no-ui-leak` must pass (`pkg/irc` imports no UI). Backend conformance untouched.
+E2E (`tests/e2e`): JSON contract and exit codes for every subcommand in both modes with a fake
+daemon executable. Gates: `verify-no-ui-leak`; backend conformance untouched; CI Go version pin
+must match `go.mod` before the ergo job is added.
 
 ## Stories to add (`docs/stories/`)
 
 | ID | Title | Persona |
 |----|-------|---------|
-| 048 | IRC enable and lifecycle | operations-manager, ai-agent |
+| 048 | IRC enable and lifecycle (managed and external) | operations-manager, ai-agent |
 | 049 | IRC member accounts and credentials | ai-agent, user |
-| 050 | IRC channels and roles from grants | operations-manager |
+| 050 | IRC channels and roles via providers | operations-manager |
 | 051 | IRC message capture and backfill | integrator |
 | 052 | IRC remote access over WebSocket/TLS | system-integrator |
+| 053 | IRC provider adapter contract | integrator |
 
-Each follows the 047 template: story, design, acceptance scenarios, tests. Plan doc
-`docs/plans/01i-irc-implementation.md` sequences them; `README.md`, `CHANGELOG.md`,
-`docs/stories/README.md` updated per AGENTS.md.
+Story 015 gains exit code 7. Plan `docs/plans/01i-irc-implementation.md` sequences them.
 
 ## Later
 
-- Squad channels (`#<ws>-<squad>`) from `scope.Assignment.SquadID`
-- Read-only grants via `+m`
-- aps `SecretStore` for passphrases; `auth-script` delegating to aps (no secrets in ergo)
-- Hosted web client (Gamja static) under the remote listener
-- fsnotify on `members.yaml` and grant-change bus topics → live reconcile
-- Persistent ergo history (SQLite) for long client replay; still not the record
-- `interaction.message` → ergo direction (post wsm events into channels: snapshots, mutations)
+- `atheme` and `anope` adapters (`CS FLAGS` / `CS ACCESS`), own tracks
+- Grant store + `wsm grant` CLI, then grant-based roles and `members: grants`
+- wsm writing managed credentials into aps profiles (`irc.servers[]` push)
+- Squad channels; read-only via `+m`; hosted Gamja; members.yaml watching
+- wsm events → channel (snapshots, mutations posted by the bot)
+- Persistent ergo history backend for long client replay
