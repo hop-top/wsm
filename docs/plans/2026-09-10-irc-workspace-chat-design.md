@@ -337,15 +337,19 @@ unsupported}`.
 
 ## Sharing a server between workspaces
 
-A managed server (host workspace A) can serve other workspaces (guests, B). Everything below is
-enforced by ergo's own channel privileges; the host never trusts the guest's wsm.
+A managed server (host workspace A) can serve other workspaces (guests, B). Channel privilege
+ceilings are enforced by ergo, not by trusting the guest's wsm. The trust boundary for
+same-machine sharing is the machine itself: guest processes read the host's API token from the
+host's data dir (same user), so a same-machine guest is as trusted as the host operator.
+Cross-machine guests never receive the token; the host operator provisions their accounts.
 
 **Attach**: `wsm irc enable B --shared-with A` (same machine, A managed). Records
 `host_workspace: A` in B's profile and `shared_with: [B]` in A's; renders a second oper-less
 bot account for B on A's ergo (A has account creation), stores B's bot password in B's
-secrets, sets B's `server` to A's listener (loopback, or A's remote listener when B is on
-another host: then attach is `--external` with `server.ergo_api_token_ref`), and gives B a
-`channel_prefix`. A's archive/delete refuse while `shared_with` is non-empty unless
+secrets, writes B's workspace config override (`server` = A's loopback listener and API,
+`channel_prefix`), and B's members get accounts on A's server through B's own reconcile using
+A's API. B on another machine is plain `--external` against A's remote listener with accounts
+provisioned by A's operator (`wsm irc account create A --raw <name>`). A's archive/delete refuse while `shared_with` is non-empty unless
 `--force`, and warn B via its status (`host_state`).
 
 **Guests (host-owned allow list)**: on a host channel template entry,
@@ -354,10 +358,11 @@ account on its server (resolver chain) and applies a persistent role; `+v` bypas
 No account is created for a guest; unresolved guests are reported. Removal from the list
 strips the role on next reconcile.
 
-**Provenance-tracked roles**: the host records the roles it authored per channel
-(`profile.yaml` `authored_roles[channel][account]`). `DiffRoles` removes only authored roles
-that are no longer desired; foreign roles are reported, never touched. Required so host and
-guest bots do not fight.
+**Provenance-tracked roles**: the host records the roles it authored per channel with their
+kind, member, guest, or delegate (`profile.yaml` `authored_roles[channel][account]`).
+`DiffRoles` removes only authored roles that are no longer desired, adopts roles that already
+match the desired state (so a lost map heals), and reports foreign roles without touching them.
+Required so host and guest bots do not fight.
 
 **Delegation (guest admin decides)**: host entry
 `delegates: [{workspace: B, bot: <B bot account>, max_role: voice|op}]`. Host applies a
@@ -366,17 +371,26 @@ rules cap what B's bot can hand out: a halfop may voice but not op. On the guest
 channel is `borrowed: {host: A, channel: "#a-dev", members: all|principals}`: B's bot never
 registers it, applies roles to B's members up to its own privilege (persistent `CS AMODE`
 when ergo allows it at that level, else live `MODE` re-applied on join), and reports
-`foreign` in status. Revoking the delegate drops B's bot privilege and strips every
-non-authored role on that channel in the same host reconcile.
+`borrowed` in status. Revoking the delegate (an authored entry of kind delegate no longer
+desired) drops B's bot privilege and strips every foreign role at or below B's former ceiling
+on that channel in the same host reconcile. A delegate cannot escalate but can act laterally
+(devoice, kick, channel modes); the host re-asserts authored roles on channel mode changes and
+on a five-minute timer while any delegate exists.
 
 **Attribution**: the host bot records guest messages. `AgentID` resolves through the reverse
 chain: guests and delegate bots from workspaces on the same machine via their `profile.yaml`,
 anyone else via aps reverse lookup by account. Only an account unknown to all four sources
 lands as `Attribution: account` with an empty `AgentID`.
 
-**CLI**: `wsm irc guest add|rm|list <host-ws> <guest-ws> [--max-role voice|op]
-[--channel <#c>]` edits the host's delegate entries and reconciles; `wsm irc channel add`
-gains `--guest <profile>[:role]` and `--borrowed <host-ws>:<#c>`.
+**Detach**: `wsm irc disable B` runs B's final reconcile (strips B's own authored roles),
+removes B's delegate entries on A, drops B from A's `shared_with`, and signals A, whose
+reconcile suspends B's bot.
+
+**CLI**: `wsm irc delegate add|rm|list <host-ws> <guest-ws> [--max-role voice|op]
+[--channel <#c>] [--bot <account>]` edits the host's delegate entries and reconciles (no
+`--channel` means every template channel); `wsm irc channel add` gains `--guest
+<profile>[:role]` and `--borrowed <host-ws>:<#c>`; `wsm irc account create <ws> --raw <name>`
+provisions an arbitrary account for cross-machine guests.
 
 ## Lifecycle mapping
 
