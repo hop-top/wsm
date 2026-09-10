@@ -1,266 +1,392 @@
-# wsm — Workspace Manager
+# wsm
 
-> [!WARNING]
-> **Do Not Use — History Will Be Rewritten**
->
-> This repo is undergoing major restructuring as we selectively
-> open-source internal tools built at
-> [Idea Crafters LLC](https://ideacrafters.com). Git history **will be
-> force-pushed and rewritten** multiple times. Do not fork, clone, or
-> depend on this repo in any capacity until we tag a stable release.
+Workspace & Session Manager (wsm) for IDE-agnostic session storage.
 
-[![Go Module](https://img.shields.io/badge/module-hop.top%2Fwsm-blue)](https://hop.top/wsm)
+Status: pre-1.0 (`0.1.0-alpha`); commands and flags can change between minor
+versions, and `main` history may be rewritten while the repository is
+restructured, so pin a commit rather than track the branch.
+
+[![ci](https://github.com/hop-top/wsm/actions/workflows/ci.yml/badge.svg)](https://github.com/hop-top/wsm/actions/workflows/ci.yml)
+[![12-factor AI-CLI](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/hop-top/wsm/main/.12fc.json)](https://github.com/hop-top/wsm/actions/workflows/12fcc.yaml)
+[![release](https://img.shields.io/github/v/release/hop-top/wsm?include_prereleases)](https://github.com/hop-top/wsm/releases)
+[![Go Reference](https://pkg.go.dev/badge/hop.top/wsm.svg)](https://pkg.go.dev/hop.top/wsm)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![12fc](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/hop-top/wsm/main/.12fc.json)](https://github.com/hop-top/wsm/actions/workflows/12fcc.yaml)
 
-> Your workspace state doesn't belong to your IDE.
+## Table of contents
 
-Switch editors — lose your mutation history. Run multiple agents —
-no shared access control. Hand off to a teammate — start from
-scratch.
+- [Demo](#demo)
+- [Why](#why)
+- [Quick start](#quick-start)
+- [Install](#install)
+- [Usage](#usage)
+- [Commands](#commands)
+- [Flags](#flags)
+- [Configuration](#configuration)
+- [Exit codes](#exit-codes)
+- [Agent usage](#agent-usage)
+- [Troubleshooting](#troubleshooting)
+- [Documentation](#documentation)
+- [Contributing](#contributing)
+- [Security](#security)
+- [License](#license)
 
-wsm is the workspace orchestrator for the hop.top ecosystem. It
-owns workspaces, mutations, devices, spaces, and access control.
-Session lifecycle (turns, snapshots, forks) is delegated to
-[ash](https://github.com/hop-top/ash); cross-CLI session discovery
-is handled by [usp](https://github.com/hop-top/usp) via ash.
+## Demo
+
+Once a workspace has recorded events and a snapshot, one command hands its
+state to the next tool or person:
 
 ```text
-wsm  (workspace orchestrator — access control, auth, export)
- └── ash  (session lifecycle — snapshots, forks, merge, expiry)
-      └── usp  (cross-CLI session discovery — adapter per CLI)
+$ wsm snapshot context my-project
+# Workspace: my-project
+# Snapshot at seq 3 | 2026-09-10T08:43:08Z
+
+## Summary
+- 1 messages
+- 0 tool calls
+- 1 files changed
+- 0 devices
+
+## Files Changed
+- src/main.go
+
+## Last 1 Events
+- [seq 4] checkpoint.snapshot_created -- 2026-09-10T08:43:08Z
 ```
 
-## What It Does
+## Why
 
-- **Workspace lifecycle** — create, archive, unarchive, delete
-  workspaces with event-sourced mutation tracking
-- **Access control** — grants, capabilities, scope binding;
-  gate who can read/write/export sessions within a workspace
-- **Multi-device** — device fingerprinting and attach/detach
-  tracking across machines and editors
-- **Spaces** — compute environment tracking with pluggable
-  detection (build tools, deps, secrets, runtime envs, OWSF)
-- **Mutation tracking** — file patches and artifacts recorded
-  as workspace-level events
-- **Session binding** — scope sessions (owned by ash) to
-  workspaces and spaces; wsm controls access, ash controls
-  lifecycle
-- **Automation-safe** — stable JSON output, predictable exit
-  codes, `NO_COLOR` support
-- **Embeddable** — vendorable Go module (`hop.top/wsm`) with
-  zero UI dependencies
+Your workspace state does not belong to your IDE. Switch editors and the
+mutation history stays behind; run several agents and there is no shared
+access control; hand off to a teammate and they start from scratch. wsm keeps
+that state in an append-only event log per workspace, with snapshots you can
+replay or hand off, in a SQLite database it owns.
 
-## What It Does NOT Own
+**Why use it**
 
-| Concern | Owned By | wsm's Role |
-|---------|----------|------------|
-| Sessions, turns, tool calls | ash | Access control + scope binding |
-| Snapshots | ash | Request + attach workspace context |
-| Temporal forks, merge | ash | Policy (who can fork) |
-| CLI session discovery | usp (via ash) | Never touches directly |
-| Profile records | aps | Stores references for local grant resolution |
+- One event log per workspace: file patches, messages, tool calls, and device
+  attachments are recorded with sequence numbers and materialized into
+  snapshots
+- Machine-readable by default: `--format json|yaml|csv` on every command, a
+  fixed exit-code table, `NO_COLOR`, and `wsm capabilities` describing the
+  command surface
+- Declarative guard rails: a policy file gates state changes; the bundled
+  rules require `--note` on archive and delete
+- Embeddable: `hop.top/wsm/pkg/*` is a UI-free Go module, and the CLI is one
+  consumer of it
+- Local and portable: XDG paths, a project-local `.wsm/` config from
+  `wsm init`, and a persistent device fingerprint per machine
 
-## Quick Start
+**When not to use it**
 
-```bash
-# Create a workspace
-wsm workspace add my-project
+- You need a storage backend other than SQLite: `--backend` accepts only
+  `sqlite` today, and `--backend-url` is reserved
+- You need session lifecycle (turns, forks, merge): wsm binds sessions to
+  workspaces, but a sibling tool owns their lifecycle; see
+  [docs/ecosystem.md](docs/ecosystem.md)
 
-# Record a workspace event
-wsm event add my-project mutation.file_patch \
-  --path src/main.go --operation modify
+## Quick start
 
-# List events
-wsm event list my-project
-
-# Show resolved config
-wsm config show
+```sh
+go install hop.top/wsm/cmd/wsm@latest && wsm workspace add my-project
 ```
 
 ## Install
 
-```bash
-# From source
-go install hop.top/wsm/cmd/wsm@latest
+Requirements: Go 1.26 or later (the `go.mod` directive) and a C toolchain,
+because the SQLite backend uses cgo. Linux and macOS are the targeted
+platforms: the device fingerprint reads `/etc/machine-id` on Linux and the
+platform UUID on macOS, and falls back to a generated UUID elsewhere; CI runs
+on Ubuntu and inside an Ubuntu container.
 
-# Or build locally
+Go:
+
+```sh
+go install hop.top/wsm/cmd/wsm@latest
+```
+
+From source:
+
+```sh
 git clone https://github.com/hop-top/wsm.git
 cd wsm
-make build        # → bin/wsm
+make build        # bin/wsm
 ```
 
-## Integration
+Shell completion for bash, zsh, fish, or powershell:
 
-### Go Module
-
-```go
-import "hop.top/wsm/pkg/workspace"
-
-manager, _ := workspace.NewManager(backend)
-ws, _ := manager.Create(ctx, "my-project", workspace.CreateOptions{})
+```sh
+wsm completion zsh > "${fpath[1]}/_wsm"
 ```
 
-Import `pkg/` for a UI-free integration surface — `pkg/*` carries
-no UI dependencies; presentation lives only in `cmd/`.
+Check the binary with `wsm version`; upgrade it in place later with
+`wsm upgrade` (checks GitHub releases; `--auto` skips the prompt).
 
-### CLI
+## Usage
 
-```bash
-wsm workspace add my-project --description "My coding workspace"
-wsm event add my-project mutation.file_patch --path main.go --operation create
-wsm space add my-project local-dev
+Every command below ran in a fresh data directory; IDs are ULIDs and differ
+per run. Create a workspace:
+
+```text
+$ wsm workspace add my-project --description "API service"
+{
+  "created_at": "2026-09-10T08:43:08.055691Z",
+  "id": "01M257RACQAHCR46XHKHMEB1XY"
+}
 ```
 
-### Spaces — Pairing With `rux connect`
+Record what happens in it. Typed flags exist for `interaction.message`,
+`interaction.tool_call`, `interaction.tool_done`, `mutation.file_patch`,
+`mutation.artifact`, `device.attached`, and `device.detached`; `--data`
+takes raw JSON for any of them:
 
-`wsm space add` is the canonical write path for the rux project
-registry at `$XDG_CONFIG_HOME/rux/projects.yaml`. Every space added
-to wsm becomes immediately resolvable by `rux connect <id>`.
-
-```bash
-wsm workspace add ic-ops
-wsm space add ic-ops ops --path ~/.ops --startup-cmd zsh
-rux connect ops          # attaches/starts ops session at ~/.ops
+```text
+$ wsm event add my-project mutation.file_patch --path src/main.go --operation modify
+Recorded mutation.file_patch seq=2 id=01M257RAGPHBRQP2DCMR4WND1A
+$ wsm event add my-project interaction.message --content "kicked off review"
+Recorded interaction.message seq=3 id=01M257RANGPA5QPPV5GSAT304G
 ```
 
-Flags on `wsm space add`:
+Materialize a snapshot at the current sequence number; the [Demo](#demo)
+`snapshot context` reads from it:
 
-| Flag | Replaces | Description |
-|------|----------|-------------|
-| `--path` | `--boundary` (renamed) | Filesystem path or URL the space points at |
-| `--startup-cmd` | new | Command rux runs on connect (empty = `$SHELL`) |
-
-> [!NOTE]
-> `--boundary` was renamed to `--path` without a backwards-compat
-> alias: wsm CLI is pre-1.0 and a labspace-wide grep found zero
-> non-wsm callers. The on-disk `boundary` field on the space model
-> is unchanged — only the flag was renamed.
-
-#### Recovery: `wsm space sync`
-
-The wsm DB write and the projects.yaml write are not transactional.
-If `wsm space add` succeeds against the DB but the projects.yaml
-update fails (disk full, permissions, kit projects writer not yet
-present, etc.), the command emits a warning to stderr and exits 0.
-Re-run `wsm space sync` to rebuild projects.yaml from the wsm DB:
-
-```bash
-wsm space sync
-# synced 4 spaces to projects.yaml
+```text
+$ wsm snapshot generate my-project
+Snapshot 01M257RAZS2RBDNRETAAVYW7Z2
+  workspace:     my-project (01M257RACQAHCR46XHKHMEB1XY)
+  at_seq_num:    3
+  message_count: 1
+  tool_calls:    0
+  files_changed: 1
+  devices:       0
+  sessions:      0
+  is_seed:       false
+  generated_at:  2026-09-10T08:43:08Z
 ```
 
-Sync iterates all root spaces in the DB and re-writes their entries.
-The kit projects writer preserves `source: manual` entries (added
-by hand or by future `rux project add`) across rewrites — sync only
-touches `source: wsm` rows.
+List workspaces; `--status active|archived` filters and
+`--sort name|created|updated` orders:
 
-For the full design and contract, see
-[docs/superpowers/specs/2026-04-25-rux-connect-design.md](docs/superpowers/specs/2026-04-25-rux-connect-design.md)
-in the `~/.ops` workspace (section 9 covers the wsm side).
-
-### Organizational Layout Attachment
-
-Workspaces carry an optional, opaque `layout: {kind, path}` field.
-`kind` is a free-form string and `path` points at a directory; wsm
-never parses the content — external tooling interprets both. This
-keeps wsm free of any organizational vocabulary.
-
-```bash
-wsm workspace add my-org --org-package ./company     # attach on create
-wsm workspace update my-org --org-package ./company  # attach/replace
-wsm workspace update my-org --org-package -          # detach
+```text
+$ wsm workspace list
+ID               NAME        STATUS  EVENTS  SNAPS  LAST ACTIVITY
+01M257RACQAH...  my-project  active  4       1      just now
 ```
 
-| Flag | Behavior |
-|------|----------|
-| `--org-package <dir>` | Attach layout at `<dir>`; kind auto-detected: `<dir>/COMPANY.md` present → `agentcompanies/v1`, else `unknown` |
-| `--org-package-kind <kind>` | Override the detected kind |
-| `--org-package -` | Detach (update only; rejected on add) |
+Archive and delete are policy-gated and record a reason; without one the
+command exits 4:
 
-Paths are stored as passed (cleaned, never absolutized) — resolved
-by the consuming tooling, not wsm.
-
-A matching space detector (`org-package`) checks for a root-only
-`COMPANY.md` marker at the space boundary — no recursion, no content
-heuristics — and emits a `detection.org_package` workspace event with
-best-effort `name`/`slug` from the marker's YAML frontmatter. It is
-opt-in: not part of `RegisterBuiltins`, so an unregistered detector
-plus an unset `layout` field means today's behavior, unchanged.
-
-### With APS or Hop
-
-WSM integrates with [APS](docs/integration/aps-wsm-integration.md)
-as a vendored Go dependency or with
-[Hop](docs/integration/hop-clis-comparison.md) as an orchestrated
-CLI. Both approaches can coexist.
-
-Profile ownership pattern: aps owns records; wsm indexes grant
-bindings; ash indexes session ownership. Each stores just enough
-to enforce its own access checks without round-tripping.
-
-## Who It's For
-
-| Persona | What they care about |
-|---------|----------------------|
-| **User** | Fast CLI/TUI workflows, shell completion |
-| **Maintainer** | Tests, conformance gates, backend integrity |
-| **External Client** | JSON contracts, exit codes, CI integration |
-| **Integrator** | `pkg/` API surface, optional UI deps, semver stability |
-
-> Full persona docs: [`docs/personas/`](docs/personas/)
-
-## Output Modes
-
-| Mode | Trigger | Behavior |
-|------|---------|----------|
-| TTY | Terminal (default) | Styled tables, color, prompts |
-| JSON | `--json` | Structured JSON on stdout |
-| Quiet | `-q` | Bare IDs or exit codes only |
-| Pipe | Non-TTY detected | Plain text, no color |
-| No color | `NO_COLOR=1` | TTY output without ANSI |
-
-## Build & Test
-
-```bash
-make build              # CLI binary → bin/wsm
-make test               # Unit + integration
-make test-e2e           # End-to-end (CLI)
-make test-integration   # Cross-tool e2e (build-tag: integration_wsm)
-make test-ubuntu-docker # Full suite in clean Ubuntu container
+```text
+$ wsm workspace archive my-project
+CONFLICT: policy "archive-requires-note" denied: archiving a workspace requires --note explaining why
 ```
 
-## Project Layout
+Pass `--note "<reason>"` and it succeeds. Bind a directory to the workspace
+and make it reachable from `rux connect`:
+[docs/wsm/spaces.md](docs/wsm/spaces.md). Attach an organizational layout:
+[docs/wsm/workspace-layout.md](docs/wsm/workspace-layout.md). Call the
+library instead of the binary:
+[docs/integration/go-module.md](docs/integration/go-module.md).
 
-```txt
-cmd/wsm/             CLI entrypoint
-pkg/                 Core library surface (UI-free)
-  access/            Access grants, enforcement, verification
-  backend/           Storage contract + SQLite implementation
-  cli/               Shell completion helpers
-  config/            Config loading (XDG, env, flags, local dirs)
-  detector/          Pluggable space detection framework
-  device/            Device identity and registry
-  model/             Core domain types (Workspace, Event, Space)
-  owsf/              OWSF/OCSF interop and compliance
-  scope/             Scope types, assignment, session distinction
-  tui/               TUI model and actions
-  workspace/         Manager, export/import, context formatting
-docs/stories/        Story catalog and acceptance criteria
-docs/personas/       Audience personas
-docs/plans/          Implementation plans
+## Commands
+
+`wsm --help` shows the ORGANIZE, CAPTURE, and INTERACT groups; management
+commands are hidden until `wsm --help-all` or `wsm --help-management`.
+
+| Command | Purpose |
+|---|---|
+| `init` | Create a project-local config directory (`.wsm/`, or `.hop/wsm/` with `--hop`) |
+| `workspace` | `add`, `list`, `show`, `update`, `archive`, `unarchive`, `delete`, `config show` |
+| `event` | `add` appends to the workspace log; `list` and `show` query it |
+| `snapshot` | `generate`, `list`, `show`, `update`, `delete`; `context` emits a markdown handoff |
+| `space` | Bind typed spaces to a workspace and write them through to rux; `sync` rebuilds the registry ([spaces.md](docs/wsm/spaces.md)) |
+| `device` | `list` and `show` the machines that produced events |
+| `config` | `show` the resolved configuration; `path` and `paths` show the resolution chain |
+| `capabilities` | Emit the command surface (path, side effect, idempotency, flags) as a table or `--format json` |
+| `alias` | User-defined command aliases stored in `$XDG_CONFIG_HOME/wsm/aliases.yaml` |
+| `completion` | Shell completion scripts for bash, zsh, fish, and powershell |
+| `status` | Runtime status: profile, env, workspace, auth, effective config |
+| `upgrade` | Check GitHub releases and install a newer binary; `preamble` prints a skill-file fragment |
+| `version` | Version, commit, Go version, OS, and architecture (`--short` for the bare version) |
+| `tui` | Interactive workspace browser; hidden from help and not for batch or agent use |
+
+Every subcommand with its flags: [docs/wsm/api-cli.md](docs/wsm/api-cli.md).
+
+## Flags
+
+Global flags apply to every command; defaults come from the binary.
+
+| Flag | Default | Effect |
+|---|---|---|
+| `--format` | `table` | Output format: `csv`, `human`, `json`, `table`, `text`, `yaml` |
+| `--quiet` | `false` | Suppress non-essential output; list commands print IDs only |
+| `--no-color` | `false` | Disable ANSI color; `NO_COLOR` in the environment does the same |
+| `--no-hints` | `false` | Suppress next-step hints after command output |
+| `--confirm` | prompt on a TTY, `no` otherwise | Confirmation policy for destructive commands: `auto`, `yes`, `no`, `prompt` |
+| `--dry-run` | `false` | Preview side effects; each command's `--help` states whether it honors it |
+| `--config` | XDG config path | Path to the config file |
+| `--data-dir` | XDG data dir | Where `wsm.db` and `machine-id` live |
+| `--backend` | `sqlite` | Storage backend; only `sqlite` is implemented |
+| `--session-id` | | Session ID stamped on recorded events |
+| `--agent-id` | `user` | Agent ID stamped on recorded events |
+| `--offline` | `false` | Disable all network: sync, upgrade check, plugin downloads |
+| `-C`, `--chdir` | | Change directory before running |
+| `-V`, `--verbose` | `0` | `-V` debug, `-VV` trace; logs go to stderr |
+| `-v`, `--version` | | Print the version and exit |
+
+`wsm --help-all` lists the remaining globals (`--cols`, `--template`,
+`-o`/`--output`, `--format-opt`, `--format-help`, `--max-ops`, `--policy`,
+`--profile`, `--instance`, `--api-version`, `--progress-format`,
+`--backend-url`). Per-command flags are in each command's `--help` and in
+[docs/wsm/api-cli.md](docs/wsm/api-cli.md). `--force` on the `delete`
+commands is deprecated; pass `--confirm=yes`.
+
+## Configuration
+
+Configuration is layered. `wsm config paths` prints the chain, highest
+precedence first, and `wsm config show` prints the resolved values with their
+source (`defaults`, `config_file`, `env`, or `flags`):
+
+1. CLI flags
+2. Environment variables (`WSM_*`)
+3. `--config <path>`, which replaces the user-scope file; a missing path is an
+   error
+4. Project: `./.wsm.yaml`, `./.wsm/config.yaml`, or `./.hop/wsm/config.yaml`,
+   first found; `wsm init` creates the second
+5. User: `$XDG_CONFIG_HOME/wsm/config.yaml`
+6. System: `/etc/wsm/config.yaml`
+7. Built-in defaults
+
+File keys: `backend`, `data_dir`, `cache_dir`, `state_dir`, `backend_url`.
+
+| Env var | Default | Effect |
+|---|---|---|
+| `WSM_BACKEND` | `sqlite` | Storage backend |
+| `WSM_DATA_DIR` | `$XDG_DATA_HOME/wsm` | Data directory: `wsm.db`, `machine-id` |
+| `WSM_CACHE_DIR` | `$XDG_CACHE_HOME/wsm` | Cache directory |
+| `WSM_STATE_DIR` | `$XDG_STATE_HOME/wsm` | State directory |
+| `WSM_BACKEND_URL` | | Backend URL, reserved for future backends |
+| `WSM_POLICY_FILE` | `$XDG_CONFIG_HOME/wsm/policies.yaml` | Policy file; the default is seeded on first run and never overwritten |
+| `WSM_TUI_SCRIPT` | | Script file that drives `wsm tui` for testing |
+| `NO_COLOR` | | Any value disables ANSI color |
+
+Policies gate state changes before they are written; the two bundled rules
+are `archive-requires-note` and `delete-requires-note`. Rule authoring and
+the CEL vocabulary: [docs/wsm/policies.md](docs/wsm/policies.md). Every key,
+path, and the one-time migration of a legacy `~/.wsm/wsm.db`:
+[docs/wsm/configuration.md](docs/wsm/configuration.md).
+
+## Exit codes
+
+From `cmd/wsm/main.go`:
+
+| Code | Meaning |
+|---|---|
+| 0 | Success |
+| 1 | Generic error |
+| 2 | Usage error: unknown command or flag, invalid `--format`, missing argument |
+| 3 | Not found: workspace, space, snapshot |
+| 4 | Conflict: already exists, or a policy denied the change |
+| 5 | Unauthorized or forbidden, including a destructive command refused by `--confirm` |
+| 64 | Backend or persistence failure |
+| 130 | Interrupted |
+
+## Agent usage
+
+wsm is safe to drive from scripts and agents: data goes to stdout, hints and
+errors go to stderr, and nothing prompts off a TTY.
+
+```text
+$ wsm workspace list --format json
+[
+  {
+    "id": "01M257RACQAHCR46XHKHMEB1XY",
+    "name": "my-project",
+    "status": "active",
+    "description": "API service",
+    "created_at": "2026-09-10T08:43:08.055691Z",
+    "updated_at": "2026-09-10T08:43:08.666114Z"
+  }
+]
 ```
 
-## Docs
+On a TTY, wsm renders styled tables with color and confirmation prompts; when
+stdout is not a TTY it prints plain tables without ANSI and never prompts.
+Destructive commands (`workspace delete`, `space delete`, `snapshot delete`)
+are refused off a TTY unless `--confirm=yes`, and the refusal exits 5.
+`--dry-run` previews any command that declares support for it. `--session-id`
+and `--agent-id` stamp every recorded event. `wsm capabilities --format json`
+describes every leaf's side effect, idempotency, and flags, so an agent need
+not scrape help text, and `wsm snapshot context` produces the markdown
+handoff shown in the [Demo](#demo). Exit codes: [the table above](#exit-codes).
+Conventions for coding agents working in this repository: [AGENTS.md](AGENTS.md).
 
-- [Stories](docs/stories/README.md) — 47 stories across 4 personas
-- [Personas](docs/personas/README.md) — User, Maintainer, Client,
-  Integrator
-- [Summary](docs/summary.md) — command and API reference
-- [Changelog](CHANGELOG.md) — version history
-- [Contributing](CONTRIBUTING.md) — how to contribute
-- [Security](SECURITY.md) — vulnerability reporting
+## Troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `policy "archive-requires-note" denied` or `policy "delete-requires-note" denied`, exit 4 | The bundled policies require a reason | Pass `--note "<reason>"`, or edit `$XDG_CONFIG_HOME/wsm/policies.yaml` ([policies.md](docs/wsm/policies.md)) |
+| `destructive command ... refused: --confirm=no (or non-TTY default)`, exit 5 | Not running on a TTY | Pass `--confirm=yes` |
+| `no snapshot found for workspace`, exit 3, from `snapshot context` | No snapshot has been generated yet | Run `wsm snapshot generate <workspace>` first |
+| `unknown flag: --json`, exit 2 | `--json` was removed | Use `--format json` |
+| `wsm space add` warned that `projects.yaml` could not be written | The registry write is not transactional with the database write | Run `wsm space sync` ([spaces.md](docs/wsm/spaces.md)) |
+| `no config file found in resolution chain`, exit 1, from `wsm config path` | No config file exists at any rung | `wsm init` for a project file, or `wsm config paths` to see the chain |
+
+## Documentation
+
+- [docs/wsm/api-cli.md](docs/wsm/api-cli.md): every subcommand, flag, output format, exit code, and bus topic
+- [docs/wsm/configuration.md](docs/wsm/configuration.md): config keys, env vars, XDG paths, layered loading
+- [docs/wsm/policies.md](docs/wsm/policies.md): the runtime policy engine, default rules, custom rule authoring
+- [docs/wsm/spaces.md](docs/wsm/spaces.md): spaces, `rux connect`, `space sync` recovery
+- [docs/wsm/workspace-layout.md](docs/wsm/workspace-layout.md): `--org-package` layouts and the `org-package` detector
+- [docs/architecture.md](docs/architecture.md): containers, components, OWSF signing, integrations
+- [docs/ecosystem.md](docs/ecosystem.md): what wsm owns and what ash, usp, and aps own; who it is for
+- [docs/integration/go-module.md](docs/integration/go-module.md): embedding `hop.top/wsm` as a Go module; package layout
+- [docs/integration/aps-wsm-integration.md](docs/integration/aps-wsm-integration.md) and [hop-clis-comparison.md](docs/integration/hop-clis-comparison.md): aps as a vendored dependency, hop as an orchestrator; [decision-guide.md](docs/integration/decision-guide.md) weighs the two
+- [docs/stories/](docs/stories/README.md): 47 stories across 4 personas, with acceptance criteria
+- [docs/personas/](docs/personas/README.md): User, Maintainer, External Client, Integrator
+- [docs/diagrams/session-management-sequences.md](docs/diagrams/session-management-sequences.md): sequence diagrams
+- [e2e/conformance/README.md](e2e/conformance/README.md): the 12-factor AI-CLI conformance grading behind the badge
+- [CHANGELOG.md](CHANGELOG.md): per-release changes, including the `--json` to `--format json` and `remove` to `delete` renames
+
+## Contributing
+
+Issues and pull requests are welcome on [GitHub](https://github.com/hop-top/wsm):
+bug report and feature request templates are provided, and the pull request
+template asks for the stories covered and the validation run. Read
+[CONTRIBUTING.md](CONTRIBUTING.md), [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md),
+and [AGENTS.md](AGENTS.md) first; `docs/stories/README.md` is the source of
+truth for requirements, and `pkg/*` never imports UI libraries.
+
+Build and test targets, from the Makefile:
+
+```sh
+make build              # bin/wsm, then compile every package
+make test               # unit + default e2e
+make test-e2e           # tests/e2e only
+make test-integration   # cross-tool e2e (build tag integration_wsm)
+make test-ubuntu-docker # full matrix in a clean Ubuntu container
+make verify-no-ui-leak  # pkg/* must not depend on charmbracelet
+make fmt                # gofmt
+```
+
+Before a pull request, run what CI runs:
+
+```sh
+make test && make test-e2e && make verify-no-ui-leak
+```
+
+The 12-factor AI-CLI badge is refreshed locally with `make 12fcc-record`,
+`make 12fcc-grade`, and `make 12fcc-badge` (`KIT_BIN` must point at a kit
+binary); CI checks conformance but never rewrites the badge. Releases are cut
+by release-please from Conventional Commits on `main`, with prerelease
+versioning (`0.1.0-alpha.N`, minor bumps for breaking changes before 1.0).
+
+## Security
+
+Report vulnerabilities privately to the maintainers before public disclosure,
+as described in [SECURITY.md](SECURITY.md); reports cover `pkg/*`, the
+CLI/TUI command handling, and storage integrity and migration safety.
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE), copyright 2026 Jad Bitar and Idea Crafters LLC.
