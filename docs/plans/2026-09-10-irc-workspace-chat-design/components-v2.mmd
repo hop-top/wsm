@@ -1,0 +1,50 @@
+flowchart LR
+  subgraph cli["wsm CLI (per invocation)"]
+    IRCCMD["wsm irc *"]
+    WSMGR["workspace.Manager<br/>bus: wsm.runtime.workspace.#"]
+    PROV["pkg/irc/provision<br/>Desired · DiffRoles · Reconcile"]
+  end
+
+  subgraph daemon["wsm irc daemon &lt;ws&gt; (detached, one per workspace)"]
+    SUP["supervisor (managed only)<br/>ergo child"]
+    TR["bot.Transport (irc-go)<br/>SASL · caps · labeled send · NAMES"]
+    CAP["capture<br/>cap-aware → interaction.message"]
+    BF["backfill<br/>CHATHISTORY or unsupported"]
+  end
+
+  subgraph providers["pkg/irc/provider"]
+    IF["AccountProvider · RoleProvider<br/>Caps · ErrUnsupported"]
+    ERGOP["ergo<br/>HTTP api + CS AMODE"]
+    PLAINP["plain<br/>live MODE, NAMES truth"]
+    RES["AccountResolver chain<br/>Profile → aps → members.yaml"]
+  end
+
+  ERGO["ergo (managed child)<br/>127.0.0.1:port · wss:port+1 · api:port+2"]
+  EXT["external IRC server<br/>ergo · plain · (atheme/anope later)"]
+  APS[("aps profile<br/>irc.servers[] {id, host, account, secret_ref}")]
+  DB[("wsm.db<br/>events")]
+  FS[("$DataDir/irc/&lt;ws&gt;/<br/>profile.yaml secrets.yaml ergo.yaml ircd.db tls/")]
+  ST[("$StateDir/irc/&lt;ws&gt;/<br/>daemon.pid status.json cursors.yaml logs")]
+  AGENTS["agents / humans<br/>any IRC client"]
+
+  IRCCMD --> PROV
+  WSMGR -- managed + auto_provision --> PROV
+  PROV --> IF
+  IF --> ERGOP
+  IF --> PLAINP
+  PROV --> RES
+  RES -. reads .-> APS
+  ERGOP --> TR
+  PLAINP --> TR
+  ERGOP -- HTTP --> ERGO
+  TR --> ERGO
+  TR --> EXT
+  SUP --> ERGO
+  TR --> CAP --> DB
+  BF --> TR
+  BF --> DB
+  SUP --> ST
+  PROV --> FS
+  AGENTS --> ERGO
+  AGENTS --> EXT
+  AGENTS -. creds by server id .-> APS

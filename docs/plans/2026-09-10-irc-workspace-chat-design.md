@@ -3,7 +3,7 @@
 **Status**: design v2, awaiting review
 **Author**: $USER
 **Date**: 2026-09-10
-**Diagrams**: [components](2026-09-10-irc-workspace-chat-design/components-v1.mmd),
+**Diagrams**: [components](2026-09-10-irc-workspace-chat-design/components-v2.mmd),
 [provisioning flow](2026-09-10-irc-workspace-chat-design/provisioning-flow-v1.mmd)
 
 ## Purpose
