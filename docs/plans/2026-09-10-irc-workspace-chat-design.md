@@ -349,7 +349,8 @@ bot account for B on A's ergo (A has account creation), stores B's bot password 
 secrets, writes B's workspace config override (`server` = A's loopback listener and API,
 `channel_prefix`), and B's members get accounts on A's server through B's own reconcile using
 A's API. B on another machine is plain `--external` against A's remote listener with accounts
-provisioned by A's operator (`wsm irc account create A --raw <name>`). A's archive/delete refuse while `shared_with` is non-empty unless
+provisioned by A's operator (`wsm irc account create A --raw <name>`). A's archive/delete
+refuse while `shared_with` is non-empty unless
 `--force`, and warn B via its status (`host_state`).
 
 **Guests (host-owned allow list)**: on a host channel template entry,
