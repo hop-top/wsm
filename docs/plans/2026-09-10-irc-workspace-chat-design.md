@@ -137,11 +137,14 @@ type AccountResolver interface {
 }
 ```
 
-Implementations: `ProfileResolver` (managed: wsm's own `Profile.Accounts` map),
-`MembersFileResolver` (`members.yaml` per-member `irc_accounts: {<server-id>: <account>}`),
-`APSResolver` (runs `aps profile show <id> --json`, reads `irc.servers[]` by `id`). Chain:
-managed → Profile only; external → aps, then members.yaml. Member with no account in
-external mode → reported `unresolved`, excluded from role apply, not fatal.
+Implementations: `ProfileResolver` (wsm's own `Profile.Accounts` map), `MembersFileResolver`
+(`members.yaml` per-member `irc_accounts: {<server-id>: <account>}`), `LocalWorkspacesResolver`
+(other workspaces' `profile.yaml` on this machine, same server id), `APSResolver` (`aps profile
+show <id> --json` forward; `aps profile find --irc-account <a> --server <id>` reverse). Forward
+chain: managed → Profile; external → aps, then members.yaml. Reverse chain (account → profile,
+used for `AgentID` on every captured message, both modes): Profile, members.yaml, local
+workspaces, aps. Member with no account in external mode → reported `unresolved`, excluded
+from role apply, not fatal.
 
 ### Processes
 
@@ -366,9 +369,10 @@ when ergo allows it at that level, else live `MODE` re-applied on join), and rep
 `foreign` in status. Revoking the delegate drops B's bot privilege and strips every
 non-authored role on that channel in the same host reconcile.
 
-**Attribution**: the host bot records guest messages; `AgentID` resolves only if the reverse
-lookup reaches aps by account (see the aps task), otherwise `Attribution: account` with an
-empty `AgentID`.
+**Attribution**: the host bot records guest messages. `AgentID` resolves through the reverse
+chain: guests and delegate bots from workspaces on the same machine via their `profile.yaml`,
+anyone else via aps reverse lookup by account. Only an account unknown to all four sources
+lands as `Attribution: account` with an empty `AgentID`.
 
 **CLI**: `wsm irc guest add|rm|list <host-ws> <guest-ws> [--max-role voice|op]
 [--channel <#c>]` edits the host's delegate entries and reconciles; `wsm irc channel add`
