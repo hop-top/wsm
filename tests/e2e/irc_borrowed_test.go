@@ -66,13 +66,11 @@ func TestIRCBorrowed_ChannelAddBorrowedJSON(t *testing.T) {
 	list := r.runWithEnv(env, "irc", "channel", "list", "borrow-guest", "--format", "json")
 	requireExitCode(t, list, 0)
 
-	rows := mustUnmarshalJSONArray[struct {
-		Name   string `json:"name"`
-		Source string `json:"source"`
-	}](t, list.Stdout)
+	var sections channelSections
+	mustUnmarshalJSON(t, list.Stdout, &sections)
 
 	var found bool
-	for _, row := range rows {
+	for _, row := range sections.Borrowed {
 		if row.Name == "#host-ops" {
 			found = true
 			if row.Source != "borrowed" {
@@ -81,7 +79,7 @@ func TestIRCBorrowed_ChannelAddBorrowedJSON(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Fatalf("list must carry the borrowed channel, got %+v", rows)
+		t.Fatalf("the borrowed section must carry the channel, got %+v", sections)
 	}
 }
 

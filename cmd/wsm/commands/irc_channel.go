@@ -33,6 +33,11 @@ workspace root's config, then ask the running daemon to reconcile. The
 daemon is the only thing that ever joins or parts a channel, so these
 verbs change intent and let the daemon act on it.
 
+adopt and release say the same thing about a channel wsm did not
+author: they record the request in the override and signal the daemon,
+whose discovery pass performs the join or part. Neither verb joins
+anything itself.
+
 list merges the configured templates with what the daemon last observed,
 so a channel that is configured but not yet registered is visible as
 exactly that.`,
@@ -46,6 +51,9 @@ exactly that.`,
 		newIRCChannelAddCmd(opts),
 		newIRCChannelRmCmd(opts),
 		newIRCChannelListCmd(opts),
+		newIRCChannelAdoptCmd(opts),
+		newIRCChannelReleaseCmd(opts),
+		newIRCChannelPurgeCmd(opts),
 	)
 	return cmd
 }
@@ -175,6 +183,106 @@ maintains.`,
 	}
 	cli.SetSideEffect(cmd, cli.SideEffectRead)
 	cli.SetIdempotency(cmd, cli.IdempotencyYes)
+	return cmd
+}
+
+// newIRCChannelAdoptCmd builds `wsm irc channel adopt`.
+func newIRCChannelAdoptCmd(opts *globalOptions) *cobra.Command {
+	var owner string
+
+	cmd := &cobra.Command{
+		Use:   "adopt <workspace> <#channel>",
+		Short: "Ask the daemon to adopt a channel it did not create",
+		Long: `Record a channel the daemon should join and capture.
+
+The request is written to irc.adopted in the workspace-local override
+and the running daemon is signalled. The daemon's discovery pass is what
+joins the channel and records it under discovered; this command never
+joins anything, so a channel is captured by the long-lived bot session
+rather than by whatever connection the CLI happened to open.
+
+A channel previously released is un-released by adopting it again: the
+name is dropped from irc.released, which otherwise outranks adoption.
+
+The daemon must be running. Adoption that only reached a config file
+would look identical to adoption that took effect, so a stopped daemon
+is an error rather than a deferred write.`,
+		Args: cobra.ExactArgs(2),
+		RunE: func(_ *cobra.Command, args []string) error {
+			return withApp(opts, func(ctx context.Context, app *appContext) error {
+				return runIRCChannelAdopt(ctx, app, opts, args[0], args[1], owner)
+			})
+		},
+	}
+
+	cmd.Flags().StringVar(&owner, "owner", "", "Account credited with the channel")
+
+	cli.SetSideEffect(cmd, cli.SideEffectWriteLocal)
+	cli.SetIdempotency(cmd, cli.IdempotencyYes)
+	return cmd
+}
+
+// newIRCChannelReleaseCmd builds `wsm irc channel release`.
+func newIRCChannelReleaseCmd(opts *globalOptions) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "release <workspace> <#channel>",
+		Short: "Ask the daemon to drop a channel it adopted",
+		Long: `Stop capturing a channel wsm does not own.
+
+The name is written to irc.released in the workspace-local override and
+any matching irc.adopted entry is dropped, so the request cannot be
+undone by the adoption that preceded it. The running daemon is then
+signalled and its discovery pass parts the channel.
+
+Releasing does not touch the channel itself: wsm never owned it, so
+there is nothing to unregister. Only wsm's own participation ends.
+
+The daemon must be running, for the same reason adopt requires it.`,
+		Args: cobra.ExactArgs(2),
+		RunE: func(_ *cobra.Command, args []string) error {
+			return withApp(opts, func(ctx context.Context, app *appContext) error {
+				return runIRCChannelRelease(ctx, app, opts, args[0], args[1])
+			})
+		},
+	}
+
+	cli.SetSideEffect(cmd, cli.SideEffectWriteLocal)
+	cli.SetIdempotency(cmd, cli.IdempotencyYes)
+	return cmd
+}
+
+// newIRCChannelPurgeCmd builds `wsm irc channel purge`.
+func newIRCChannelPurgeCmd(opts *globalOptions) *cobra.Command {
+	var force bool
+
+	cmd := &cobra.Command{
+		Use:   "purge <workspace> <#channel>",
+		Short: "Drop a channel registration on the server",
+		Long: `Remove a channel's registration entirely.
+
+This is a server operation, not a configuration edit: the registration
+is dropped and the channel emptied. On ergo that is CS PURGE, a two-step
+confirmation the provider completes on wsm's behalf. A provider without
+the capability reports the operation as unsupported (exit 7) rather than
+appearing to succeed.
+
+There is no unpurge. The purge is gated behind --confirm like every
+other destructive verb, and --force stands in for --confirm=yes.`,
+		Args: cobra.ExactArgs(2),
+		PreRunE: func(cmd *cobra.Command, _ []string) error {
+			return bridgeForceToConfirm(cmd, force)
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return withApp(opts, func(ctx context.Context, app *appContext) error {
+				return runIRCChannelPurge(ctx, cmd, app, opts, args[0], args[1])
+			})
+		},
+	}
+
+	cmd.Flags().BoolVar(&force, "force", false, "Proceed without the destructive confirmation")
+
+	cli.SetSideEffect(cmd, cli.SideEffectDestructive)
+	cli.SetIdempotency(cmd, cli.IdempotencyNo)
 	return cmd
 }
 
@@ -346,6 +454,459 @@ func runIRCChannelRm(
 	// converge to rather than one this command is still changing.
 	doc.Synced = signalReconcile(rt)
 	return renderIRCChannelResult(opts, doc)
+}
+
+// ircAdoptDoc is the `wsm irc channel adopt|release --json` document.
+type ircAdoptDoc struct {
+	Workspace string `json:"workspace"`
+	ID        string `json:"id"`
+	Channel   string `json:"channel"`
+	Action    string `json:"action"`
+	// Owner is the account credited with an adopted channel.
+	Owner string `json:"owner,omitempty"`
+	// Config is the file the request was written to.
+	Config string `json:"config"`
+	// Synced reports that the daemon was signalled. It is always true in
+	// a successful run: a stopped daemon fails the command outright.
+	Synced bool `json:"synced"`
+}
+
+// runIRCChannelAdopt records an adoption request and signals the daemon.
+//
+// Nothing here joins the channel. The write says what the operator
+// wants and the SIGHUP asks the daemon to act on it; the daemon's
+// discovery pass does the joining and the Discovered bookkeeping. That
+// division is the point: the CLI's connection dies with the process, so
+// a channel it joined would be captured by nothing.
+func runIRCChannelAdopt(
+	ctx context.Context,
+	app *appContext,
+	opts *globalOptions,
+	ref string,
+	channel string,
+	owner string,
+) error {
+	rt, err := resolveIRCRuntime(ctx, app, ref)
+	if err != nil {
+		return err
+	}
+	if err := requireCapability(app, workspace.CapIRCEnable); err != nil {
+		return err
+	}
+	profile, err := rt.loadEnabledProfile()
+	if err != nil {
+		return err
+	}
+
+	name := strings.TrimSpace(channel)
+	if err := validateChannelName(name); err != nil {
+		return err
+	}
+	if err := requireRunningDaemon(rt, "adopt"); err != nil {
+		return err
+	}
+
+	configPath := workspaceConfigPathFor(profile)
+	if err := adoptChannelRequest(configPath, name, strings.TrimSpace(owner)); err != nil {
+		return err
+	}
+
+	doc := ircAdoptDoc{
+		Workspace: rt.ws.Name,
+		ID:        rt.ws.ID,
+		Channel:   name,
+		Action:    "adopt",
+		Owner:     strings.TrimSpace(owner),
+		Config:    configPath,
+		Synced:    signalReconcile(rt),
+	}
+	return renderIRCAdoptResult(opts, doc)
+}
+
+// runIRCChannelRelease records a release request and signals the daemon.
+func runIRCChannelRelease(
+	ctx context.Context,
+	app *appContext,
+	opts *globalOptions,
+	ref string,
+	channel string,
+) error {
+	rt, err := resolveIRCRuntime(ctx, app, ref)
+	if err != nil {
+		return err
+	}
+	if err := requireCapability(app, workspace.CapIRCEnable); err != nil {
+		return err
+	}
+	profile, err := rt.loadEnabledProfile()
+	if err != nil {
+		return err
+	}
+
+	name := strings.TrimSpace(channel)
+	if err := validateChannelName(name); err != nil {
+		return err
+	}
+	if err := requireRunningDaemon(rt, "release"); err != nil {
+		return err
+	}
+
+	configPath := workspaceConfigPathFor(profile)
+	if err := releaseChannelRequest(configPath, name); err != nil {
+		return err
+	}
+
+	doc := ircAdoptDoc{
+		Workspace: rt.ws.Name,
+		ID:        rt.ws.ID,
+		Channel:   name,
+		Action:    "release",
+		Config:    configPath,
+		Synced:    signalReconcile(rt),
+	}
+	return renderIRCAdoptResult(opts, doc)
+}
+
+// runIRCChannelPurge drops a channel registration on the server.
+func runIRCChannelPurge(
+	ctx context.Context,
+	cmd *cobra.Command,
+	app *appContext,
+	opts *globalOptions,
+	ref string,
+	channel string,
+) error {
+	rt, err := resolveIRCRuntime(ctx, app, ref)
+	if err != nil {
+		return err
+	}
+	if err := requireCapability(app, workspace.CapIRCEnable); err != nil {
+		return err
+	}
+	if err := requireCapability(app, workspace.CapIRCPurge); err != nil {
+		return err
+	}
+	profile, err := rt.loadEnabledProfile()
+	if err != nil {
+		return err
+	}
+
+	name := strings.TrimSpace(channel)
+	if err := validateChannelName(name); err != nil {
+		return err
+	}
+
+	if done, derr := previewDryRun(cmd,
+		map[string]any{"workspace": rt.ws.Name, "channel": name, "purge": true},
+		cli.Effect{
+			Kind:       "delete",
+			Target:     "irc-channel:" + name,
+			Reversible: false,
+			Detail:     fmt.Sprintf("drop the registration for %s", name),
+		},
+	); done {
+		return derr
+	}
+	// Gated after the preview, which destroys nothing.
+	if gerr := gatePurge(cmd); gerr != nil {
+		return gerr
+	}
+
+	purged, reason := purgeChannel(ctx, rt, profile, name)
+	if !purged {
+		// A provider that cannot purge is a prerequisite failure, not a
+		// runtime one: the operator fixes it by using a server that
+		// supports the operation, which is exactly what exit 7 means.
+		if reason == "" || reason == "unsupported" {
+			return workspace.NewErrorPrerequisite(fmt.Sprintf(
+				"provider %q cannot purge channel registrations: "+
+					"drop %s on the server directly",
+				profile.Provider, name))
+		}
+		return &output.Error{
+			Code:         output.CodeGeneric,
+			Message:      fmt.Sprintf("purge %s: %s", name, reason),
+			SuggestedFix: "check the server is reachable and the bot is opered up",
+			ExitCode:     1,
+		}
+	}
+
+	doc := ircChannelDoc{
+		Workspace: rt.ws.Name,
+		ID:        rt.ws.ID,
+		Channel:   name,
+		Action:    "purge",
+		Config:    workspaceConfigPathFor(profile),
+		Purged:    true,
+		Synced:    signalReconcile(rt),
+	}
+	if opts.Quiet {
+		return nil
+	}
+	if isMachineFormat(opts) {
+		return output.Render(os.Stdout, machineFormat(opts), doc)
+	}
+	fmt.Fprintf(os.Stderr, "Purged the registration for %s\n", doc.Channel)
+	return nil
+}
+
+// requireRunningDaemon refuses adopt and release without a live daemon.
+//
+// Both verbs are requests to a daemon rather than edits that stand on
+// their own: the join and the part happen in the discovery pass, so a
+// write with nothing running would report success for work that nobody
+// is going to do. add and rm can defer to the next start because their
+// templates are read at startup; an adoption request is not.
+func requireRunningDaemon(rt *ircRuntime, verb string) error {
+	if _, running := daemonState(rt.paths); running {
+		return nil
+	}
+	return &output.Error{
+		Code: output.CodeGeneric,
+		Message: fmt.Sprintf(
+			"no irc daemon is running for %q: %s needs one to join or part the channel",
+			rt.ws.Name, verb),
+		SuggestedFix: fmt.Sprintf("run `wsm irc start %s` first", rt.ws.Name),
+		ExitCode:     1,
+	}
+}
+
+// renderIRCAdoptResult renders an adopt or release outcome.
+func renderIRCAdoptResult(opts *globalOptions, doc ircAdoptDoc) error {
+	if opts.Quiet {
+		return nil
+	}
+	if isMachineFormat(opts) {
+		return output.Render(os.Stdout, machineFormat(opts), doc)
+	}
+
+	// §6.3: acknowledgements are non-data → stderr.
+	switch doc.Action {
+	case "adopt":
+		fmt.Fprintf(os.Stderr,
+			"Asked the daemon to adopt %s; it joins on the next discovery pass\n",
+			doc.Channel)
+	default:
+		fmt.Fprintf(os.Stderr,
+			"Asked the daemon to release %s; it parts on the next discovery pass\n",
+			doc.Channel)
+	}
+	return nil
+}
+
+// adoptChannelRequest records an adoption in the workspace override.
+//
+// The name is also dropped from irc.released, which outranks adoption in
+// the daemon's classifier: leaving it there would make the adoption a
+// no-op the operator could not see the cause of.
+func adoptChannelRequest(path, name, owner string) error {
+	return editIRCBlock(path, func(ircNode *yaml.Node) error {
+		adopted, err := readAdopted(ircNode)
+		if err != nil {
+			return err
+		}
+
+		replaced := false
+		for i := range adopted {
+			if adopted[i].Name == name {
+				adopted[i].Owner = owner
+				replaced = true
+				break
+			}
+		}
+		if !replaced {
+			adopted = append(adopted, irc.AdoptedChannel{Name: name, Owner: owner})
+		}
+
+		released, err := readReleased(ircNode)
+		if err != nil {
+			return err
+		}
+		kept := make([]string, 0, len(released))
+		for _, entry := range released {
+			if entry != name {
+				kept = append(kept, entry)
+			}
+		}
+
+		if err := setAdopted(ircNode, adopted); err != nil {
+			return err
+		}
+		return setReleased(ircNode, kept)
+	})
+}
+
+// releaseChannelRequest records a release in the workspace override.
+//
+// The matching adoption is dropped rather than left to be outranked.
+// Both would produce the same behaviour today, but a config that still
+// asks for a channel it also releases is a contradiction an operator
+// would have to reason about; removing it keeps the file readable.
+func releaseChannelRequest(path, name string) error {
+	return editIRCBlock(path, func(ircNode *yaml.Node) error {
+		released, err := readReleased(ircNode)
+		if err != nil {
+			return err
+		}
+		found := false
+		for _, entry := range released {
+			if entry == name {
+				found = true
+				break
+			}
+		}
+		if !found {
+			released = append(released, name)
+		}
+
+		adopted, err := readAdopted(ircNode)
+		if err != nil {
+			return err
+		}
+		kept := make([]irc.AdoptedChannel, 0, len(adopted))
+		for _, entry := range adopted {
+			if entry.Name != name {
+				kept = append(kept, entry)
+			}
+		}
+
+		if err := setReleased(ircNode, released); err != nil {
+			return err
+		}
+		return setAdopted(ircNode, kept)
+	})
+}
+
+// editIRCBlock applies edit to the irc block of the config at path.
+//
+// This is editChannelTemplates' sibling for the adoption lists, and it
+// goes through the same node tree for the same reason: a typed
+// round-trip would serialise only the fields wsm models and delete
+// every unrelated key, comment and ordering in the operator's file. The
+// write is atomic so an interrupted adopt cannot leave a truncated
+// config the workspace no longer loads.
+func editIRCBlock(path string, edit func(ircNode *yaml.Node) error) error {
+	raw, err := os.ReadFile(path)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return workspace.NewErrorPrerequisite(fmt.Sprintf("read %s: %v", path, err))
+	}
+
+	var doc yaml.Node
+	if len(raw) > 0 {
+		if uerr := yaml.Unmarshal(raw, &doc); uerr != nil {
+			return workspace.NewErrorPrerequisite(fmt.Sprintf("parse %s: %v", path, uerr))
+		}
+	}
+	root := documentRoot(&doc)
+
+	ircNode := mappingValue(root, "irc")
+	if ircNode == nil {
+		ircNode = &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+		root.Content = append(root.Content,
+			&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "irc"},
+			ircNode)
+	}
+
+	if eerr := edit(ircNode); eerr != nil {
+		return eerr
+	}
+
+	out, err := yaml.Marshal(root)
+	if err != nil {
+		return workspace.NewErrorPrerequisite(fmt.Sprintf("encode %s: %v", path, err))
+	}
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return workspace.NewErrorPrerequisite(fmt.Sprintf("create %s: %v", dir, err))
+	}
+
+	tmp, err := os.CreateTemp(dir, ".config-*.yaml")
+	if err != nil {
+		return workspace.NewErrorPrerequisite(fmt.Sprintf("create temp file in %s: %v", dir, err))
+	}
+	tmpName := tmp.Name()
+	defer func() { _ = os.Remove(tmpName) }()
+
+	if err := tmp.Chmod(0o644); err != nil {
+		_ = tmp.Close()
+		return workspace.NewErrorPrerequisite(fmt.Sprintf("chmod temp file: %v", err))
+	}
+	if _, err := tmp.Write(out); err != nil {
+		_ = tmp.Close()
+		return workspace.NewErrorPrerequisite(fmt.Sprintf("write %s: %v", path, err))
+	}
+	if err := tmp.Close(); err != nil {
+		return workspace.NewErrorPrerequisite(fmt.Sprintf("close temp file: %v", err))
+	}
+	if err := os.Rename(tmpName, path); err != nil {
+		return workspace.NewErrorPrerequisite(fmt.Sprintf("install %s: %v", path, err))
+	}
+	return nil
+}
+
+// readAdopted decodes irc.adopted from the irc block.
+func readAdopted(ircNode *yaml.Node) ([]irc.AdoptedChannel, error) {
+	node := mappingValue(ircNode, "adopted")
+	if node == nil {
+		return nil, nil
+	}
+	var out []irc.AdoptedChannel
+	if err := node.Decode(&out); err != nil {
+		return nil, workspace.NewErrorPrerequisite(fmt.Sprintf("parse irc.adopted: %v", err))
+	}
+	return out, nil
+}
+
+// readReleased decodes irc.released from the irc block.
+func readReleased(ircNode *yaml.Node) ([]string, error) {
+	node := mappingValue(ircNode, "released")
+	if node == nil {
+		return nil, nil
+	}
+	var out []string
+	if err := node.Decode(&out); err != nil {
+		return nil, workspace.NewErrorPrerequisite(fmt.Sprintf("parse irc.released: %v", err))
+	}
+	return out, nil
+}
+
+// setAdopted writes irc.adopted back, dropping the key when empty.
+//
+// An empty list is removed rather than written as `adopted: []` for the
+// same reason the channel list is: the workspace override replaces the
+// list wholesale, so an empty one is a statement about this workspace
+// rather than the absence of a statement.
+func setAdopted(ircNode *yaml.Node, entries []irc.AdoptedChannel) error {
+	if len(entries) == 0 {
+		removeMappingKey(ircNode, "adopted")
+		return nil
+	}
+	return setSequence(ircNode, "adopted", entries)
+}
+
+// setReleased writes irc.released back, dropping the key when empty.
+func setReleased(ircNode *yaml.Node, entries []string) error {
+	if len(entries) == 0 {
+		removeMappingKey(ircNode, "released")
+		return nil
+	}
+	return setSequence(ircNode, "released", entries)
+}
+
+// setSequence encodes value into key on the irc block.
+func setSequence(ircNode *yaml.Node, key string, value any) error {
+	var encoded yaml.Node
+	if err := encoded.Encode(value); err != nil {
+		return workspace.NewErrorPrerequisite(fmt.Sprintf("encode irc.%s: %v", key, err))
+	}
+	if existing := mappingValue(ircNode, key); existing != nil {
+		*existing = encoded
+		return nil
+	}
+	ircNode.Content = append(ircNode.Content,
+		&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: key},
+		&encoded)
+	return nil
 }
 
 // purgeChannel drops a channel registration through the provider.
@@ -807,6 +1368,26 @@ type ircChannelRow struct {
 	Owner      string `table:"OWNER,priority=5"    json:"owner,omitempty"`
 }
 
+// ircChannelSections is the `wsm irc channel list --json` document.
+//
+// The sections answer four different questions an operator has about a
+// channel, which a single flat list runs together: what wsm maintains
+// here, what it borrows from another workspace's server, what it
+// captures without owning, and what it has found and does not manage at
+// all. Each is a separate array so a consumer can read one without
+// filtering on a source string.
+type ircChannelSections struct {
+	// Managed are the channels this workspace's templates declare.
+	Managed []ircChannelRow `json:"managed"`
+	// Borrowed are templates pointing at another workspace's channel.
+	Borrowed []ircChannelRow `json:"borrowed"`
+	// Discovered are channels the daemon adopted, including peers it
+	// lists but never touches.
+	Discovered []ircChannelRow `json:"discovered"`
+	// Unmanaged are registrations wsm found and does not own.
+	Unmanaged []ircChannelRow `json:"unmanaged"`
+}
+
 // runIRCChannelList reports the workspace's channels.
 func runIRCChannelList(ctx context.Context, app *appContext, opts *globalOptions, ref string) error {
 	rt, err := resolveIRCRuntime(ctx, app, ref)
@@ -825,9 +1406,44 @@ func runIRCChannelList(ctx context.Context, app *appContext, opts *globalOptions
 		return nil
 	}
 	if isMachineFormat(opts) {
-		return output.Render(os.Stdout, machineFormat(opts), rows)
+		return output.Render(os.Stdout, machineFormat(opts), sectionChannelRows(rows))
 	}
+	// The table stays one flat list carrying the source column: a
+	// terminal reader scans rows, and four separate tables would cost
+	// the alignment that makes them scannable.
 	return output.Render(os.Stdout, output.Table, rows)
+}
+
+// sectionChannelRows partitions the merged rows into the four sections.
+//
+// The partition is driven by the source each row already carries, so
+// the machine shape and the table cannot disagree about what a channel
+// is. A peer channel belongs with discovered rather than unmanaged: wsm
+// captures neither, but a peer has a known wsm founder and is never
+// purge-eligible, which is the distinction unmanaged exists to draw.
+func sectionChannelRows(rows []ircChannelRow) ircChannelSections {
+	// Non-nil empties so the JSON shape carries four arrays whatever the
+	// workspace holds; a consumer indexing a null would break on a
+	// workspace that simply has no borrowed channels.
+	out := ircChannelSections{
+		Managed:    []ircChannelRow{},
+		Borrowed:   []ircChannelRow{},
+		Discovered: []ircChannelRow{},
+		Unmanaged:  []ircChannelRow{},
+	}
+	for _, row := range rows {
+		switch row.Source {
+		case "borrowed":
+			out.Borrowed = append(out.Borrowed, row)
+		case "discovered", "peer":
+			out.Discovered = append(out.Discovered, row)
+		case "unmanaged":
+			out.Unmanaged = append(out.Unmanaged, row)
+		default:
+			out.Managed = append(out.Managed, row)
+		}
+	}
+	return out
 }
 
 // mergeChannelRows merges the configured templates with what the daemon

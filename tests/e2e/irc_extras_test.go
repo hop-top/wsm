@@ -464,19 +464,17 @@ func TestIRCExtras_ChannelAddAndList(t *testing.T) {
 	list := r.runWithEnv(env, "irc", "channel", "list", "extras-channels", "--format", "json")
 	requireExitCode(t, list, 0)
 
-	rows := mustUnmarshalJSONArray[struct {
-		Name   string `json:"name"`
-		Source string `json:"source"`
-	}](t, list.Stdout)
+	var sections channelSections
+	mustUnmarshalJSON(t, list.Stdout, &sections)
 
 	found := false
-	for _, row := range rows {
+	for _, row := range sections.Managed {
 		if row.Name == "#team-ops" && row.Source == "template" {
 			found = true
 		}
 	}
 	if !found {
-		t.Fatalf("list must carry the declared channel, got %+v", rows)
+		t.Fatalf("the managed section must carry the declared channel, got %+v", sections)
 	}
 
 	// Removing it again empties the override.
