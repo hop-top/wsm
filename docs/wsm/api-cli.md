@@ -514,18 +514,31 @@ a disabled config exits 2. Every verb except `enable` also requires the
 workspace to have been enabled already — a missing profile exits 7 with
 `run \`wsm irc enable <ws>\` first`.
 
-Capability gating is uneven, and only the verbs listed here check anything
-(exit 6 when the capability is withheld):
+Every verb that changes state, and the one that hands out a secret, checks a
+capability (exit 6 when it is withheld):
 
 | Capability    | Checked by                                                                 |
 |---------------|----------------------------------------------------------------------------|
 | `irc.enable`  | `enable` (both the managed and `--shared-with` paths), `account create\|rotate\|suspend`, `channel add\|rm\|adopt\|release\|purge`, `delegate add\|rm` |
 | `irc.disable` | `disable`                                                                  |
 | `irc.purge`   | `disable --purge`, `channel rm --purge`, `channel purge` (in addition to `irc.enable`) |
+| `irc.start`   | `start`, `restart` (with `irc.stop`), and the daemon `enable` spawns        |
+| `irc.stop`    | `stop`, `restart` (with `irc.start`), `disable`'s teardown                  |
+| `irc.sync`    | `sync`, `backfill`                                                         |
+| `irc.creds`   | `creds`                                                                    |
 
-`start`, `stop`, `restart`, `sync`, `status`, `creds`, `url`, `backfill`,
-`channel list`, `delegate list` and `daemon` perform no capability check at
-all — including verbs that stop a daemon or print a credential.
+The checks live in `pkg/irc` rather than in the command layer, so the daemon
+and the auto-provisioner that drives IRC off workspace lifecycle events are
+gated by the same code the CLI is.
+
+`--force` overrides the shared-host guard, never a capability: a caller
+without `irc.stop` cannot take a server down from under its guests by adding
+the flag, and is refused with 6 rather than the guard's 4.
+
+`status`, `url`, `channel list`, `delegate list` and the hidden `daemon` check
+nothing. The first four report state that anyone able to read the workspace
+root can already read from its profile and config, so a gate there would be
+theatre; `daemon` is spawned by `start`, which is gated.
 
 `--dry-run`, `--confirm` and `--idempotency-key` are kit-provided rather
 than wsm-authored; every mutating irc verb honors them. The destructive
@@ -609,6 +622,9 @@ In managed mode the recorded port triple is re-checked before spawning: a port
 taken since `enable` is reported (exit 7) rather than silently reallocated.
 Starting a workspace whose daemon is already up reports it and starts nothing.
 
+Requires `irc.start`. The check sits at the one place a daemon is spawned, so
+it covers `restart` and `enable`'s initial start as well.
+
 ##### `wsm irc stop <workspace>`
 
 Stop the daemon, leaving everything it owns in place.
@@ -619,6 +635,9 @@ Stop the daemon, leaving everything it owns in place.
 
 Stopping an already-stopped workspace succeeds and says so. A workspace
 hosting guests is refused with exit 4 unless `--force`.
+
+Requires `irc.stop`, checked before the guest refusal: `--force` overrides the
+guard, not the capability, and a withheld `irc.stop` is exit 6 either way.
 
 ##### `wsm irc restart <workspace>`
 
@@ -632,6 +651,10 @@ Managed mode re-checks the port triple between the halves, after the old
 daemon released it, so a port taken meanwhile is reported (exit 7) rather than
 inherited. Restarting a stopped workspace simply starts it. Guests refuse with
 exit 4 unless `--force`.
+
+Requires both `irc.stop` and `irc.start`, asked for before the guest refusal.
+A caller holding only one of them is refused with exit 6 naming the half it
+lacks — `irc.stop` first, since that is the half that drops the server.
 
 ##### `wsm irc status <workspace>`
 
@@ -655,6 +678,9 @@ roles in line with the workspace's members. The daemon does this on start and
 whenever `members.yaml` changes; `sync` makes it happen now. Because the
 request is a signal, a stopped daemon is an error (exit 1) rather than a
 silent no-op.
+
+Requires `irc.sync`: a reconcile rewrites accounts, roles and registrations on
+the server, so it is a mutation asked of the daemon rather than a read of it.
 
 ##### `wsm irc account`
 
@@ -705,6 +731,11 @@ Show the IRC credentials wsm holds for a member.
 | Flag    | Default | Description                                      |
 |---------|---------|--------------------------------------------------|
 | `--env` | false   | Render as `WSM_IRC_CLIENT_*` shell assignments   |
+
+Requires `irc.creds`, checked before the account is resolved. It is the only
+read-shaped verb that is gated: it does not report state the workspace already
+discloses, it renders a stored passphrase, and `--env` emits it ready to be
+sourced into a shell.
 
 Managed mode holds the passphrase and prints it; a member with none on file
 exits 7 naming the `account rotate` that fixes it. External mode resolves the
@@ -890,6 +921,10 @@ from recording the same messages twice.
 Without `--channel` every channel with a cursor is replayed. A channel never
 captured has no position to resume from, so live capture starts it rather than
 a backfill.
+
+Requires `irc.sync`, the same capability `sync` checks: a replay writes
+messages into the workspace's event log, which is the shared state a reconcile
+also touches.
 
 ##### `wsm irc daemon <workspace>`
 

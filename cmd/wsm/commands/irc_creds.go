@@ -124,6 +124,13 @@ func runIRCCreds(
 	if err != nil {
 		return err
 	}
+	// Gated before the secret is resolved, let alone rendered. This is
+	// the one read-shaped verb that checks a capability: it does not
+	// report state the workspace already discloses, it hands out a
+	// stored passphrase, and --env emits it ready to be sourced.
+	if err := rt.gate.Require(workspace.CapIRCCreds); err != nil {
+		return err
+	}
 
 	account, err := resolveMemberAccount(ctx, rt, profile, member)
 	if err != nil {
