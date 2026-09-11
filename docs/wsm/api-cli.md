@@ -80,10 +80,26 @@ Provided by `kit/cli` plus wsm-specific globals registered on the root command.
 | `--offline`           | bool   | false   | Disable all network (skip sync, upgrade check, plugin downloads)  |
 | `--profile`           | string | ""      | Named profile (credentials/config)                                |
 | `--instance`          | string | ""      | Backend instance discriminator                                    |
+| `--dry-run`           | bool   | false   | Preview side effects without applying them (command must support) |
+| `--confirm`           | string | ""      | Confirmation policy for destructive commands (`auto`, `yes`, `no`, `prompt`); empty means prompt on a TTY, `no` otherwise |
+| `--max-ops`           | int    | 0       | Cap mutating operations per invocation (`0` = unlimited)          |
+| `--policy`            | string | ""      | Named delegation policy, loaded from `$XDG_CONFIG_HOME/wsm/policies/<name>.yaml` |
+| `--api-version`       | string | ""      | Request a CLI schema version (`MAJOR.MINOR`) for compatibility-mode filtering |
+| `--progress-format`   | string | human   | Progress output format (`human`, `json`); defaults to `json` when `--format=json` unless set explicitly |
 
 `--format json|yaml` is the canonical machine-readable selector. The previous
 top-level `--json` flag was removed in this release; see
 [CHANGELOG](../../CHANGELOG.md).
+
+The last six rows above are registered by `kit/cli`, not by wsm, and are
+hidden from plain `wsm --help`. They appear in `wsm --help-all` and in the
+GLOBAL FLAGS section of each subcommand's help.
+
+`--idempotency-key <key>` is kit-provided but is **not** a global: kit
+installs it per-leaf, on every leaf tagged idempotency `conditional` with a
+`write-local`, `write-shared` or `destructive` side effect. Replaying a key
+against the same tool replays the recorded output. Run
+`wsm capabilities --format json` for the authoritative per-leaf flag list.
 
 ## Commands
 
