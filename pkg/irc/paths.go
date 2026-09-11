@@ -107,5 +107,9 @@ func (p Paths) EnsureDirs() error {
 // TLSCertPath is the generated certificate path inside TLSDir.
 func (p Paths) TLSCertPath() string { return filepath.Join(p.TLSDir, "fullchain.pem") }
 
-// TLSKeyPath is the generated key path inside TLSDir.
-func (p Paths) TLSKeyPath() string { return filepath.Join(p.TLSDir, "key.pem") }
+// TLSKeyPath is the generated key path inside TLSDir. The name matches what
+// `ergo mkcerts` actually writes: it names the files after the rendered
+// config's tls cert/key values, and upstream's own pairing is
+// fullchain.pem/privkey.pem. Calling it key.pem here would leave the
+// documented 0600 expectation on tls/privkey.pem pointing at nothing.
+func (p Paths) TLSKeyPath() string { return filepath.Join(p.TLSDir, "privkey.pem") }

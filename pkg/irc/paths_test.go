@@ -186,7 +186,10 @@ func TestPaths_TLSFiles(t *testing.T) {
 	if want := filepath.Join(p.TLSDir, "fullchain.pem"); cert != want {
 		t.Errorf("cert = %q, want %q", cert, want)
 	}
-	if want := filepath.Join(p.TLSDir, "key.pem"); key != want {
+	// privkey.pem, not key.pem: mkcerts names the key after the rendered
+	// config's tls.key value, and the on-disk layout documents
+	// tls/privkey.pem as the 0600 file.
+	if want := filepath.Join(p.TLSDir, "privkey.pem"); key != want {
 		t.Errorf("key = %q, want %q", key, want)
 	}
 	if !strings.HasPrefix(cert, p.TLSDir) || !strings.HasPrefix(key, p.TLSDir) {
