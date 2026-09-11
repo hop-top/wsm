@@ -45,6 +45,7 @@ the event log.`,
 		newIRCCredsCmd(opts),
 		newIRCURLCmd(opts),
 		newIRCChannelCmd(opts),
+		newIRCDelegateCmd(opts),
 		newIRCBackfillCmd(opts),
 		newIRCDaemonCmd(opts),
 	)
