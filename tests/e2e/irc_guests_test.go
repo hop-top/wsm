@@ -71,19 +71,17 @@ func TestIRCGuests_ChannelAddGuestJSON(t *testing.T) {
 	list := r.runWithEnv(env, "irc", "channel", "list", "guest-host", "--format", "json")
 	requireExitCode(t, list, 0)
 
-	rows := mustUnmarshalJSONArray[struct {
-		Name   string `json:"name"`
-		Source string `json:"source"`
-	}](t, list.Stdout)
+	var sections channelSections
+	mustUnmarshalJSON(t, list.Stdout, &sections)
 
 	var found bool
-	for _, row := range rows {
+	for _, row := range sections.Managed {
 		if row.Name == "#host-ops" && row.Source == "template" {
 			found = true
 		}
 	}
 	if !found {
-		t.Fatalf("list must carry the channel declared with guests, got %+v", rows)
+		t.Fatalf("the managed section must carry the channel declared with guests, got %+v", sections)
 	}
 }
 

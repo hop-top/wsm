@@ -527,3 +527,231 @@ func TestIRCBackfill_RequestIsAtomicAndReadable(t *testing.T) {
 		}
 	}
 }
+
+// TestIRCChannel_TemplateCarriesOwner pins the owner-managed channel's
+// one piece of CLI state: --owner reaches the template.
+//
+// Desired turns that field into a +o grant while the wsm bot stays
+// founder, so an owner dropped here is a channel its owner cannot run.
+// The flag was wired before this test existed and nothing asserted it.
+func TestIRCChannel_TemplateCarriesOwner(t *testing.T) {
+	tmpl, err := ircChannelFlags{Owner: "  p-sami  "}.template("#ops")
+	if err != nil {
+		t.Fatalf("template: %v", err)
+	}
+	if tmpl.Owner != "p-sami" {
+		t.Fatalf("Owner = %q; want p-sami (trimmed)", tmpl.Owner)
+	}
+
+	// No --owner leaves the field empty rather than defaulting to
+	// anything: addOwner grants nothing for an empty owner, and a
+	// placeholder would be recorded as an unresolvable member.
+	plain, err := ircChannelFlags{}.template("#ops")
+	if err != nil {
+		t.Fatalf("template: %v", err)
+	}
+	if plain.Owner != "" {
+		t.Fatalf("Owner = %q; want empty when --owner is absent", plain.Owner)
+	}
+}
+
+// TestIRCChannel_OwnerSurvivesTheOverrideWrite pins that the owner
+// reaches the file the daemon reads, not merely the in-memory template.
+func TestIRCChannel_OwnerSurvivesTheOverrideWrite(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+
+	if err := upsertChannelTemplate(path, irc.ChannelTemplate{
+		Name: "#ops", Owner: "p-sami", Members: irc.MembersPrincipals,
+	}); err != nil {
+		t.Fatalf("upsertChannelTemplate: %v", err)
+	}
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if !strings.Contains(string(raw), "owner: p-sami") {
+		t.Fatalf("the owner was dropped by the override write:\n%s", string(raw))
+	}
+}
+
+// TestIRCChannel_AdoptWritesRequest pins the adoption write: the entry
+// lands under irc.adopted with its owner, and every unrelated key in
+// the operator's file survives it.
+func TestIRCChannel_AdoptWritesRequest(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	original := strings.Join([]string{
+		"# operator's own notes",
+		"some_other_tool:",
+		"  keep: me",
+		"irc:",
+		"  channel_prefix: acme-",
+		"",
+	}, "\n")
+	if err := os.WriteFile(path, []byte(original), 0o644); err != nil {
+		t.Fatalf("seed config: %v", err)
+	}
+
+	if err := adoptChannelRequest(path, "#sami-notes", "sami"); err != nil {
+		t.Fatalf("adoptChannelRequest: %v", err)
+	}
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	got := string(raw)
+	for _, want := range []string{
+		"some_other_tool", "keep: me", "channel_prefix: acme-",
+		"adopted:", "#sami-notes", "owner: sami",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("adopt dropped %q from the document:\n%s", want, got)
+		}
+	}
+}
+
+// TestIRCChannel_AdoptReplacesSameName pins that re-adopting updates the
+// owner in place rather than duplicating the entry, which would leave
+// the daemon reading one channel from two contradictory records.
+func TestIRCChannel_AdoptReplacesSameName(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+
+	if err := adoptChannelRequest(path, "#notes", "sami"); err != nil {
+		t.Fatalf("first adopt: %v", err)
+	}
+	if err := adoptChannelRequest(path, "#notes", "noor"); err != nil {
+		t.Fatalf("second adopt: %v", err)
+	}
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	got := string(raw)
+	if n := strings.Count(got, "#notes"); n != 1 {
+		t.Fatalf("expected one #notes entry, found %d:\n%s", n, got)
+	}
+	if !strings.Contains(got, "owner: noor") {
+		t.Fatalf("expected the owner to be replaced:\n%s", got)
+	}
+}
+
+// TestIRCChannel_ReleaseDropsTheAdoption pins the half of release that
+// makes it stick: the name goes to irc.released and the adoption that
+// preceded it is removed.
+//
+// Released outranks adopted in the daemon's classifier, so leaving both
+// would behave correctly and read as a contradiction. The adoption is
+// dropped so the file says one thing.
+func TestIRCChannel_ReleaseDropsTheAdoption(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+
+	if err := adoptChannelRequest(path, "#notes", "sami"); err != nil {
+		t.Fatalf("adopt: %v", err)
+	}
+	if err := releaseChannelRequest(path, "#notes"); err != nil {
+		t.Fatalf("release: %v", err)
+	}
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	got := string(raw)
+	if !strings.Contains(got, "released:") || !strings.Contains(got, "#notes") {
+		t.Fatalf("release must record the name under irc.released:\n%s", got)
+	}
+	// The last adoption went, so the key goes with it: an empty list is
+	// a statement about this workspace, not the absence of one.
+	if strings.Contains(got, "adopted:") {
+		t.Fatalf("release must drop the matching adoption:\n%s", got)
+	}
+}
+
+// TestIRCChannel_AdoptClearsTheRelease pins the reverse: adopting a
+// released channel un-releases it.
+//
+// Without this the adoption would be silently outranked by the earlier
+// release, and the operator would see a request in the file that the
+// daemon never acts on.
+func TestIRCChannel_AdoptClearsTheRelease(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+
+	if err := releaseChannelRequest(path, "#notes"); err != nil {
+		t.Fatalf("release: %v", err)
+	}
+	if err := adoptChannelRequest(path, "#notes", "sami"); err != nil {
+		t.Fatalf("adopt: %v", err)
+	}
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	got := string(raw)
+	if strings.Contains(got, "released:") {
+		t.Fatalf("adopting a released channel must clear the release:\n%s", got)
+	}
+	if !strings.Contains(got, "adopted:") || !strings.Contains(got, "owner: sami") {
+		t.Fatalf("adopt must record the request:\n%s", got)
+	}
+}
+
+// TestIRCChannel_SectionsPartitionBySource pins the --json shape: every
+// row lands in exactly one section, chosen by the source it carries.
+//
+// Peer channels sit with discovered rather than unmanaged. wsm captures
+// neither, but a peer has a known wsm founder and is never
+// purge-eligible, which is the distinction unmanaged draws.
+func TestIRCChannel_SectionsPartitionBySource(t *testing.T) {
+	sections := sectionChannelRows([]ircChannelRow{
+		{Name: "#ops", Source: "template"},
+		{Name: "#host-ops", Source: "borrowed"},
+		{Name: "#sami-notes", Source: "discovered"},
+		{Name: "#other-dev", Source: "peer"},
+		{Name: "#squatted", Source: "unmanaged"},
+	})
+
+	cases := []struct {
+		section []ircChannelRow
+		label   string
+		want    []string
+	}{
+		{sections.Managed, "managed", []string{"#ops"}},
+		{sections.Borrowed, "borrowed", []string{"#host-ops"}},
+		{sections.Discovered, "discovered", []string{"#sami-notes", "#other-dev"}},
+		{sections.Unmanaged, "unmanaged", []string{"#squatted"}},
+	}
+	for _, tc := range cases {
+		if len(tc.section) != len(tc.want) {
+			t.Fatalf("%s holds %d rows; want %d: %+v",
+				tc.label, len(tc.section), len(tc.want), tc.section)
+		}
+		for i, want := range tc.want {
+			if tc.section[i].Name != want {
+				t.Errorf("%s[%d] = %q; want %q", tc.label, i, tc.section[i].Name, want)
+			}
+		}
+	}
+}
+
+// TestIRCChannel_SectionsAreNeverNil pins that each section renders as
+// an empty array rather than null, so a consumer indexing a section on
+// a workspace that has none does not break.
+func TestIRCChannel_SectionsAreNeverNil(t *testing.T) {
+	sections := sectionChannelRows(nil)
+
+	if sections.Managed == nil {
+		t.Error("managed must be an empty array, not nil")
+	}
+	if sections.Borrowed == nil {
+		t.Error("borrowed must be an empty array, not nil")
+	}
+	if sections.Discovered == nil {
+		t.Error("discovered must be an empty array, not nil")
+	}
+	if sections.Unmanaged == nil {
+		t.Error("unmanaged must be an empty array, not nil")
+	}
+}
