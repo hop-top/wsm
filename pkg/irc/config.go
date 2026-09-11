@@ -272,6 +272,29 @@ type Config struct {
 	ChannelPrefix string `json:"channel_prefix,omitempty" yaml:"channel_prefix,omitempty"`
 	// UnmanagedChannels decides what happens to registrations wsm does not own.
 	UnmanagedChannels UnmanagedPolicy `json:"unmanaged_channels" yaml:"unmanaged_channels"`
+
+	// Adopted lists channels the operator asked the daemon to adopt even
+	// though they fall outside every creator namespace. Written by
+	// `wsm irc channel adopt`; the daemon joins and captures them exactly as
+	// it does a candidate, so only the daemon's bot ever joins.
+	Adopted []AdoptedChannel `json:"adopted,omitempty" yaml:"adopted,omitempty"`
+	// Released names channels the operator asked the daemon to drop. A name
+	// here outranks Adopted and any existing adoption: the bot parts and
+	// forgets it, after which the channel falls under the unmanaged policy
+	// like any other registration.
+	Released []string `json:"released,omitempty" yaml:"released,omitempty"`
+}
+
+// AdoptedChannel is one operator-requested adoption. The owner is recorded
+// alongside the name because adoption is attributed: status reports who a
+// discovered channel belongs to, and a request with no owner would leave an
+// adopted channel unattributable.
+type AdoptedChannel struct {
+	// Name is the channel name, used verbatim. The operator names a channel
+	// that already exists, so no template expansion or prefixing applies.
+	Name string `json:"name" yaml:"name"`
+	// Owner is the account credited with the channel.
+	Owner string `json:"owner,omitempty" yaml:"owner,omitempty"`
 }
 
 // Warning is a non-fatal configuration finding. Warnings are surfaced by
@@ -601,6 +624,17 @@ func Merge(global, workspace Config) Config {
 	// arrives from the override layer.
 	if workspace.ChannelPrefix != "" {
 		out.ChannelPrefix = workspace.ChannelPrefix
+	}
+	// Adoption requests are workspace-scope for the same reason: they name
+	// channels on this workspace's server. Each list replaces rather than
+	// appends, matching the Channels rule above.
+	if workspace.Adopted != nil {
+		out.Adopted = make([]AdoptedChannel, len(workspace.Adopted))
+		copy(out.Adopted, workspace.Adopted)
+	}
+	if workspace.Released != nil {
+		out.Released = make([]string, len(workspace.Released))
+		copy(out.Released, workspace.Released)
 	}
 
 	out.Remote = mergeRemote(global.Remote, workspace.Remote)

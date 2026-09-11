@@ -259,7 +259,7 @@ func addNamespaces(
 		}
 
 		ns := irc.CreatorNamespace(m.ChannelLabel(), m.ChannelNamespace)
-		glob := irc.CreatorGlob(cfg.ChannelPrefix, ns)
+		glob := irc.CreatorGlob(cfg.ChannelPrefix, ws.Name, ns)
 		if st.Namespaces == nil {
 			st.Namespaces = map[string]string{}
 		}

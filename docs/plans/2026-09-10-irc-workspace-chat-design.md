@@ -452,7 +452,7 @@ in three levels, each stricter about who decides.
 |-------|-------------|-----------|----------------|
 | 1 Fixed membership | workspace config | template `members: all\|principals\|list`, `member_list`, or `guests:` on specific channels | yes: roles authored, capture on |
 | 2 Owner-managed via wsm | whoever may run `wsm irc channel` for the workspace | `channel add #c --owner <profile>`: wsm bot founder, owner `+o`, owner voices/invites agents | yes |
-| 3 Self-service on the server | the member flagged `channel_creator` | bot joins and registers `#<ws>-<label>-*` itself; wsm discovers, adopts, captures; roles inside are the bot's | discovery only |
+| 3 Self-service on the server | the member flagged `channel_creator` | bot joins and registers `#<prefix><ws>-<label>-*` itself; wsm discovers, adopts, captures; roles inside are the bot's | discovery only |
 
 **Level 2 access control**: creating a channel through the CLI needs the `irc.enable`
 capability on the manager and write access to the workspace's config. There is no per-member
@@ -471,6 +471,16 @@ matching no template, no namespace and no peer are unmanaged and handled per
 policy is how "permission to create" is enforced: ergo lets any account register, wsm decides
 which registrations survive. On external servers only channels under the workspace's
 `channel_prefix` are ever classified; a purge policy without a prefix is a config error.
+
+The creator glob carries both the prefix and the workspace slug
+(`#<prefix><ws>-<label>-*`) because the sweeper reads it to tell a creator's own
+channel from an unmanaged one. Dropping the slug would let two workspaces on one
+server each claim `#<label>-*` for a member of the same name, so one tenant's
+channel would match the other's namespace and become purge-eligible; dropping the
+prefix would contradict the `channel_prefix` requirement above. Founder matching
+narrows who may *adopt* a matched name, but it cannot stop a foreign name from
+matching, and a match with the wrong founder is exactly what falls through to
+unmanaged.
 `channel adopt` and `release` are requests the daemon executes, so only the daemon's bot ever
 joins or parts.
 

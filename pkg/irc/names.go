@@ -73,11 +73,29 @@ func CreatorNamespace(label, explicit string) string {
 }
 
 // CreatorGlob returns the channel-name pattern a creator may register under:
-// every channel starting "#<namespace>-". The configured prefix is applied the
-// same way it is for a template channel, so on a shared server a creator's
-// namespace sits inside the workspace's prefix rather than beside it.
-func CreatorGlob(prefix, namespace string) string {
-	return ChannelName(prefix, "#"+namespace+"-*", "")
+// every channel starting "#<prefix><ws>-<namespace>-", where <ws> is the
+// workspace slug. The configured prefix is applied the same way it is for a
+// template channel, so on a shared server a creator's namespace sits inside
+// the workspace's prefix rather than beside it.
+//
+// Both halves of the qualification are load-bearing, and the sweeper is why.
+// The prefix alone is not enough: two workspaces on one external server, each
+// with a member labelled "sami", would both claim "#sami-*", so a channel
+// founded under one workspace would match the other's namespace and — under
+// unmanaged_channels: purge — be eligible for destruction. The workspace slug
+// alone is not enough either: it ignores channel_prefix, which Config.Validate
+// requires before the sweeper may act on an external server at all.
+//
+// Founder matching does not rescue the unqualified form. It decides who owns a
+// name that already matched, which protects adoption; it cannot stop another
+// tenant's name from matching in the first place, and it is the non-matching
+// founder that sends a channel down the unmanaged path.
+func CreatorGlob(prefix, wsName, namespace string) string {
+	stem := namespace
+	if ws := Slug(wsName); ws != "" {
+		stem = ws + "-" + namespace
+	}
+	return ChannelName(prefix, "#"+stem+"-*", "")
 }
 
 // SanitizeAccount derives a server account name from a member label

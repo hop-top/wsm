@@ -180,49 +180,89 @@ func TestCreatorGlob(t *testing.T) {
 	tests := []struct {
 		name      string
 		prefix    string
+		ws        string
 		namespace string
 		want      string
 	}{
 		{
-			name:      "unprefixed",
+			name:      "unprefixed carries the workspace slug",
+			ws:        "Reed Forge",
 			namespace: "sami",
-			want:      "#sami-*",
+			want:      "#reed-forge-sami-*",
 		},
 		{
 			// The prefix must land after the '#', or the result is not a
 			// channel name at all.
 			name:      "prefix applied inside the sigil",
 			prefix:    "acme-",
+			ws:        "Reed Forge",
 			namespace: "sami",
-			want:      "#acme-sami-*",
+			want:      "#acme-reed-forge-sami-*",
 		},
 		{
 			name:      "multi-segment namespace keeps its shape",
 			prefix:    "acme-",
+			ws:        "Reed Forge",
 			namespace: "sami-eng",
-			want:      "#acme-sami-eng-*",
+			want:      "#acme-reed-forge-sami-eng-*",
 		},
 		{
-			// Re-prefixing an already-prefixed namespace is a no-op, so a
+			// Re-prefixing an already-prefixed workspace is a no-op, so a
 			// creator cannot be pushed out of the workspace's prefix by
 			// spelling it out.
 			name:      "already prefixed is idempotent",
 			prefix:    "acme-",
-			namespace: "acme-sami",
-			want:      "#acme-sami-*",
+			ws:        "acme-reed",
+			namespace: "sami",
+			want:      "#acme-reed-sami-*",
+		},
+		{
+			// A zero-valued workspace degrades to the bare namespace rather
+			// than emitting a stray leading dash.
+			name:      "no workspace falls back to the namespace alone",
+			namespace: "sami",
+			want:      "#sami-*",
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := CreatorGlob(tt.prefix, tt.namespace)
+			got := CreatorGlob(tt.prefix, tt.ws, tt.namespace)
 			if got != tt.want {
-				t.Errorf("CreatorGlob(%q, %q) = %q, want %q",
-					tt.prefix, tt.namespace, got, tt.want)
+				t.Errorf("CreatorGlob(%q, %q, %q) = %q, want %q",
+					tt.prefix, tt.ws, tt.namespace, got, tt.want)
 			}
 			if !strings.HasSuffix(got, "-*") {
 				t.Errorf("glob %q lost its trailing wildcard", got)
 			}
 		})
+	}
+}
+
+// TestCreatorGlobSeparatesWorkspaces is the reason the glob carries the
+// workspace slug at all. Two workspaces sharing one external server, each with
+// a member labelled "sami", must not claim the same namespace: the sweeper
+// reads this glob to tell a creator's channel from an unmanaged one, and under
+// unmanaged_channels: purge an overlap makes one tenant's channel eligible for
+// destruction by the other's daemon.
+//
+// Founder matching does not close this on its own. It decides who may adopt a
+// name that already matched; a match whose founder is NOT the local creator is
+// precisely what falls through to the unmanaged path.
+func TestCreatorGlobSeparatesWorkspaces(t *testing.T) {
+	const prefix = "acme-"
+
+	a := CreatorGlob(prefix, "Reed Forge", "sami")
+	b := CreatorGlob(prefix, "Blue Harbor", "sami")
+
+	if a == b {
+		t.Fatalf("both workspaces claim %q; a shared-server purge could cross tenants", a)
+	}
+
+	// Neither may be a prefix of the other, or one workspace's namespace
+	// would still swallow the other's channels.
+	if strings.HasPrefix(strings.TrimSuffix(a, "*"), strings.TrimSuffix(b, "*")) ||
+		strings.HasPrefix(strings.TrimSuffix(b, "*"), strings.TrimSuffix(a, "*")) {
+		t.Errorf("namespaces %q and %q overlap by prefix", a, b)
 	}
 }
 

@@ -494,7 +494,7 @@ func TestDesiredNamespaces(t *testing.T) {
 			name:     "defaults to the sanitized account name",
 			members:  []model.Member{creator("sami", "")},
 			accounts: map[string]string{"sami": "sami-acct"},
-			want:     map[string]string{"sami-acct": "#sami-*"},
+			want:     map[string]string{"sami-acct": "#reed-forge-sami-*"},
 		},
 		{
 			// The audit label is what the account name is derived
@@ -507,24 +507,26 @@ func TestDesiredNamespaces(t *testing.T) {
 				ChannelCreator: true,
 			}},
 			accounts: map[string]string{"p-17": "sami-eng"},
-			want:     map[string]string{"sami-eng": "#sami-eng-*"},
+			want:     map[string]string{"sami-eng": "#reed-forge-sami-eng-*"},
 		},
 		{
 			name:     "explicit namespace overrides the default",
 			members:  []model.Member{creator("sami", "sami-labs")},
 			accounts: map[string]string{"sami": "sami-acct"},
-			want:     map[string]string{"sami-acct": "#sami-labs-*"},
+			want:     map[string]string{"sami-acct": "#reed-forge-sami-labs-*"},
 		},
 		{
 			// On a shared server the creator's namespace must sit
 			// inside the workspace's prefix, not beside it. The key
 			// stays the bare account: the prefix namespaces channels,
-			// not account names.
+			// not account names. The workspace slug rides along so two
+			// workspaces with a member of the same label cannot claim
+			// one namespace.
 			name:     "channel prefix is applied to the glob",
 			prefix:   "acme-",
 			members:  []model.Member{creator("sami", "")},
 			accounts: map[string]string{"sami": "sami-acct"},
-			want:     map[string]string{"sami-acct": "#acme-sami-*"},
+			want:     map[string]string{"sami-acct": "#acme-reed-forge-sami-*"},
 		},
 		{
 			name: "non-creators are absent",
@@ -589,7 +591,7 @@ func TestDesiredNamespaceUnresolvedCreator(t *testing.T) {
 // two halves contending every reconcile.
 func TestDesiredNamespaceOverlapWarning(t *testing.T) {
 	cfg := baseConfig(
-		irc.ChannelTemplate{Name: "#sami-standup", Members: irc.MembersAll},
+		irc.ChannelTemplate{Name: "#{{ws}}-sami-standup", Members: irc.MembersAll},
 		irc.ChannelTemplate{Name: "#{{ws}}", Members: irc.MembersAll},
 	)
 	res := &stubResolver{accounts: map[string]string{"sami": "sami-acct"}}
