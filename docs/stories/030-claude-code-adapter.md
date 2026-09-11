@@ -37,4 +37,6 @@ Claude Code stores JSONL transcripts at `~/.claude/projects/<hash>/transcript.js
 - `pkg/format/claudecode/adapter_test.go` -- `TestClaudeCode_Metadata`
 
 ### E2E
-- `tests/e2e/format_test.go` -- `TestClaudeCodeImport`
+None. This story is not implemented yet -- neither the unit tests listed
+above nor any end-to-end test exist. Coverage must be added alongside the
+implementation.

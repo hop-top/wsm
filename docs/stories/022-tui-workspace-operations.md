@@ -23,4 +23,5 @@ As a user, I want full workspace lifecycle operations in the TUI so that I can c
 - `pkg/tui/actions_test.go` -- `TestWorkspaceLifecycleActions`
 
 ### E2E
-- `tests/e2e/tui_test.go` -- `TestTUIWorkspaceLifecycle`
+None. There is no end-to-end test for TUI workspace operations today; the
+behaviour is covered only by the unit test above.

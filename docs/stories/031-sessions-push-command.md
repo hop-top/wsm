@@ -52,6 +52,6 @@ Command: `wsm sessions push <path>` -- auto-detects the file format, creates a s
 - `pkg/format/push_test.go` -- `TestPushOrchestration_RecordWorkspaceEvent`
 
 ### E2E
-- `tests/e2e/sessions_push_test.go` -- `TestSessionsPush_FullLifecycle`
-- `tests/e2e/sessions_push_test.go` -- `TestSessionsPush_AutoCreateWorkspace`
-- `tests/e2e/sessions_push_test.go` -- `TestSessionsPush_NonTTY`
+None. This story is not implemented yet -- neither the unit tests listed
+above nor any end-to-end test exist. Coverage must be added alongside the
+implementation.

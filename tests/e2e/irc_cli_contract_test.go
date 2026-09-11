@@ -424,20 +424,33 @@ func TestIRC_ChannelPurgeDivergesFromChannelRmPurge(t *testing.T) {
 		}
 	})
 
-	t.Run("purge is a prerequisite failure", func(t *testing.T) {
+	t.Run("purge fails where rm --purge succeeded", func(t *testing.T) {
 		r, env := setup(t, "diverge-purge")
 
 		res := r.runWithEnv(env, "irc", "channel", "purge", "diverge-purge", "#doomed",
 			"--confirm=yes")
-		// 7 when the provider reports the operation unsupported; 1 when
-		// the session fails before it can say so. Never 0: the standalone
-		// verb has nothing to report but the purge it could not do.
-		if res.ExitCode != 7 && res.ExitCode != 1 {
-			t.Fatalf("channel purge against an unreachable server must fail, "+
-				"got exit %d:\n%s", res.ExitCode, res.Combined())
-		}
+		// The identical condition that rm --purge absorbs as a non-fatal
+		// reason is fatal here: the standalone verb has nothing to report
+		// but the purge it could not do, so a failure to reach the server
+		// is the whole outcome rather than a footnote on a completed
+		// removal.
+		//
+		// The exit code is deliberately not pinned to a single value. In
+		// this build the bot has no password, so the session fails (exit
+		// 1) before the provider can report the operation unsupported
+		// (exit 7); both are the same contract — non-zero — and pinning
+		// whichever one happens to arrive first would pin the fixture
+		// rather than the divergence. The integration suite, which has a
+		// live ergo, is where the 7 is reachable.
 		if res.ExitCode == 0 {
-			t.Fatal("channel purge must not report success for a purge that did not happen")
+			t.Fatalf("channel purge must not report success for a purge that "+
+				"did not happen:\n%s", res.Combined())
+		}
+		// The failure must name the channel, or it is not a report about
+		// this purge at all.
+		if !strings.Contains(res.Combined(), "#doomed") {
+			t.Fatalf("the failure must name the channel it could not purge, got:\n%s",
+				res.Combined())
 		}
 	})
 }

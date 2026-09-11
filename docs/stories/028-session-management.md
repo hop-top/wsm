@@ -33,10 +33,9 @@ As a user, I want to manage IDE sessions with branching and forking so that I ca
 - `pkg/session/export_test.go` -- `TestExportHTML`
 
 ### E2E
-- `tests/e2e/session_test.go` -- `TestSessionFullLifecycle`
-- `tests/e2e/session_fork_test.go` -- `TestSessionForking`
-- `tests/e2e/session_tree_test.go` -- `TestSessionTreeNavigation`
-- `tests/e2e/session_export_test.go` -- `TestSessionExport`
+None. This story is not implemented yet -- neither the unit tests listed
+above nor any end-to-end test exist. Coverage must be added alongside the
+implementation.
 
 ## Out of Scope
 

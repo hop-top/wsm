@@ -33,4 +33,6 @@ As a user, I want to push Gemini sessions into wsm so that my Gemini Code Assist
 - `pkg/format/gemini/adapter_test.go` -- `TestMalformedInput`
 
 ### E2E
-- `tests/e2e/sessions_push_test.go` -- `TestSessionsPush_Gemini`
+None. This story is not implemented yet -- neither the unit tests listed
+above nor any end-to-end test exist. Coverage must be added alongside the
+implementation.

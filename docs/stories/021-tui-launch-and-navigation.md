@@ -23,4 +23,5 @@ As a user, I want a first-class terminal UI so that I can manage workspaces quic
 - `pkg/tui/model_test.go` -- `TestRootNavigation`
 
 ### E2E
-- `tests/e2e/tui_test.go` -- `TestTUILaunch`
+None. There is no end-to-end test for TUI launch and navigation today; the
+behaviour is covered only by the unit test above.
