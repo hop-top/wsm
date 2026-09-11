@@ -80,7 +80,7 @@ func (l *ircBusLifecycle) Stop(ctx context.Context, wsID string) error {
 	if err != nil {
 		return err
 	}
-	_, err = stopDaemon(rt.paths)
+	_, err = stopDaemon(rt)
 	return err
 }
 

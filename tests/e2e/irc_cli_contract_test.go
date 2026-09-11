@@ -68,44 +68,171 @@ func sortedMapKeys(m map[string]string) []string {
 	return out
 }
 
-// TestIRC_UngatedVerbsIgnoreCapabilities pins the current gating split:
-// eight verbs consult no capability at all and run to their normal
-// outcome even when every capability is withheld.
+// TestIRC_MutatingVerbsRefuseWithoutCapability is the converted half of
+// what used to be TestIRC_UngatedVerbsIgnoreCapabilities.
 //
-// This is a characterisation test, not an endorsement. It exists so that
-// adding a gate to any of these verbs turns up here as a deliberate
-// edit rather than passing unnoticed; see the report accompanying this
-// change for which of these look like oversights.
+// That test pinned eight verbs as consulting no capability at all, and
+// deliberately failed if any of them ever started refusing. The gating
+// model changed: every verb that changes state now checks a capability,
+// so the old pins are obsolete by decision and this asserts the new
+// contract in their place. The reads that stayed open are pinned
+// separately below, so "gate everything" would not pass either.
 //
 // The deny applies only to the invocation under test — the fixtures are
 // built with full capabilities, because workspace creation is itself
 // gated and would otherwise be refused before the IRC verb ran.
-func TestIRC_UngatedVerbsIgnoreCapabilities(t *testing.T) {
-	// Each case names the verb and the outcome it reaches with every
-	// capability withheld. None is exit 6: that is the whole point.
+func TestIRC_MutatingVerbsRefuseWithoutCapability(t *testing.T) {
+	// Each case names the verb and the single capability that must be
+	// enough, on its own, to refuse it. Denying one rather than all is
+	// what proves the verb consults that specific capability instead of
+	// happening to fail for some unrelated reason.
 	cases := []struct {
 		name string
+		deny string
 		args []string
-		// want is the exit code the verb reaches on a workspace that is
-		// enabled but has no daemon running.
-		want int
 	}{
-		// status answers "stopped" rather than refusing: reading state
-		// is not gated.
-		{"status", []string{"irc", "status"}, 0},
-		// stop on an already-stopped workspace is a no-op success.
-		{"stop", []string{"irc", "stop"}, 0},
-		// sync needs a live daemon; without one it is exit 1, which is
-		// a runtime failure and not a capability refusal.
-		{"sync", []string{"irc", "sync"}, 1},
-		// url is a read that answers from the config's server.
-		{"url", []string{"irc", "url"}, 0},
+		{"stop", "irc.stop", []string{"irc", "stop"}},
+		{"restart", "irc.stop", []string{"irc", "restart"}},
+		{"start", "irc.start", []string{"irc", "start"}},
+		{"sync", "irc.sync", []string{"irc", "sync"}},
+		{"backfill", "irc.sync", []string{"irc", "backfill"}},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			r := newRunner(t)
-			name := "ungated-" + tc.name
+			name := "gated-" + tc.name
+			r.mustCreateWorkspace(name)
+			env := mergeEnv(ircEnv(t, r, "external"), externalServerEnv)
+			writeExternalProfile(t, r, name, mustWorkspaceRoot(t))
+			env["WSM_DENY_CAPABILITIES"] = tc.deny
+
+			args := append(append([]string{}, tc.args...), name)
+			requireExitCode(t, r.runWithEnv(env, args...), 6)
+		})
+	}
+}
+
+// TestIRC_StartRefusedWithoutCapability is the converted form of
+// TestIRC_StartIsUngated.
+//
+// The original pinned that a caller with every capability withheld
+// could still spawn a daemon, and asserted the daemon really came up
+// (state running, a live pid) so the hole could not be papered over
+// with a bare exit 0. The inversion keeps that rigour: the refusal must
+// be exit 6 AND nothing may have been spawned, because a gate that
+// refuses after starting the daemon would satisfy the exit code alone.
+func TestIRC_StartRefusedWithoutCapability(t *testing.T) {
+	r := newRunner(t)
+	r.mustCreateWorkspace("denied-start")
+	env := ircEnv(t, r, "external")
+	writeExternalProfile(t, r, "denied-start", mustWorkspaceRoot(t))
+	env["WSM_DENY_CAPABILITIES"] = "irc.start"
+
+	res := r.runWithEnv(env, "irc", "start", "denied-start", "--format", "json")
+	requireExitCode(t, res, 6)
+
+	// Nothing may have been spawned. status is ungated, so it answers
+	// even for a caller that was just refused, which is exactly what
+	// makes it usable as the check here.
+	full := mergeEnv(ircEnv(t, r, "external"), externalServerEnv)
+	status := r.runWithEnv(full, "irc", "status", "denied-start", "--format", "json")
+	requireExitCode(t, status, 0)
+
+	var doc struct {
+		State string `json:"state"`
+		PID   int    `json:"pid"`
+	}
+	mustUnmarshalJSON(t, status.Stdout, &doc)
+	if doc.State == "running" || doc.PID > 0 {
+		t.Fatalf("a refused start must not have spawned a daemon; state=%q pid=%d",
+			doc.State, doc.PID)
+	}
+}
+
+// TestIRC_ForceDoesNotBypassCapability pins the hole this change closed.
+//
+// --force exists to override the shared-host guard: stopping a server
+// that hosts guests is refused (exit 4) unless the operator insists.
+// It was also, accidentally, a way around having no authority at all —
+// guardSharedHost returned nil immediately on --force and neither stop
+// nor restart consulted a capability, so a caller with everything
+// withheld could take down a server hosting other workspaces.
+//
+// The workspace here genuinely hosts a guest, so the shared-host guard
+// is live: without the capability check the flag would sail past it.
+func TestIRC_ForceDoesNotBypassCapability(t *testing.T) {
+	for _, verb := range []string{"stop", "restart"} {
+		t.Run(verb, func(t *testing.T) {
+			r := newRunner(t)
+			name := "force-" + verb
+			id := r.mustCreateWorkspace(name)
+			env := mergeEnv(ircEnv(t, r, "external"), externalServerEnv)
+
+			// A profile naming a guest is what arms guardSharedHost.
+			writeProfile(t, r, id, map[string]any{
+				"mode": "external", "provider": "ergo",
+				"server_id": "irc.example.com:6697", "root": mustWorkspaceRoot(t),
+				"bot_account": "wsm",
+				"created_at":  time.Now().UTC().Format(time.RFC3339Nano),
+				"shared_with": []string{"some-guest"},
+			})
+
+			// With the capability held, --force is what gets past the
+			// guest refusal: exit 4 without it, not 4 with it. This is
+			// the control that proves the guard is actually armed, so
+			// the denial below cannot be passing for the wrong reason.
+			guarded := r.runWithEnv(env, "irc", verb, name)
+			requireExitCode(t, guarded, 4)
+
+			// Denied and forced: the capability refusal must win. Exit 4
+			// here would mean the guard answered first; exit 0 would
+			// mean --force had bypassed the gate entirely.
+			denied := mergeEnv(env, map[string]string{"WSM_DENY_CAPABILITIES": "irc.stop"})
+			res := r.runWithEnv(denied, "irc", verb, name, "--force")
+			requireExitCode(t, res, 6)
+
+			// Denied WITHOUT --force, on the same guest-hosting
+			// workspace. Both refusals are live here and they disagree
+			// about the code, so this pins which one answers: a caller
+			// with no authority is told it is forbidden (6), not that it
+			// collided with someone else's guests (4). Nothing else in
+			// the suite pins that ordering — with the gate placed after
+			// the guard this case returns 4 while every other assertion
+			// in this test still passes.
+			unforced := r.runWithEnv(denied, "irc", verb, name)
+			requireExitCode(t, unforced, 6)
+		})
+	}
+}
+
+// TestIRC_ReadsStayUngated pins the other side of the decision: the
+// verbs deliberately left open.
+//
+// Without this, "gate every irc verb" would pass the suite while
+// breaking the reads. Each of these reports state that anyone able to
+// read the workspace root can already read from its profile and config,
+// so a capability check there would be theatre rather than control.
+func TestIRC_ReadsStayUngated(t *testing.T) {
+	cases := []struct {
+		name string
+		args []string
+		want int
+	}{
+		// status answers "stopped" rather than refusing.
+		{"status", []string{"irc", "status"}, 0},
+		// url answers from the config's server.
+		{"url", []string{"irc", "url"}, 0},
+		// channel list reports the declared channels.
+		{"channel list", []string{"irc", "channel", "list"}, 0},
+		// delegate list reports the delegations on file.
+		{"delegate list", []string{"irc", "delegate", "list"}, 0},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := newRunner(t)
+			name := "ungated-" + strings.ReplaceAll(tc.name, " ", "-")
 			r.mustCreateWorkspace(name)
 			env := mergeEnv(ircEnv(t, r, "external"), externalServerEnv)
 			writeExternalProfile(t, r, name, mustWorkspaceRoot(t))
@@ -114,48 +241,44 @@ func TestIRC_UngatedVerbsIgnoreCapabilities(t *testing.T) {
 			args := append(append([]string{}, tc.args...), name)
 			res := r.runWithEnv(env, args...)
 			if res.ExitCode == 6 {
-				t.Fatalf("%s is gated now (exit 6). That may be correct, but it "+
-					"changes the shipped contract this test pins — update the test "+
-					"deliberately:\n%s", tc.name, res.Combined())
+				t.Fatalf("%s is a read and must not consult a capability:\n%s",
+					tc.name, res.Combined())
 			}
 			requireExitCode(t, res, tc.want)
 		})
 	}
 }
 
-// TestIRC_StartIsUngated pins start specifically: it spawns a daemon —
-// the most consequential thing the IRC surface does — while consulting
-// no capability.
+// TestIRC_CredsRefusesWithoutCapability pins the verb the gating
+// decision turned on.
 //
-// Split from the table above because it needs the spawned child cleaned
-// up, and because a reader scanning for "can a denied caller start a
-// server" should find it by name.
-func TestIRC_StartIsUngated(t *testing.T) {
+// creds is the one read-shaped verb that is gated, because it is not a
+// read of workspace state: it renders a stored passphrase, and --env
+// emits it as a shell assignment ready to be sourced. The refusal is
+// asserted to be silent about the secret as well as non-zero — a gate
+// that exits 6 after printing the credential would not be a gate.
+func TestIRC_CredsRefusesWithoutCapability(t *testing.T) {
 	r := newRunner(t)
-	r.mustCreateWorkspace("ungated-start")
-	env := ircEnv(t, r, "external")
-	writeExternalProfile(t, r, "ungated-start", mustWorkspaceRoot(t))
-	env["WSM_DENY_CAPABILITIES"] = "all"
+	id := r.mustCreateWorkspace("creds-denied")
+	env := mergeEnv(ircEnv(t, r, "external"), externalServerEnv)
+	writeExternalProfileWithAccounts(t, r, id, mustWorkspaceRoot(t),
+		map[string]string{"alice": "alice-irc"})
 
-	res := r.runWithEnv(env, "irc", "start", "ungated-start", "--format", "json")
-	t.Cleanup(func() { _ = r.runWithEnv(env, "irc", "stop", "ungated-start", "--force") })
-
-	if res.ExitCode == 6 {
-		t.Fatalf("start is gated now (exit 6). That may well be the right call, "+
-			"but it changes the shipped contract this test pins:\n%s", res.Combined())
+	denied := mergeEnv(env, map[string]string{"WSM_DENY_CAPABILITIES": "irc.creds"})
+	res := r.runWithEnv(denied, "irc", "creds", "creds-denied", "alice")
+	requireExitCode(t, res, 6)
+	if strings.Contains(res.Combined(), "alice-irc") {
+		t.Fatalf("a refused creds must not disclose the account it would have "+
+			"resolved, got:\n%s", res.Combined())
 	}
-	requireExitCode(t, res, 0)
 
-	var doc struct {
-		State string `json:"state"`
-		PID   int    `json:"pid"`
-	}
-	mustUnmarshalJSON(t, res.Stdout, &doc)
-	// The pin is not merely "exit 0" but "a daemon actually started":
-	// an exit 0 that spawned nothing would not show this hole.
-	if doc.State != "running" || doc.PID <= 0 {
-		t.Fatalf("a caller with every capability withheld still started a daemon; "+
-			"state=%q pid=%d", doc.State, doc.PID)
+	// The control: the same invocation with the capability held answers,
+	// so the refusal above is the capability's doing and not a broken
+	// fixture that would fail whatever the policy said.
+	allowed := r.runWithEnv(env, "irc", "creds", "creds-denied", "alice", "--format", "json")
+	requireExitCode(t, allowed, 0)
+	if !strings.Contains(allowed.Stdout, "alice-irc") {
+		t.Fatalf("with irc.creds held, creds must report the account:\n%s", allowed.Stdout)
 	}
 }
 

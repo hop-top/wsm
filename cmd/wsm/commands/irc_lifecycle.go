@@ -54,6 +54,10 @@ type ircRuntime struct {
 	paths irc.Paths
 	cfg   irc.Config
 	app   *appContext
+	// gate is the capability policy this runtime's operations run
+	// under. It is built once here, in the one place every verb passes
+	// through, so no verb can reach the daemon helpers without one.
+	gate irc.Gate
 }
 
 // resolveIRCRuntime performs the checks every `wsm irc` verb shares:
@@ -100,7 +104,7 @@ func resolveIRCRuntime(ctx context.Context, app *appContext, ref string) (*ircRu
 		cfg = merged
 	}
 
-	return &ircRuntime{ws: ws, paths: paths, cfg: cfg, app: app}, nil
+	return &ircRuntime{ws: ws, paths: paths, cfg: cfg, app: app, gate: irc.NewGate(app.caps)}, nil
 }
 
 // ircDisabledError is the feature-gate refusal shared by every verb.
@@ -214,7 +218,15 @@ func awaitDaemon(paths irc.Paths, pid int) (ircdaemon.Status, error) {
 // serving anything. Reporting the running daemon's status is both the
 // honest answer to "start it" and what makes the verb safe to re-run
 // from a script or a lifecycle hook.
+//
+// The capability is checked here rather than in each calling verb: this
+// is the single place a daemon is spawned, so gating it covers start,
+// restart, enable and the bus-driven auto-provisioner at once, and a
+// verb added later cannot forget to ask.
 func startDaemon(rt *ircRuntime) (ircdaemon.Status, bool, error) {
+	if err := rt.gate.Require(workspace.CapIRCStart); err != nil {
+		return ircdaemon.Status{}, false, err
+	}
 	if status, running := daemonState(rt.paths); running {
 		return status, false, nil
 	}
@@ -230,7 +242,21 @@ func startDaemon(rt *ircRuntime) (ircdaemon.Status, bool, error) {
 }
 
 // stopDaemon terminates a running daemon and waits for it to leave.
-func stopDaemon(paths irc.Paths) (bool, error) {
+//
+// The capability is checked before the "is it even running?" shortcut,
+// so a denied caller is refused whether or not a daemon happens to be
+// up. Refusing only when there is something to stop would leak the
+// workspace's daemon state to a caller with no authority over it, and
+// would make the refusal depend on a race.
+//
+// This gate is also what closes the --force hole: --force overrides the
+// shared-host guard further up, never this. A caller without irc.stop
+// cannot take a server down from under its guests by adding a flag.
+func stopDaemon(rt *ircRuntime) (bool, error) {
+	if err := rt.gate.Require(workspace.CapIRCStop); err != nil {
+		return false, err
+	}
+	paths := rt.paths
 	status, running := daemonState(paths)
 	if !running {
 		return false, nil
@@ -1133,7 +1159,7 @@ func runIRCDisable(
 		}
 	}
 
-	stopped, err := stopDaemon(rt.paths)
+	stopped, err := stopDaemon(rt)
 	if err != nil {
 		return err
 	}
@@ -1284,10 +1310,17 @@ func runIRCStop(
 	if err != nil {
 		return err
 	}
+	// Ahead of the shared-host guard, so the capability refusal is the
+	// one the caller sees. --force overrides that guard by design; a
+	// denied caller must be refused as forbidden (6) rather than as a
+	// guest conflict (4), whichever way the flag is set.
+	if err := rt.gate.Require(workspace.CapIRCStop); err != nil {
+		return err
+	}
 	if err := guardSharedHost(rt, profile, "stopping", force); err != nil {
 		return err
 	}
-	stopped, err := stopDaemon(rt.paths)
+	stopped, err := stopDaemon(rt)
 	if err != nil {
 		return err
 	}
@@ -1356,10 +1389,18 @@ func runIRCRestart(
 	if err != nil {
 		return err
 	}
+	// Both halves are asked for up front, and stop is named first: it
+	// is the half that can cut guests off a shared server, so it is the
+	// one a refusal should name. Checked ahead of the shared-host guard
+	// for the same reason as stop — --force must not turn a capability
+	// refusal into a conflict.
+	if err := rt.gate.RequireAll(workspace.CapIRCStop, workspace.CapIRCStart); err != nil {
+		return err
+	}
 	if err := guardSharedHost(rt, profile, "restarting", force); err != nil {
 		return err
 	}
-	if _, err := stopDaemon(rt.paths); err != nil {
+	if _, err := stopDaemon(rt); err != nil {
 		return err
 	}
 	// Checked after the stop: the ports are only observable once the
@@ -1408,6 +1449,12 @@ func runIRCSync(ctx context.Context, app *appContext, opts *globalOptions, ref s
 		return err
 	}
 	if _, err := rt.loadEnabledProfile(); err != nil {
+		return err
+	}
+	// Reconciling rewrites accounts, roles and channel registrations on
+	// the server, so it is a mutation asked of the daemon rather than a
+	// read of it.
+	if err := rt.gate.Require(workspace.CapIRCSync); err != nil {
 		return err
 	}
 

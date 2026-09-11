@@ -126,6 +126,12 @@ func runIRCBackfill(
 	if err != nil {
 		return err
 	}
+	// A replay writes messages into the workspace's event log, which is
+	// the same shared state a reconcile touches: both are work asked of
+	// the daemon rather than a report from it.
+	if err := rt.gate.Require(workspace.CapIRCSync); err != nil {
+		return err
+	}
 
 	channels = normalizeChannels(channels)
 	requestID := newBackfillID()
