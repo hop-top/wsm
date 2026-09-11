@@ -142,8 +142,6 @@ func TestLayerAAnnotationsPresent(t *testing.T) {
 // TestTopLevelVerbCountLock pins the depth-1 runnable verb count at
 // its steady-state value. kit's shape validator caps depth-1 verbs at
 // MaxTopLevelVerbs=10 but excludes reserved subcommands (`status`,
-// future kit-shipped reserved verbs) from the count — see
-// kit's shape validator, but excludes reserved subcommands (`status`,
 // future kit-shipped reserved verbs) from the count. Locking the count
 // here prevents an unintended verb sneaking in unobserved.
 //
