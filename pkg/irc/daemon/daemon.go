@@ -58,6 +58,15 @@ const ReloadTimeout = 5 * time.Second
 // reloadPoll is how often /v1/status is re-probed inside ReloadTimeout.
 const reloadPoll = 250 * time.Millisecond
 
+// DiscoverInterval is how often the daemon sweeps the server for channels it
+// does not already know about, independently of any reconcile.
+//
+// Discovery is what notices a creator's new channel and what starts the clock
+// on an unmanaged one, and neither event is triggered by anything wsm does. A
+// daemon that only discovered when something else happened to reconcile would
+// leave a channel unadopted for as long as the workspace stayed quiet.
+const DiscoverInterval = 60 * time.Second
+
 // livenessInterval is how often the daemon checks that its bot session is
 // still up.
 //
@@ -120,6 +129,8 @@ type Hooks struct {
 	OpenProviders func(d *Daemon, deps provider.Deps) (provider.Providers, error)
 	// Reconcile runs one reconciliation.
 	Reconcile func(ctx context.Context, deps provision.Deps) (provision.Report, error)
+	// Discover runs one channel-discovery pass.
+	Discover func(ctx context.Context, deps provision.Deps, desired provision.DesiredState) (provision.DiscoverReport, error)
 	// NewRecorder builds the event recorder.
 	NewRecorder func(d *Daemon) bot.Recorder
 	// APIStatus probes the ergo HTTP API, returning its version.
@@ -171,10 +182,11 @@ type Daemon struct {
 	// Profile.Accounts and Profile.AuthoredRoles and saves the file, while
 	// the observer mutates Profile.DelegateGrants and saves it too, so the
 	// two must never run at once.
-	mu         sync.Mutex
-	profile    irc.Profile
-	lastReport *provision.Report
-	membersErr string
+	mu           sync.Mutex
+	profile      irc.Profile
+	lastReport   *provision.Report
+	lastDiscover *provision.DiscoverReport
+	membersErr   string
 
 	// statusMu guards the fields the status writer reads.
 	statusMu          sync.Mutex
@@ -304,6 +316,9 @@ func (d *Daemon) serve(ctx context.Context) error {
 	liveness := time.NewTicker(livenessInterval)
 	defer liveness.Stop()
 
+	discover := time.NewTicker(DiscoverInterval)
+	defer discover.Stop()
+
 	status := time.NewTicker(time.Second)
 	defer status.Stop()
 
@@ -328,6 +343,10 @@ func (d *Daemon) serve(ctx context.Context) error {
 		case <-reassert.C:
 			// Re-assert authored roles a delegate may have undone laterally.
 			d.reconcile(ctx)
+			d.writeStatus()
+
+		case <-discover.C:
+			d.discover(ctx)
 			d.writeStatus()
 
 		case <-liveness.C:
@@ -772,6 +791,78 @@ func (d *Daemon) reconcile(ctx context.Context) {
 
 	d.lastReport = &report
 	d.channels = channelNames(report)
+
+	// Discovery runs inside the same critical section as the reconcile that
+	// preceded it. Both mutate the profile and save it, so interleaving them
+	// would let one write land on the other's stale copy -- and discovery
+	// classifies against the template set this reconcile just computed.
+	d.discoverLocked(ctx, deps)
+}
+
+// discover runs one discovery pass on its own, for the periodic sweep.
+func (d *Daemon) discover(ctx context.Context) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	members, err := d.loadMembers()
+	if err != nil {
+		// Keep the previous classification: a members file that will not
+		// parse is no reason to stop knowing which channels are adopted,
+		// and every destructive path re-checks before acting anyway.
+		d.membersErr = err.Error()
+		return
+	}
+
+	resolver, _ := provider.ResolverFor(d.profile, members, d.deps.DataDir)
+
+	d.discoverLocked(ctx, provision.Deps{
+		Directory:   d.providers.Directory,
+		Transport:   d.transport,
+		Resolver:    resolver,
+		Profile:     &d.profile,
+		ProfilePath: d.deps.Paths.Profile,
+		Cfg:         d.deps.Cfg,
+		Workspace:   d.deps.Workspace,
+		Members:     members,
+		DataDir:     d.deps.DataDir,
+	})
+}
+
+// discoverLocked runs one discovery pass. The caller holds d.mu.
+//
+// The desired state is recomputed rather than carried over from the reconcile
+// report: Desired is pure and cheap, and recomputing keeps Reconcile's
+// signature -- which other components read -- unchanged.
+func (d *Daemon) discoverLocked(ctx context.Context, deps provision.Deps) {
+	if d.providers.Directory == nil {
+		return
+	}
+
+	desired, err := provision.Desired(ctx, deps.Cfg, d.profile, deps.Workspace,
+		deps.Members, deps.Resolver)
+	if err != nil {
+		d.log.Error("irc discovery desired state failed", "error", err)
+		return
+	}
+
+	report, err := d.runDiscover(ctx, deps, desired)
+	if err != nil {
+		d.log.Error("irc discovery failed", "error", err)
+		return
+	}
+	d.lastDiscover = &report
+}
+
+// runDiscover calls the discoverer.
+func (d *Daemon) runDiscover(
+	ctx context.Context,
+	deps provision.Deps,
+	desired provision.DesiredState,
+) (provision.DiscoverReport, error) {
+	if d.deps.Hooks.Discover != nil {
+		return d.deps.Hooks.Discover(ctx, deps, desired)
+	}
+	return provision.Discover(ctx, deps, desired)
 }
 
 // runReconcile calls the reconciler.
@@ -1179,6 +1270,7 @@ func (d *Daemon) setMembersErr(msg string) {
 func (d *Daemon) Status() Status {
 	d.mu.Lock()
 	report := d.lastReport
+	discovered := d.lastDiscover
 	membersErr := d.membersErr
 	profile := d.profile
 	d.mu.Unlock()
@@ -1217,7 +1309,14 @@ func (d *Daemon) Status() Status {
 		Warnings:      warnings(d.deps.Cfg, profile),
 		ErgoVersion:   d.ergoVersion,
 		LastReconcile: report,
+		LastDiscover:  discovered,
 		LastBackfill:  lastBackfill,
+	}
+
+	if discovered != nil {
+		status.Discovered = discovered.Discovered
+		status.Peer = discovered.Peer
+		status.Unmanaged = discovered.Unmanaged
 	}
 
 	if report != nil {

@@ -100,8 +100,19 @@ type Status struct {
 	// ErgoVersion is the managed server's version, when known.
 	ErgoVersion string `json:"ergo_version,omitempty"`
 
+	// Discovered lists the creator-namespace channels wsm has adopted.
+	Discovered []provision.DiscoveredChannel `json:"discovered,omitempty"`
+	// Peer lists channels founded by another wsm bot on this server. Listed
+	// so an operator can see them; never touched.
+	Peer []provision.PeerChannel `json:"peer,omitempty"`
+	// Unmanaged lists registrations wsm does not own, per the configured
+	// unmanaged_channels policy.
+	Unmanaged []provision.UnmanagedChannel `json:"unmanaged,omitempty"`
+
 	// LastReconcile is the most recent reconcile report, embedded verbatim.
 	LastReconcile *provision.Report `json:"last_reconcile,omitempty"`
+	// LastDiscover is the most recent discovery pass, embedded verbatim.
+	LastDiscover *provision.DiscoverReport `json:"last_discover,omitempty"`
 	// LastBackfill summarises the most recent requested backfill.
 	LastBackfill *BackfillSummary `json:"last_backfill,omitempty"`
 	// Cursors is the per-channel capture position.
