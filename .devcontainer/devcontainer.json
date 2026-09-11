@@ -1,0 +1,23 @@
+{
+  "name": "hop-top/wsm dev",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "workspaceFolder": "/workspace",
+  "features": {
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
+  "postCreateCommand": "go version && ergo --version && echo 'Dev environment ready. Run: make build'",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "golang.Go",
+        "redhat.vscode-yaml"
+      ],
+      "settings": {
+        "go.toolsManagement.autoUpdate": false
+      }
+    }
+  },
+  "remoteUser": "root"
+}
