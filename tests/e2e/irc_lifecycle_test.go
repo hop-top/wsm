@@ -260,18 +260,90 @@ func TestIRC_EnableRejectsNonWorkspaceRoot(t *testing.T) {
 	}
 }
 
-// TestIRC_SharedWithStubbed locks the stub: --shared-with is refused
-// rather than silently ignored, because recording a sharing
-// relationship nothing enforces would be worse than refusing it.
-func TestIRC_SharedWithStubbed(t *testing.T) {
-	r := newRunner(t)
-	r.mustCreateWorkspace("irc-shared")
+// TestIRC_SharedWithRefusals locks the exit codes of every attach that
+// is refused before a server is ever contacted.
+//
+// The successful attach is deliberately not here: it registers an
+// account over the host's live ergo HTTP API, which the stub daemon
+// does not serve. Faking it would assert against the fake rather than
+// against ergo, so the happy path belongs to the integration suite that
+// runs a real server.
+func TestIRC_SharedWithRefusals(t *testing.T) {
+	t.Run("unknown host workspace exits 3", func(t *testing.T) {
+		r := newRunner(t)
+		r.mustCreateWorkspace("irc-guest")
 
-	res := r.runWithEnv(ircEnv(t, r, "managed"),
-		"irc", "enable", "irc-shared", "--shared-with", "other", "--dir", mustWorkspaceRoot(t))
-	requireExitCode(t, res, 2)
-	if !strings.Contains(res.Combined(), "not implemented") {
-		t.Fatalf("expected a not-implemented refusal, got:\n%s", res.Combined())
+		res := r.runWithEnv(ircEnv(t, r, "managed"), "irc", "enable", "irc-guest",
+			"--shared-with", "no-such-workspace", "--dir", mustWorkspaceRoot(t))
+		requireExitCode(t, res, 3)
+	})
+
+	t.Run("host without irc enabled exits 7", func(t *testing.T) {
+		r := newRunner(t)
+		r.mustCreateWorkspace("irc-guest")
+		r.mustCreateWorkspace("irc-host")
+
+		res := r.runWithEnv(ircEnv(t, r, "managed"), "irc", "enable", "irc-guest",
+			"--shared-with", "irc-host", "--dir", mustWorkspaceRoot(t))
+		requireExitCode(t, res, 7)
+		if !strings.Contains(res.Combined(), "irc enable") {
+			t.Fatalf("expected the remedy to name enable, got:\n%s", res.Combined())
+		}
+	})
+
+	t.Run("a workspace cannot host itself, exit 2", func(t *testing.T) {
+		r := newRunner(t)
+		r.mustCreateWorkspace("irc-self")
+
+		res := r.runWithEnv(ircEnv(t, r, "managed"), "irc", "enable", "irc-self",
+			"--shared-with", "irc-self", "--dir", mustWorkspaceRoot(t))
+		requireExitCode(t, res, 2)
+	})
+
+	t.Run("an already-enabled guest exits 4", func(t *testing.T) {
+		r := newRunner(t)
+		r.mustCreateWorkspace("irc-enabled")
+		r.mustCreateWorkspace("irc-host")
+		writeExternalProfile(t, r, "irc-enabled", mustWorkspaceRoot(t))
+
+		res := r.runWithEnv(ircEnv(t, r, "external"), "irc", "enable", "irc-enabled",
+			"--shared-with", "irc-host", "--dir", mustWorkspaceRoot(t))
+		requireExitCode(t, res, 4)
+		if !strings.Contains(res.Combined(), "already enabled") {
+			t.Fatalf("expected the refusal to say the workspace is already "+
+				"enabled, got:\n%s", res.Combined())
+		}
+	})
+}
+
+// TestIRC_GuestDetachOnDisable locks the guest half of detach through
+// the CLI: a workspace whose host's state is gone (purged out from
+// under it) must still be able to disable, and must come back with its
+// host cleared rather than stuck believing it is attached.
+func TestIRC_GuestDetachOnDisable(t *testing.T) {
+	r := newRunner(t)
+	id := r.mustCreateWorkspace("irc-orphan")
+	env := ircEnv(t, r, "external")
+
+	// A guest pointing at a host whose IRC state never existed: the
+	// same shape a purge leaves behind.
+	writeProfile(t, r, id, map[string]any{
+		"mode": "external", "provider": "ergo",
+		"server_id": "wsm:///irc", "root": mustWorkspaceRoot(t),
+		"bot_account":    "wsm-irc-orphan",
+		"host_workspace": "01JQZZZZZZZZZZZZZZZZZZZZZZ",
+		"created_at":     time.Now().UTC().Format(time.RFC3339Nano),
+	})
+
+	res := r.runWithEnv(env, "irc", "disable", "irc-orphan", "--format", "json")
+	requireExitCode(t, res, 0)
+
+	raw, err := os.ReadFile(filepath.Join(r.dataDir, "irc", id, "profile.yaml"))
+	if err != nil {
+		t.Fatalf("read guest profile: %v", err)
+	}
+	if strings.Contains(string(raw), "host_workspace") {
+		t.Fatalf("disabling a guest whose host is gone must clear its host:\n%s", raw)
 	}
 }
 
@@ -623,7 +695,10 @@ func writeProfile(t *testing.T, r *e2eRunner, wsID string, profile map[string]an
 	mustMkdirAll(t, dir)
 
 	var b strings.Builder
-	for _, key := range []string{"mode", "provider", "server_id", "root", "bot_account", "created_at"} {
+	for _, key := range []string{
+		"mode", "provider", "server_id", "root", "bot_account",
+		"host_workspace", "created_at",
+	} {
 		if v, ok := profile[key]; ok {
 			fmt.Fprintf(&b, "%s: %q\n", key, v)
 		}
