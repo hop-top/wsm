@@ -464,14 +464,84 @@ func TestEnsureChannelBorrowedJoinsOnly(t *testing.T) {
 		Topic:    "not mine to set",
 		Borrowed: true,
 	})
-	if err != nil {
-		t.Fatalf("EnsureChannel: %v", err)
+	// The channel is joined, so the outcome is ErrForeignChannel rather than
+	// nil: a plain server has no services, so the provider cannot claim to
+	// have registered anything.
+	if !errors.Is(err, provider.ErrForeignChannel) {
+		t.Fatalf("EnsureChannel = %v, want ErrForeignChannel", err)
 	}
 
 	// The host owns a borrowed channel's modes and topic; wsm only sits in it.
 	got := f.SentLines()
 	if len(got) != 1 || got[0] != "JOIN #host-ops" {
 		t.Fatalf("sent = %q, want just the JOIN", got)
+	}
+}
+
+// TestEnsureChannelBorrowedNotReportedRegistered pins the status consequence of
+// the borrowed outcome: reconcile records a nil return as Registered, and a
+// services-less provider has no basis for that claim.
+//
+// The assertion is on how reconcile classifies the error, not on its wording,
+// so it fails if the provider ever goes back to returning nil.
+func TestEnsureChannelBorrowedNotReportedRegistered(t *testing.T) {
+	_, providers := newProvider(t, oppedBot())
+
+	err := providers.Roles.EnsureChannel(context.Background(), provider.Channel{
+		Name:     "#host-ops",
+		Borrowed: true,
+	})
+
+	// nil is what reconcile turns into Registered=true. Anything else must
+	// not be the host-not-registered sentinel either, since wsm did join.
+	if err == nil {
+		t.Fatal("EnsureChannel = nil: reconcile records that as Registered, " +
+			"but a plain server registers nothing and cannot know whether the host did")
+	}
+	if errors.Is(err, provider.ErrHostChannelNotRegistered) {
+		t.Fatalf("EnsureChannel = %v, want ErrForeignChannel: "+
+			"the channel was joined, so it must not be reported as absent on the host", err)
+	}
+	if !errors.Is(err, provider.ErrForeignChannel) {
+		t.Fatalf("EnsureChannel = %v, want ErrForeignChannel", err)
+	}
+	if !strings.Contains(err.Error(), "#host-ops") {
+		t.Errorf("error %q should name the channel", err)
+	}
+}
+
+// TestEnsureChannelBorrowedStillAppliesRoles checks that only the reported
+// status changed: the JOIN still happens and roles are still applied in the
+// borrowed channel afterwards.
+//
+// reconcile treats ErrForeignChannel as an expected borrowed outcome and falls
+// through to role application, so a borrowed channel must remain fully usable.
+func TestEnsureChannelBorrowedStillAppliesRoles(t *testing.T) {
+	f, providers := newProvider(t, map[string]string{
+		irc.DefaultBotAccount: "@",
+		"alice":               "",
+	})
+	ctx := context.Background()
+
+	if err := providers.Roles.EnsureChannel(ctx, provider.Channel{
+		Name:     "#host-ops",
+		Borrowed: true,
+	}); !errors.Is(err, provider.ErrForeignChannel) {
+		t.Fatalf("EnsureChannel = %v, want ErrForeignChannel", err)
+	}
+	if got := f.SentLines(); len(got) != 1 || got[0] != "JOIN #host-ops" {
+		t.Fatalf("sent = %q, want the JOIN to have happened", got)
+	}
+
+	// The bot is opped here, so the grant goes through exactly as it would
+	// in an owned channel.
+	if err := providers.Roles.ApplyRoles(ctx, "#host-ops",
+		[]provider.ModeChange{{Account: "alice", Role: irc.RoleOp}}, nil,
+	); err != nil {
+		t.Fatalf("ApplyRoles: %v", err)
+	}
+	if !contains(f.SentLines(), "MODE #host-ops +o alice") {
+		t.Errorf("sent = %q, want the role applied in the borrowed channel", f.SentLines())
 	}
 }
 

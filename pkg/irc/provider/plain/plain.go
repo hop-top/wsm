@@ -233,6 +233,15 @@ func (p *plain) Caps() provider.Caps { return 0 }
 // still worth capturing from, so a refusal is recorded and reported rather than
 // failing the reconcile. A borrowed channel is joined and otherwise left
 // entirely alone: the host owns its modes and topic.
+//
+// A borrowed channel reports ErrForeignChannel once joined, never nil. A plain
+// server has no services: this provider cannot register a channel and cannot
+// find out whether the host registered it, so it has nothing to claim beyond
+// having joined. Returning nil would be recorded as Registered, putting
+// registered:true next to borrowed:true in status.json on a server that cannot
+// register anything. ErrForeignChannel says only what is actually known — the
+// channel is there and wsm does not own it — and reconcile treats it as the
+// expected borrowed outcome, applying roles exactly as before.
 func (p *plain) EnsureChannel(ctx context.Context, ch provider.Channel) error {
 	if ch.Name == "" {
 		return fmt.Errorf("irc/plain: ensure channel: name is required")
@@ -242,7 +251,7 @@ func (p *plain) EnsureChannel(ctx context.Context, ch provider.Channel) error {
 		return fmt.Errorf("irc/plain: join %s: %w", ch.Name, err)
 	}
 	if ch.Borrowed {
-		return nil
+		return fmt.Errorf("irc/plain: %s is borrowed: %w", ch.Name, provider.ErrForeignChannel)
 	}
 
 	if ch.Modes != "" {
