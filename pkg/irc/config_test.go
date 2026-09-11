@@ -266,9 +266,20 @@ func TestValidate_Channels(t *testing.T) {
 			name: "guest role must be voice or op",
 			ch: ChannelTemplate{
 				Name:   "#x",
-				Guests: []Guest{{Profile: "p", Role: "halfop"}},
+				Guests: []Guest{{Profile: "p", Role: "owner"}},
 			},
 			wantErr: "must be voice|op",
+		},
+		{
+			// A guest entry is a direct grant, not a redistribution
+			// ceiling: halfop's lateral moderation powers are not on
+			// offer to a visitor.
+			name: "guest role rejects halfop",
+			ch: ChannelTemplate{
+				Name:   "#x",
+				Guests: []Guest{{Profile: "p", Role: RoleHalfop}},
+			},
+			wantErr: "guests[0].role \"halfop\": must be voice|op",
 		},
 		{
 			name: "guest needs a profile",
@@ -279,13 +290,23 @@ func TestValidate_Channels(t *testing.T) {
 			wantErr: "guests[0].profile: required",
 		},
 		{
-			name: "delegate max_role must be voice or op",
+			name: "delegate max_role must be a known ceiling",
 			mode: ModeManaged,
 			ch: ChannelTemplate{
 				Name:      "#x",
 				Delegates: []Delegate{{Workspace: "b", Bot: "wsm-b", MaxRole: "owner"}},
 			},
-			wantErr: "must be voice|op",
+			wantErr: "must be voice|halfop|op",
+		},
+		{
+			// Halfop is the rung that makes "may grant voice, may not
+			// grant op" enforceable by the server itself.
+			name: "delegate max_role accepts halfop",
+			mode: ModeManaged,
+			ch: ChannelTemplate{
+				Name:      "#x",
+				Delegates: []Delegate{{Workspace: "b", Bot: "wsm-b", MaxRole: RoleHalfop}},
+			},
 		},
 		{
 			name: "delegates rejected outside managed mode",

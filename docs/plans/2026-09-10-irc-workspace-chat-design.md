@@ -34,7 +34,7 @@ same CLI in both modes.
 | Capture | bot records channel messages → `interaction.message`; degrades per negotiated caps |
 | Backfill | `CHATHISTORY` when the server offers it; otherwise reported unsupported |
 | Export | none from ergo (verified); wsm is system of record |
-| Sharing | a managed server may host other workspaces: `--shared-with`, guests, halfop-capped delegation |
+| Sharing | a managed server may host other workspaces: `--shared-with`, guests, delegation capped at a configurable ceiling |
 | Bot channels | three access levels (fixed, owner-managed, self-service); discovery via `DirectoryProvider` |
 | Exit codes | story 015 (2 usage, 3 not found, 4 conflict, 5 backend, 6 forbidden) + new 7 prerequisite |
 
@@ -239,8 +239,9 @@ irc:
     account: wsm            # both; external: must already exist on the server
     secret_ref: ""          # external: aps secret key holding bot password; else secrets.yaml
   channels:                 # template; {{ws}} = workspace name slug
-    # per channel, optional (see Sharing): guests: [{profile, role}],
-    # delegates: [{workspace, bot, max_role}]; guest side: borrowed: {host, channel, members}
+    # per channel, optional (see Sharing): guests: [{profile, role: voice|op}],
+    # delegates: [{workspace, bot, max_role: voice|halfop|op}];
+    # guest side: borrowed: {host, channel, members}
     - name: "#{{ws}}"
       members: all          # all | principals
       modes: "+ntRi"
@@ -405,9 +406,15 @@ match the desired state (so a lost map heals), and reports foreign roles without
 Required so host and guest bots do not fight.
 
 **Delegation (guest admin decides)**: host entry
-`delegates: [{workspace: B, bot: <B bot account>, max_role: voice|op}]`. Host applies a
-persistent `+h` (halfop) to B's bot for `max_role: voice`, or `+o` for `op`. IRC privilege
-rules cap what B's bot can hand out: a halfop may voice but not op. On the guest side the
+`delegates: [{workspace: B, bot: <B bot account>, max_role: voice|halfop|op}]`. The ceiling is
+the privilege itself: the host applies it to B's bot persistently (`+v`, `+h` or `+o`) and the
+server's own privilege rules then cap what B's bot can redistribute. Measured on ergo 2.19.1
+(`probes/delegation.txt`): a non-founder halfop sets a persistent `CS AMODE +v` but is refused
+`+o` ("Insufficient privileges"; live `MODE` answers 482), while a non-founder chanop sets
+`+o`. So `halfop` is the rung that lets a guest bot voice its members but never op them, and
+it holds even if B's wsm is modified — the cap is enforced by the server, not by trusting the
+guest. `voice` delegates a bot that may speak but grant nothing; `op` delegates full
+redistribution. On the guest side the
 channel is `borrowed: {host: A, channel: "#a-dev", members: all|principals}`: B's bot never
 registers it, applies roles to B's members up to its own privilege (persistent `CS AMODE`
 when ergo allows it at that level, else live `MODE` re-applied on join), and reports

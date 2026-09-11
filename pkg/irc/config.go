@@ -57,8 +57,9 @@ const (
 	// RoleVoice is +v: may speak in a moderated channel.
 	RoleVoice Role = "voice"
 	// RoleHalfop is +h: may set channel modes below operator. Not every
-	// server implements it, so it is only ever a delegation ceiling or an
-	// observed role, never a role wsm grants from config.
+	// server implements it, so it is configurable only as a delegation
+	// ceiling (delegates[].max_role) or observed on a server that has it,
+	// never as a direct grant on the guest allow list.
 	RoleHalfop Role = "halfop"
 	// RoleOp is +o: channel operator.
 	RoleOp Role = "op"
@@ -457,7 +458,7 @@ func (ct ChannelTemplate) validate(idx int, mode Mode, provider ProviderName) ([
 		if g.Profile == "" {
 			return warns, fmt.Errorf("%s.guests[%d].profile: required", field, i)
 		}
-		if err := validateRole(g.Role, fmt.Sprintf("%s.guests[%d].role", field, i)); err != nil {
+		if err := validateGrantedRole(g.Role, fmt.Sprintf("%s.guests[%d].role", field, i)); err != nil {
 			return warns, err
 		}
 	}
@@ -476,7 +477,7 @@ func (ct ChannelTemplate) validate(idx int, mode Mode, provider ProviderName) ([
 		if d.Bot == "" {
 			return warns, fmt.Errorf("%s.delegates[%d].bot: required", field, i)
 		}
-		if err := validateRole(
+		if err := validateCeilingRole(
 			d.MaxRole, fmt.Sprintf("%s.delegates[%d].max_role", field, i),
 		); err != nil {
 			return warns, err
@@ -506,13 +507,36 @@ func validateMembers(m Members, field string) error {
 	}
 }
 
-// validateRole checks a role value.
-func validateRole(r Role, field string) error {
+// validateGrantedRole checks a role wsm grants directly to an account, as on
+// the guest allow list.
+//
+// Halfop is deliberately not accepted here. A direct grant hands the account
+// the privilege itself, and halfop carries lateral moderation powers (kick,
+// channel modes) over a channel the grantee is a visitor on. The rung exists
+// for delegation ceilings, where it caps redistribution; see
+// validateCeilingRole.
+func validateGrantedRole(r Role, field string) error {
 	switch r {
 	case RoleVoice, RoleOp:
 		return nil
 	default:
 		return fmt.Errorf("%s %q: must be voice|op", field, r)
+	}
+}
+
+// validateCeilingRole checks a delegation ceiling: the privilege the host gives
+// another workspace's bot, which the server then uses to cap what that bot may
+// hand out.
+//
+// Halfop is accepted because it is the rung that makes "may grant voice, may
+// not grant op" enforceable by the server rather than by trusting the guest's
+// wsm: on ergo a non-founder halfop sets a persistent +v but is refused +o.
+func validateCeilingRole(r Role, field string) error {
+	switch r {
+	case RoleVoice, RoleHalfop, RoleOp:
+		return nil
+	default:
+		return fmt.Errorf("%s %q: must be voice|halfop|op", field, r)
 	}
 }
 
