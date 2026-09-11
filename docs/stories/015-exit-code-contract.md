@@ -18,10 +18,13 @@ As an external client, I want predictable exit codes so that my scripts can hand
 5. **Given** a corrupted SQLite database, **When** I run any command, **Then** the exit code is 5 (backend error).
 6. **Given** `wsm archive already-archived`, **When** I check the exit code, **Then** it is 4 (conflict).
 7. **Given** an operation blocked by a capability gate, **When** I check the exit code, **Then** it is 6 (forbidden).
+8. **Given** an operation whose environment is not ready (missing binary, busy port, unreachable server), **When** I check the exit code, **Then** it is 7 (prerequisite) and the message states the fix.
 
 ## Tests
 
 ### Unit
+- `cmd/wsm/commands/exit_code_test.go` — `TestExitCode_Forbidden`
+- `cmd/wsm/commands/exit_code_test.go` — `TestExitCode_Prerequisite`
 
 ### E2E
 - `tests/e2e/exit_code_test.go` — `TestExitCode_Success`

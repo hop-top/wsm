@@ -14,6 +14,13 @@ const (
 	ErrorKindConflict  ErrorKind = "conflict"
 	ErrorKindBackend   ErrorKind = "backend"
 	ErrorKindForbidden ErrorKind = "forbidden"
+	// ErrorKindPrerequisite marks an operation that is well-formed and
+	// permitted but cannot run because the environment is not ready —
+	// a missing binary, a busy port, an unreachable server, a provider
+	// lacking the capability. Distinct from Forbidden (the actor may
+	// not) and Backend (persistence broke): the caller fixes the
+	// environment and retries, so Message must carry the fix.
+	ErrorKindPrerequisite ErrorKind = "prerequisite"
 )
 
 // Error is a typed domain error.
@@ -88,4 +95,11 @@ func NewErrorBackend(msg string, cause error) error { return backendError(msg, c
 // NewErrorForbidden creates a forbidden error.
 func NewErrorForbidden(msg string) error {
 	return &Error{Kind: ErrorKindForbidden, Message: msg}
+}
+
+// NewErrorPrerequisite creates a prerequisite error. msg must state the
+// corrective action (e.g. "ergo not installed: brew install ergo") —
+// the cmd layer surfaces it verbatim as the envelope Message.
+func NewErrorPrerequisite(msg string) error {
+	return &Error{Kind: ErrorKindPrerequisite, Message: msg}
 }
