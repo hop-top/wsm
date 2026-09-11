@@ -46,4 +46,6 @@ Adapters register themselves via `format.Register(adapter)`. The registry handle
 - `pkg/format/registry_test.go` -- `TestRegistry_Detect_NoMatch`
 
 ### E2E
-- `tests/e2e/format_test.go` -- `TestFormatAdapterRegistration`
+None. This story is not implemented yet -- neither the unit tests listed
+above nor any end-to-end test exist. Coverage must be added alongside the
+implementation.

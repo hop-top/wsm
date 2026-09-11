@@ -34,4 +34,6 @@ As a user, I want to push Codex sessions into wsm so that my GitHub/OpenAI Codex
 - `pkg/format/codex/adapter_test.go` -- `TestMalformedInput`
 
 ### E2E
-- `tests/e2e/sessions_push_test.go` -- `TestSessionsPush_Codex`
+None. This story is not implemented yet -- neither the unit tests listed
+above nor any end-to-end test exist. Coverage must be added alongside the
+implementation.

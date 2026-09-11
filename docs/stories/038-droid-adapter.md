@@ -31,4 +31,6 @@ As a user, I want to push Droid sessions into wsm so that my Droid conversation 
 - `pkg/format/droid/adapter_test.go` -- `TestMalformedInput`
 
 ### E2E
-- `tests/e2e/sessions_push_test.go` -- `TestSessionsPush_Droid`
+None. This story is not implemented yet -- neither the unit tests listed
+above nor any end-to-end test exist. Coverage must be added alongside the
+implementation.
