@@ -74,23 +74,16 @@ and use --auto to attempt detection of attributes from the resource path.`,
 					TrustLevel:   workspace.TrustLevel(trustLevel),
 				}
 
+				// Inference is disclosed, never silently applied. The
+				// space is persisted exactly as the user specified it;
+				// --auto only reports what detection would have
+				// concluded, and with what provenance.
+				var inferred *detector.SpaceInference
 				if autoDetect {
-					d := detector.NewRegistry()
-					detector.RegisterBuiltins(d)
-					results, err := d.RunAll(ctx, path)
-					if err != nil {
-						return fmt.Errorf("auto-detection failed: %w", err)
-					}
-					// Apply results to space (simple logic for now: first successful detection)
-					for _, res := range results {
-						if res.Detected {
-							// NOTE: Space model doesn't have Kind/Metadata fields directly yet
-							// but we can add them to the manager's CreateSpace logic if needed.
-							// For now, we just log that we found something.
-							if !opts.Quiet {
-								fmt.Fprintf(os.Stderr, "Detected %s (%s) with confidence %.2f\n", res.DetectorName, res.Kind, res.Confidence)
-							}
-						}
+					got := detector.InferSpaceFromBoundary(ctx, path)
+					inferred = &got
+					if !opts.Quiet && opts.Format != output.JSON && opts.Format != output.YAML {
+						reportInference(os.Stderr, got)
 					}
 				}
 
@@ -114,7 +107,13 @@ and use --auto to attempt detection of attributes from the resource path.`,
 				}
 
 				if opts.Format == output.JSON || opts.Format == output.YAML {
-					return output.Render(os.Stdout, opts.Format, created)
+					// Additive: without --auto the payload is the bare
+					// space, byte-identical to prior releases. With
+					// --auto it gains a sibling _inferred block; the
+					// space fields keep their existing names and
+					// positions.
+					return output.Render(os.Stdout, opts.Format,
+						withInference(*created, inferred))
 				}
 				// §6.3: ack message (non-data) → stderr.
 				fmt.Fprintf(os.Stderr, "Added space %s to workspace %s\n", created.ID, args[0])
