@@ -1,6 +1,6 @@
 # Workspace IRC — provider-agnostic chat per workspace, ergo native
 
-**Status**: design v2, awaiting review
+**Status**: design v3, awaiting review
 **Author**: $USER
 **Date**: 2026-09-10
 **Diagrams**: [components](2026-09-10-irc-workspace-chat-design/components-v2.mmd),
@@ -350,10 +350,17 @@ Degradation, decided per negotiated cap:
 Bot's own messages skipped. Cursor per channel `{last_msgid, last_time}` written after each
 record (no fsync; crash → duplicate handled by dedupe).
 
+`wsm irc backfill` never opens a second IRC session beside the daemon: with the daemon
+running it files a request the daemon executes and reports through `status.json`; with the
+daemon stopped it runs under the same exclusive state lock the daemon holds while alive.
+Cursors are written only by the lock holder.
+
 Backfill (daemon start, bot reconnect, `wsm irc backfill`): `CHATHISTORY AFTER #c
 timestamp=<last_time> 1000`, page until short batch; skip `msgid` equal to the cursor or
 already present in events (backend paged backwards by sequence until older than
-`last_time - 1h`); record in order; report `{channel, fetched, recorded, skipped, gap,
+`last_time - 1h`); record in order. A gap is retention-based, never a time heuristic: the
+oldest retained message is fetched first, and only when it is newer than the cursor did the
+window roll past it. Quiet channels are not gaps. Report `{channel, fetched, recorded, skipped, gap,
 unsupported}`.
 
 ## Sharing a server between workspaces
@@ -394,7 +401,10 @@ channel is `borrowed: {host: A, channel: "#a-dev", members: all|principals}`: B'
 registers it, applies roles to B's members up to its own privilege (persistent `CS AMODE`
 when ergo allows it at that level, else live `MODE` re-applied on join), and reports
 `borrowed` in status. Revoking the delegate (an authored entry of kind delegate no longer
-desired) drops B's bot privilege and strips every foreign role at or below B's former ceiling
+desired) drops B's bot privilege and strips only the roles provably granted by B's bot: those
+the host observed B's bot set (recorded from mode changes while any delegate exists) plus, for
+a local guest, B's own authored map. Unobserved grants stay foreign, reported as unverified.
+Foreign roles are never touched by a revoke, on any channel, for any reason
 on that channel in the same host reconcile. A delegate cannot escalate but can act laterally
 (devoice, kick, channel modes); the host re-asserts authored roles on channel mode changes and
 on a five-minute timer while any delegate exists.
@@ -484,7 +494,7 @@ wsm irc url <ws> [--web]                                           irc://… | w
 wsm irc channel add|rm|list <ws> [<#c>] [--members all|principals|list] [--member-list <p,..>]
                                    [--owner <p>] [--guest <p>[:role]] [--purge] [--force]
 wsm irc channel adopt|release|purge <ws> <#c>                      discovery control
-wsm irc backfill <ws> [--channel <#c>]
+wsm irc backfill <ws> [--channel <#c>]                            via daemon, or locked offline
 wsm irc daemon <ws>                                                hidden; foreground
 ```
 
@@ -513,7 +523,11 @@ busy, TLS missing, external server unreachable, provider lacks capability).
 
 ## Error handling
 
-- Preflight failures abort before any file is written; exit 7 with the fix in the message
+- Preflight is two-stage: static checks before anything is generated (binary, version, a free
+  port triple exists, `remote.host`, configured cert paths exist), then readiness checks after
+  allocation and certificate generation, before spawn (allocated ports free, certs present,
+  config parses). Empty cert paths mean generate, never a static failure. Failures abort
+  before spawn; exit 7 with the fix in the message
   (`brew install ergo`, `--port`, `irc.remote.host`, `irc.server.host unreachable`).
 - Port allocation scans `port_range` in steps of 3, bind-tests all three (TOCTOU accepted),
   records in `profile.yaml`; conflict on restart → exit 7, never silently reallocate.
@@ -522,11 +536,17 @@ busy, TLS missing, external server unreachable, provider lacks capability).
 - Provider `ErrUnsupported` → reconcile skips the step, report lists it, exit 0; explicit
   `wsm irc account create` on such a provider → exit 7.
 - External server unreachable at `enable` → exit 7; during run → `degraded`.
-- HTTP API `401` → managed: re-render token + rehash once, retry; external: report.
+- HTTP API `401` → managed: write a new token, re-render, then reload ergo out of band
+  (`SIGHUP` to the child, or oper `REHASH` over IRC), wait for `/v1/status` with the new
+  token, retry once. The API cannot reload its own tokens: every endpoint including
+  `/v1/rehash` authenticates against the currently loaded config. External: report.
 - `CS REGISTER` refused (registered by someone else) → `CS TRANSFER` via `chanreg`; on
   external ergo without `chanreg` → report `foreign_channel`, roles applied live only.
 - Stale pidfile (process gone) → stopped; pidfile replaced.
 - `members.yaml` invalid → reconcile aborts, daemon keeps previous state, `degraded` with reason.
+- Managed account exists on our server but wsm holds no secret (profile loss) → reclaim by
+  setting a new password, reported; accounts owned by another local workspace are never
+  reclaimed.
 - Secrets missing for a known account → `creds` exits 1 with `account rotate` hint (managed) or
   the aps `secret_ref` (external).
 
