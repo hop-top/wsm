@@ -93,6 +93,11 @@ type Profile struct {
 	SharedWith []string `json:"shared_with,omitempty" yaml:"shared_with,omitempty"`
 	// HostWorkspace names the hosting workspace when this one is a guest.
 	HostWorkspace string `json:"host_workspace,omitempty" yaml:"host_workspace,omitempty"`
+	// PendingDetach records a detach that could not finish because the host
+	// was not running: the guest has already been excluded on the host side,
+	// but nothing has suspended its bot yet. Rerunning the disable once the
+	// host is up completes it.
+	PendingDetach bool `json:"pending_detach,omitempty" yaml:"pending_detach,omitempty"`
 
 	// Discovered holds adopted creator-namespace channels.
 	Discovered map[string]Discovered `json:"discovered,omitempty" yaml:"discovered,omitempty"`

@@ -37,6 +37,7 @@ func goldenProfile() Profile {
 		},
 		SharedWith:    []string{"ws-b", "ws-c"},
 		HostWorkspace: "",
+		PendingDetach: true,
 		Discovered: map[string]Discovered{
 			"#acme-bridge-slack": {
 				Owner:  "bridgebot",
