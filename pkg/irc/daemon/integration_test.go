@@ -290,6 +290,49 @@ func TestErgoDirectoryListsRegisteredChannel(t *testing.T) {
 	t.Fatalf("ListChannels did not report %q, which this test just registered", channel)
 }
 
+// TestErgoBorrowedUnregisteredChannelIsNotJoined pins the borrowed contract's
+// load-bearing half against a live server.
+//
+// A borrowed channel belongs to another workspace's server; wsm only joins it.
+// When the host has not registered it yet, the bot must stay out entirely —
+// because the first client into an empty channel is handed +o by the server,
+// which would silently make the borrower the de facto owner of a channel it
+// meant only to borrow. Reconcile depends on EnsureChannel reporting exactly
+// ErrHostChannelNotRegistered to make that decision.
+//
+// The conformance suite never sets Borrowed, so this is the only place the
+// contract is checked against a real server rather than a scripted fake.
+func TestErgoBorrowedUnregisteredChannelIsNotJoined(t *testing.T) {
+	srv := startErgo(t)
+	providers := srv.providers(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), opTimeout)
+	defer cancel()
+
+	// Never registered by anybody: exactly the state a guest meets when it
+	// declares a borrowed channel before the host has created it.
+	channel := "#" + srv.name("borrow")
+
+	err := providers.Roles.EnsureChannel(ctx, provider.Channel{Name: channel, Borrowed: true})
+	if !errors.Is(err, provider.ErrHostChannelNotRegistered) {
+		t.Fatalf("EnsureChannel(%q, borrowed) = %v, want ErrHostChannelNotRegistered; "+
+			"reconcile branches on that sentinel to decide not to join, and any other "+
+			"outcome lets the bot enter an empty channel and be handed +o", channel, err)
+	}
+
+	// The report is only half the promise: the bot must actually be absent.
+	// An unregistered channel has no founder, so a founder appearing here
+	// would mean the bot joined and the server registered it to wsm.
+	founder, err := providers.Directory.Founder(ctx, channel)
+	if err != nil {
+		t.Fatalf("Founder(%q): %v", channel, err)
+	}
+	if founder != "" {
+		t.Fatalf("borrowed channel %q has founder %q; wsm joined a channel it only meant to borrow",
+			channel, founder)
+	}
+}
+
 // TestPlainProviderAgainstErgoDeclaresNoAccountCaps runs the services-less
 // provider against the same server.
 //
