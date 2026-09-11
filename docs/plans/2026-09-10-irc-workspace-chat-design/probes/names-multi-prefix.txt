@@ -1,0 +1,25 @@
+# NAMES / WHO on a registered channel with multi-prefix negotiated.
+# ergo 2.19.1. Channel #multi, founder botty (+q via CS REGISTER),
+# carol AMODE +o, bob AMODE +h, alice AMODE +v, all four present.
+# ISUPPORT: PREFIX=(qaohv)~&@%+  STATUSMSG=~&@%+
+#
+# Note: the founder carries TWO prefix chars (~@). A parser must consume a
+# RUN of prefix characters, not a single leading char.
+
+# --- NAMES, only the founder present (before the others joined) ---
+@time=2026-09-11T10:24:25.184Z :ergo.test 353 botty = #multi :@botty
+@time=2026-09-11T10:24:25.184Z :ergo.test 366 botty #multi :End of NAMES list
+
+# --- NAMES, all four present, multi-prefix ---
+@time=2026-09-11T10:24:40.248Z :ergo.test 353 botty = #multi :@carol %bob +alice ~@botty
+@time=2026-09-11T10:24:40.249Z :ergo.test 366 botty #multi :End of NAMES list
+
+# --- WHO, same channel: prefix run appears in the flags field (H~@r etc) ---
+@time=2026-09-11T10:24:42.252Z :ergo.test 352 botty #multi ~u gwfgs6htdzzrg.irc ergo.test carol H@r :0 carol
+@time=2026-09-11T10:24:42.252Z :ergo.test 352 botty #multi ~u gwfgs6htdzzrg.irc ergo.test bob H%r :0 bob
+@time=2026-09-11T10:24:42.252Z :ergo.test 352 botty #multi ~u gwfgs6htdzzrg.irc ergo.test alice H+r :0 alice
+@time=2026-09-11T10:24:42.252Z :ergo.test 352 botty #multi ~u gwfgs6htdzzrg.irc ergo.test botty H~@r :0 botty
+
+# --- NAMES on an unregistered channel, single occupant, no prefixes beyond op ---
+@time=2026-09-11T10:22:44.861Z :ergo.test 353 botty = #probe :~@botty
+@time=2026-09-11T10:22:44.861Z :ergo.test 366 botty #probe :End of NAMES list

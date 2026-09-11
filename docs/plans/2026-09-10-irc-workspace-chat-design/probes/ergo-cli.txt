@@ -1,0 +1,41 @@
+# ergo 2.19.1 CLI surface: mkcerts / initdb / gentoken / genpasswd / run.
+
+# --- ergo --help: the complete subcommand list ---
+# ergo initdb [--conf <filename>] [--quiet]
+# ergo upgradedb [--conf <filename>] [--quiet]
+# ergo importdb <database.json> [--conf <filename>] [--quiet]
+# ergo genpasswd [--conf <filename>] [--quiet]
+# ergo mkcerts [--conf <filename>] [--quiet]
+# ergo defaultconfig
+# ergo gentoken
+# ergo run [--conf <filename>] [--quiet] [--smoke]
+# NOTE: --conf defaults to ircd.yaml, NOT ergo.yaml.
+# NOTE: there is no per-subcommand help; every subcommand prints this usage.
+# NOTE: `run --smoke` starts, logs, and exits 0 -> usable as a config check.
+
+# --- ergo mkcerts: writes fullchain.pem + privkey.pem (NOT key.pem) ---
+2026/09/11 10:19:22 making self-signed certificates
+2026/09/11 10:19:22  making cert for :6697 listener
+2026/09/11 10:19:22   Certificate created at fullchain.pem : privkey.pem
+# Names come from the config's tls cert/key paths, resolved RELATIVE to cwd.
+# Resulting permissions: fullchain.pem 0644, privkey.pem 0600.
+
+# --- ergo initdb ---
+2026/09/11 10:19:22 database initialized:  ircd.db
+
+# --- ergo gentoken: a bare base64url token, no prefix, no wrapper, 43 chars ---
+MLu7Ua8dg5DVHe8QE6_U0n0kfHpqxldZ8jtyk90q9xE
+
+# --- ergo genpasswd: bare bcrypt hash on stdout (prompts twice on a tty) ---
+$2a$04$GmwWnOUUMggnnl24citJKOQODKqNQKDqWkxdZo3cG0pYOXSwdYjXK
+
+# --- languages.path ships RELATIVE ("languages"). From a scratch dir EVERY
+#     subcommand dies until it is rewritten to an absolute path. ---
+# Could not load languages
+
+# --- working order is mkcerts -> initdb -> run, because the config names the
+#     cert files relatively and initdb/run fail if mkcerts has not run there. ---
+2026-09-11T10:21:10.867Z : info  : listeners  : now listening on 127.0.0.1:6667, tls=false, proxy=false, tor=false, websocket=false.
+2026-09-11T10:21:10.867Z : info  : listeners  : now listening on [::1]:6667, tls=false, proxy=false, tor=false, websocket=false.
+2026-09-11T10:21:10.867Z : info  : listeners  : now listening on :6697, tls=true, proxy=false, tor=false, websocket=false.
+2026-09-11T10:21:10.867Z : info  : server     : Server running

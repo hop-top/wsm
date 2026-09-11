@@ -1,0 +1,36 @@
+# Delegation: may a NON-FOUNDER set CS AMODE on a channel it does not own?
+# ergo 2.19.1. Channel #deleg, founder botty (+q). bob = AMODE +h (halfop),
+# carol = AMODE +o (chanop). Neither is founder. dave is the target.
+#
+# VERDICT: yes, capped by the ordinary /MODE hierarchy. CS HELP AMODE:
+#   "The permissions hierarchy for adding and removing modes is the same as
+#    in the ordinary /MODE command."
+# A halfop may grant +v persistently but NOT +o. A chanop may grant +o.
+# Persistence therefore survives the granting bot's absence -> the spec's
+# delegation model holds.
+
+# --- setup by founder ---
+@time=2026-09-11T10:22:55.361Z :ChanServ!ChanServ@localhost NOTICE botty :Channel #deleg successfully registered
+@time=2026-09-11T10:22:56.559Z :ChanServ!ChanServ@localhost NOTICE botty :Successfully set persistent mode +h on bob
+@time=2026-09-11T10:22:57.765Z :ChanServ!ChanServ@localhost NOTICE botty :Successfully set persistent mode +o on carol
+
+# --- halfop bob: CS AMODE +v ALLOWED ---
+@time=2026-09-11T10:23:01.432Z :ChanServ!ChanServ@localhost NOTICE bob :Successfully set persistent mode +v on dave
+
+# --- halfop bob: CS AMODE +o REFUSED ---
+@time=2026-09-11T10:23:02.629Z :ChanServ!ChanServ@localhost NOTICE bob :Insufficient privileges
+
+# --- chanop carol: +v was already set, so no-op; +o ALLOWED ---
+@time=2026-09-11T10:23:06.269Z :ChanServ!ChanServ@localhost NOTICE carol :No changes were made
+@time=2026-09-11T10:23:07.476Z :ChanServ!ChanServ@localhost NOTICE carol :Successfully set persistent mode +o on dave
+
+# --- live MODE by the halfop: +v allowed, +o refused with 482 ---
+@account=bob;msgid=8vn4m5uzqtupv5n744p7yagn9e;time=2026-09-11T10:23:08.681Z :bob!~u@gwfgs6htdzzrg.irc MODE #deleg +v carol
+@time=2026-09-11T10:23:09.891Z :ergo.test 482 bob #deleg :You're not a channel operator
+
+# --- resulting persistent state ---
+@time=2026-09-11T10:23:11.099Z :ChanServ!ChanServ@localhost NOTICE botty :Channel #deleg has 4 persistent modes set
+@time=2026-09-11T10:23:11.099Z :ChanServ!ChanServ@localhost NOTICE botty :Account botty receives mode +q
+@time=2026-09-11T10:23:11.099Z :ChanServ!ChanServ@localhost NOTICE botty :Account carol receives mode +o
+@time=2026-09-11T10:23:11.099Z :ChanServ!ChanServ@localhost NOTICE botty :Account dave receives mode +o
+@time=2026-09-11T10:23:11.099Z :ChanServ!ChanServ@localhost NOTICE botty :Account bob receives mode +h
