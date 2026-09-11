@@ -23,6 +23,7 @@ import (
 	"hop.top/wsm/pkg/backend"
 	backendsqlite "hop.top/wsm/pkg/backend/sqlite"
 	"hop.top/wsm/pkg/config"
+	"hop.top/wsm/pkg/irc"
 	"hop.top/wsm/pkg/workspace"
 )
 
@@ -188,9 +189,13 @@ type appContext struct {
 	caps         *workspace.Capabilities
 	bus          bus.Bus
 	policyUnwire func()
+	ircUnwire    func()
 }
 
 func (a *appContext) Close() error {
+	if a.ircUnwire != nil {
+		a.ircUnwire()
+	}
 	if a.policyUnwire != nil {
 		a.policyUnwire()
 	}
@@ -274,7 +279,23 @@ func newAppContext(opts globalOptions) (*appContext, error) {
 		return nil, workspace.NewErrorBackend("wire policy engine", err)
 	}
 
-	return &appContext{cfg: cfg, backend: b, manager: mgr, caps: caps, bus: eventBus, policyUnwire: unwire}, nil
+	app := &appContext{cfg: cfg, backend: b, manager: mgr, caps: caps, bus: eventBus, policyUnwire: unwire}
+
+	// pkg/irc/provision: mirror workspace lifecycle onto IRC when the
+	// operator asked for it (managed mode + auto_provision). Subscribe
+	// decides that itself and returns a no-op unwire otherwise, so a
+	// config failure here must not fail the command: IRC is an optional
+	// feature and an unreadable irc block is not a reason to refuse
+	// `wsm workspace list`.
+	//
+	// Provisioning runs inline on the publishing goroutine, so
+	// `wsm workspace add` can block for up to the daemon readiness
+	// timeout (~15s) while the new workspace's daemon comes up.
+	if ircCfg, ircErr := irc.Load(cfg.ConfigFile); ircErr == nil && ircCfg.Enabled {
+		app.ircUnwire = wireIRCToBus(eventBus, ircCfg, app)
+	}
+
+	return app, nil
 }
 
 // EnvDenyCapabilities names the capabilities to withhold from this
