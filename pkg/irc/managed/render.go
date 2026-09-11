@@ -47,8 +47,14 @@ const OperClass = "wsm"
 // narrow: account registration and channel registration to provision, sajoin
 // and samode to repair a channel it was locked out of, kill to evict a stuck
 // client, rehash to reload after a token rotation, and history for backfill.
+//
+// "ban" is what NS SUSPEND is gated on — not "accreg", which covers the rest
+// of NickServ's administrative surface. Suspension is how a removed member
+// loses chat access, and the command is fire-and-forget: nothing parses its
+// reply, so an oper class without this capability leaves every suspension
+// silently refused and every departed member still able to log in.
 var OperCaps = []string{
-	"accreg", "chanreg", "sajoin", "samode", "kill", "rehash", "history",
+	"accreg", "ban", "chanreg", "sajoin", "samode", "kill", "rehash", "history",
 }
 
 // EnvLanguagesPath overrides where the rendered config points ergo at its

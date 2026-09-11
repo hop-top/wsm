@@ -52,6 +52,61 @@ func TestSARegisterFresh(t *testing.T) {
 	}
 }
 
+// TestSARegisterSendsPassphrase pins the field name the passphrase travels
+// under, which is the one part of this request whose failure is invisible.
+//
+// ergo decodes the passphrase from "passphrase". A body naming it anything
+// else is not an error: the unknown key is dropped, the account is registered
+// and verified with an empty passphrase, and the server answers
+// {"success":true}. Every caller therefore believes it provisioned an account,
+// and the account cannot be logged into by anyone — including wsm's own bot,
+// which makes managed mode fail completely and silently.
+//
+// Asserting only accountName, as the cases above do, cannot see that: the
+// account name is the half that survives a misnamed passphrase.
+func TestSARegisterSendsPassphrase(t *testing.T) {
+	client := apiServer(t, func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]string
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode request: %v", err)
+		}
+		if got := body["passphrase"]; got != "secret" {
+			t.Errorf("passphrase = %q, want the secret under the key ergo decodes; "+
+				"a misnamed field registers an account with an empty passphrase "+
+				"and still reports success", got)
+		}
+		io.WriteString(w, `{"success":true}`)
+	})
+
+	if err := client.SARegister(context.Background(), "alice", "secret"); err != nil {
+		t.Fatalf("SARegister: %v", err)
+	}
+}
+
+// TestPasswdSendsPassphrase pins the same field for the rotation path, which
+// shares ergo's request shape and therefore shares the failure: a rotation
+// that named the field wrongly would set the account's passphrase to empty
+// while reporting that it had been changed.
+func TestPasswdSendsPassphrase(t *testing.T) {
+	client := apiServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.Path; got != "/v1/ns/passwd" {
+			t.Errorf("path = %s", got)
+		}
+		var body map[string]string
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode request: %v", err)
+		}
+		if got := body["passphrase"]; got != "rotated" {
+			t.Errorf("passphrase = %q, want the new secret under the key ergo decodes", got)
+		}
+		io.WriteString(w, `{"success":true}`)
+	})
+
+	if err := client.Passwd(context.Background(), "alice", "rotated"); err != nil {
+		t.Fatalf("Passwd: %v", err)
+	}
+}
+
 // TestSARegisterExistingIsBodyNotStatus is the load-bearing case: ergo reports
 // an already-registered account in the JSON BODY with HTTP 200. A client that
 // decided on the status code would read this as success and hand back a
