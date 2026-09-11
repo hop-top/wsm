@@ -75,10 +75,37 @@ type Event struct {
 }
 
 // MessageData payload for EventInteractionMessage.
+//
+// Role, Content and Format are the original tri-field payload every existing
+// producer writes. The remaining fields are additive and carry the provenance
+// of a message captured from a chat transport (currently IRC); they are all
+// omitempty, so an event written by any other producer serialises exactly as
+// it did before they existed.
 type MessageData struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
 	Format  string `json:"format,omitempty"`
+
+	// Channel is the transport channel the message was seen in.
+	Channel string `json:"channel,omitempty"`
+	// Nick is the sender's nick on the transport. For a bridge-relayed
+	// message this is the far-side nick the bridge claimed, which is not
+	// authenticated: see Attribution.
+	Nick string `json:"nick,omitempty"`
+	// MsgID is the transport's own message id, used to dedupe a backfill
+	// against what is already recorded. When the server does not supply one
+	// it is a content hash prefixed "h:" rather than empty, so dedupe has a
+	// key either way.
+	MsgID string `json:"msgid,omitempty"`
+	// Attribution records how strongly AgentID is believed, because the
+	// event log keeps messages whose sender could not be resolved:
+	//
+	//	account  authenticated account tag; strongest
+	//	relay    decoded from a bridge relay; the relaying bot is
+	//	         authenticated, the far-side nick and content are its claims
+	//	nick     matched on nick alone; a nick is not owned, so this is weak
+	//	none     unresolved; AgentID is empty
+	Attribution string `json:"attribution,omitempty"`
 }
 
 // ToolCallData payload for tool-call events.
