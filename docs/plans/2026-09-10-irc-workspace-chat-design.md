@@ -1,6 +1,9 @@
 # Workspace IRC — provider-agnostic chat per workspace, ergo native
 
-**Status**: design v3, awaiting review
+**Status**: superseded — see [01i-irc-implementation.md](01i-irc-implementation.md) for the
+implementation record and [../wsm/api-cli.md](../wsm/api-cli.md) for the user-facing command
+reference. Retained unchanged as the pre-implementation design record; shipped behaviour
+diverges from it in places.
 **Author**: $USER
 **Date**: 2026-09-10
 **Diagrams**: [components](2026-09-10-irc-workspace-chat-design/components-v2.mmd),
