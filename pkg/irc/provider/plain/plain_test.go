@@ -821,3 +821,51 @@ func contains(lines []string, want string) bool {
 	}
 	return false
 }
+
+// TestApplyRolesPresentButUnprivilegedIsNotOpped pins the empty role for a bot
+// that IS in NAMES but carries no prefix.
+//
+// TestApplyRolesBotAbsentIsNotOpped covers the bot missing from the reply
+// entirely; this is the other source of an empty role, and it is the one a
+// host revoke produces — the bot is still in the channel, holding nothing.
+// Both must refuse, because an empty role is the strictest ceiling rather than
+// the absence of one.
+//
+// Voice is asserted rather than op: it is the lowest rung wsm can grant, so a
+// gate that admits it admits everything.
+func TestApplyRolesPresentButUnprivilegedIsNotOpped(t *testing.T) {
+	f, providers := newProvider(t, map[string]string{
+		irc.DefaultBotAccount: "", // present, no prefix: holds no role
+		"alice":               "",
+	})
+
+	err := providers.Roles.ApplyRoles(context.Background(), "#ops",
+		[]provider.ModeChange{{Account: "alice", Role: irc.RoleVoice}}, nil)
+	if !errors.Is(err, provider.ErrNotOpped) {
+		t.Fatalf("err = %v, want ErrNotOpped for a bot holding no role", err)
+	}
+
+	for _, line := range f.SentLines() {
+		if strings.HasPrefix(line, "MODE") {
+			t.Fatalf("sent %q; a bot holding no role must issue no modes", line)
+		}
+	}
+}
+
+// TestMyRoleUnprivilegedBotIsEmpty pins the value the ceiling is read from: a
+// bot present with no prefix reports an empty role, not an error and not a
+// default rung.
+func TestMyRoleUnprivilegedBotIsEmpty(t *testing.T) {
+	_, providers := newProvider(t, map[string]string{
+		irc.DefaultBotAccount: "",
+		"carol":               "@",
+	})
+
+	got, err := providers.Roles.MyRole(context.Background(), "#ops")
+	if err != nil {
+		t.Fatalf("MyRole: %v", err)
+	}
+	if got != "" {
+		t.Errorf("role = %q, want empty for a bot holding no prefix", got)
+	}
+}

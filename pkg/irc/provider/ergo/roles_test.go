@@ -486,3 +486,62 @@ func TestMyRoleIsCaseInsensitive(t *testing.T) {
 		t.Errorf("role = %q, want op", got)
 	}
 }
+
+// TestApplyRolesRefusesEveryGrantWithNoRole pins the empty ceiling in the
+// live-MODE fallback.
+//
+// An empty MyRole means the bot holds no privilege in this channel at all, so
+// it is the STRICTEST ceiling rather than the absence of one. It is reachable
+// on the default wiring — the registry factory leaves the nick empty, so the
+// bot matches nobody in NAMES — and a host that revoked the guest's role
+// produces the same value.
+//
+// The inversion this guards against is a ceiling check short-circuited on
+// empty (`mine != "" && !AtMost(mine)`), which disables the cap precisely when
+// the bot can grant nothing, and fires modes the server is certain to refuse.
+// Voice is asserted rather than op: it is the LOWEST rung, so a ceiling that
+// admits it admits everything.
+func TestApplyRolesRefusesEveryGrantWithNoRole(t *testing.T) {
+	transport := bottest.New()
+	// The bot is present but carries no prefix: it holds no role here.
+	transport.SetNames(map[string]string{"botty": "", "carol": "@"})
+	transport.SetScript(map[string][]ircmsg.Message{
+		"CS AMODE": {notice("Insufficient privileges")},
+	})
+
+	roles := &Roles{transport: transport, nick: "botty"}
+
+	add := []provider.ModeChange{{Account: "dave", Role: irc.RoleVoice}}
+	err := roles.ApplyRoles(context.Background(), "#deleg", add, nil)
+	if !errors.Is(err, provider.ErrPrivilege) {
+		t.Fatalf("ApplyRoles with no role = %v, want ErrPrivilege", err)
+	}
+	if sentContains(transport.SentLines(), "MODE #deleg") {
+		t.Errorf("a bot holding no role must attempt no live MODE: sent = %q",
+			transport.SentLines())
+	}
+}
+
+// TestApplyRolesNoRoleRefusesEvenTheLowestRung is the same guard stated
+// against an absent bot, which is the other way an empty role arises: the
+// registry factory builds Roles with no nick, so MyRole matches nobody.
+func TestApplyRolesNoRoleRefusesEvenTheLowestRung(t *testing.T) {
+	transport := bottest.New()
+	transport.SetNames(map[string]string{"carol": "@"})
+	transport.SetScript(map[string][]ircmsg.Message{
+		"CS AMODE": {notice("Insufficient privileges")},
+	})
+
+	// No nick: exactly what provider.Open("ergo", ...) yields.
+	roles := &Roles{transport: transport}
+
+	add := []provider.ModeChange{{Account: "dave", Role: irc.RoleVoice}}
+	err := roles.ApplyRoles(context.Background(), "#deleg", add, nil)
+	if !errors.Is(err, provider.ErrPrivilege) {
+		t.Fatalf("ApplyRoles with no nick = %v, want ErrPrivilege", err)
+	}
+	if sentContains(transport.SentLines(), "MODE #deleg") {
+		t.Errorf("a bot that cannot find itself must attempt no live MODE: sent = %q",
+			transport.SentLines())
+	}
+}

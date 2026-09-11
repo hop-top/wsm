@@ -1239,3 +1239,65 @@ func TestReportJSONSerialisable(t *testing.T) {
 			out.Channels[0].Name, rep.Channels[0].Name)
 	}
 }
+
+// TestReconcileBorrowedCapsEverythingWithNoRole pins the empty ceiling that
+// TestReconcileBorrowedCapsAtMyRole does not reach.
+//
+// That test exercises a halfop ceiling, so it stays green even when the cap is
+// short-circuited on empty — which is exactly how the original defect survived
+// a test named for the behaviour it broke. This one sets MyRole to the zero
+// value, which is what the default ergo wiring reports (the registry factory
+// never sets a nick) and what a host revoke leaves behind.
+//
+// Empty is the STRICTEST ceiling: the bot holds no privilege here, so every
+// grant is capped and nothing is sent. Reading it as "no ceiling" would invert
+// the rule precisely where it matters most.
+func TestReconcileBorrowedCapsEverythingWithNoRole(t *testing.T) {
+	const channel = "#a-dev"
+
+	roles := &fakeRoles{
+		caps: allCaps,
+		// No entry for the channel: MyRole reports the zero value.
+		myRole:    map[string]irc.Role{},
+		ensureErr: map[string]error{channel: provider.ErrForeignChannel},
+	}
+
+	d := reconcileDeps(t, &fakeAccounts{caps: allCaps}, roles,
+		[]model.Member{principal("alice"), delegate("bot-a", "alice")})
+	d.Cfg = baseConfig(irc.ChannelTemplate{
+		Name: "#ignored",
+		Borrowed: &irc.Borrowed{
+			Host: "ws-a", Channel: channel, Members: irc.MembersAll,
+		},
+	})
+
+	rep, err := Reconcile(context.Background(), d)
+	if err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+
+	if len(rep.Channels) != 1 {
+		t.Fatalf("channels = %d, want 1", len(rep.Channels))
+	}
+	cr := rep.Channels[0]
+
+	if cr.MyRole != "" {
+		t.Errorf("my role = %q, want empty", cr.MyRole)
+	}
+
+	// Both accounts are capped: alice wants op and the delegate wants voice,
+	// and a bot holding nothing may grant neither. Voice is the load-bearing
+	// half — it is the lowest rung, so a ceiling that lets it through is no
+	// ceiling at all.
+	if len(cr.Capped) != 2 {
+		t.Errorf("capped = %v, want both accounts capped", cr.Capped)
+	}
+	for _, account := range []string{"alice-acct", "bot-a-acct"} {
+		if roles.touched()[account] {
+			t.Errorf("a grant was attempted for %s while the bot held no role", account)
+		}
+	}
+	if cr.Added != 0 {
+		t.Errorf("added = %d, want 0 grants from a bot holding no role", cr.Added)
+	}
+}
