@@ -23,6 +23,7 @@ import (
 	"hop.top/wsm/pkg/irc/managed"
 	"hop.top/wsm/pkg/irc/provider"
 	"hop.top/wsm/pkg/irc/provider/ergo"
+	"hop.top/wsm/pkg/irc/provision"
 	"hop.top/wsm/pkg/irc/share"
 	"hop.top/wsm/pkg/model"
 	"hop.top/wsm/pkg/workspace"
@@ -1448,6 +1449,16 @@ type ircStatusDoc struct {
 	Channels    []ircStatusChannel `json:"channels,omitempty"`
 	SharedWith  []string           `json:"shared_with,omitempty"`
 	Host        string             `json:"host_workspace,omitempty"`
+
+	// Discovered lists the creator-namespace channels wsm has adopted.
+	Discovered []provision.DiscoveredChannel `json:"discovered,omitempty"`
+	// Peer lists channels founded by another wsm bot on this server.
+	Peer []provision.PeerChannel `json:"peer,omitempty"`
+	// Unmanaged lists registrations wsm does not own, per the configured
+	// unmanaged_channels policy.
+	Unmanaged []provision.UnmanagedChannel `json:"unmanaged,omitempty"`
+	// LastDiscover is the most recent discovery pass, embedded verbatim.
+	LastDiscover *provision.DiscoverReport `json:"last_discover,omitempty"`
 }
 
 // ircStatusChannel is one channel's live state.
@@ -1484,6 +1495,16 @@ func runIRCStatus(ctx context.Context, app *appContext, opts *globalOptions, ref
 		SharedWith:  profile.SharedWith,
 		Host:        profile.HostWorkspace,
 		Warnings:    ircStatusWarnings(rt.cfg, status),
+
+		// Discovery results come from the daemon's document rather than
+		// from a live pass, and are reported whether or not a daemon is
+		// running now: the last status.json still records what wsm
+		// adopted, and dropping it on a stopped workspace would report
+		// no adopted channels where there are several.
+		Discovered:   status.Discovered,
+		Peer:         status.Peer,
+		Unmanaged:    status.Unmanaged,
+		LastDiscover: status.LastDiscover,
 	}
 	if profile.Ports.Valid() {
 		ports := profile.Ports
@@ -1640,6 +1661,37 @@ func renderIRCStatusTable(doc ircStatusDoc) error {
 			Field: "CHANNEL",
 			Value: fmt.Sprintf("%s (%d)", ch.Name, ch.Members),
 		})
+	}
+	// Adopted, peer and unmanaged channels are listed after the owned
+	// ones and kept distinct from them: they are the channels wsm
+	// captures but does not author, and folding them into CHANNEL would
+	// read as "wsm maintains these", which is exactly what it does not do.
+	for _, ch := range doc.Discovered {
+		value := fmt.Sprintf("%s (%s)", ch.Name, ch.Owner)
+		if !ch.Joined {
+			reason := ch.Reason
+			if reason == "" {
+				reason = "not joined"
+			}
+			value += " — " + reason
+		}
+		rows = append(rows, ircStatusRow{Field: "DISCOVERED", Value: value})
+	}
+	for _, ch := range doc.Peer {
+		rows = append(rows, ircStatusRow{
+			Field: "PEER",
+			Value: fmt.Sprintf("%s (%s)", ch.Name, ch.Founder),
+		})
+	}
+	for _, ch := range doc.Unmanaged {
+		value := ch.Name
+		if ch.Founder != "" {
+			value += fmt.Sprintf(" (%s)", ch.Founder)
+		}
+		if ch.Purged {
+			value += " — purged"
+		}
+		rows = append(rows, ircStatusRow{Field: "UNMANAGED", Value: value})
 	}
 	if err := output.Render(os.Stdout, output.Table, rows); err != nil {
 		return err

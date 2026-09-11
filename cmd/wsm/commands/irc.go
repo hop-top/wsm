@@ -25,6 +25,14 @@ the event log.`,
 		RunE: groupOnlyRunE,
 	}
 	cli.SetTopLevelVerb(cmd)
+	// `account` and `channel` group their own leaves, which puts those
+	// leaves at depth 3. kit's signature validator walks every ancestor
+	// between such a leaf and the root and demands kit/hierarchical on
+	// each one — it exempts a depth-1 ancestor only when kit itself
+	// reserved the name, which `irc` is not. So the annotation belongs
+	// here as well as on the two sub-groups; without it kit refuses the
+	// whole tree at startup rather than just the new verbs.
+	cli.SetHierarchical(cmd)
 	cmd.AddCommand(
 		newIRCEnableCmd(opts),
 		newIRCDisableCmd(opts),
@@ -33,6 +41,11 @@ the event log.`,
 		newIRCRestartCmd(opts),
 		newIRCStatusCmd(opts),
 		newIRCSyncCmd(opts),
+		newIRCAccountCmd(opts),
+		newIRCCredsCmd(opts),
+		newIRCURLCmd(opts),
+		newIRCChannelCmd(opts),
+		newIRCBackfillCmd(opts),
 		newIRCDaemonCmd(opts),
 	)
 	return cmd
