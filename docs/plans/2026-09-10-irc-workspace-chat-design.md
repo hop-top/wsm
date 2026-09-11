@@ -393,6 +393,28 @@ provisioned by A's operator (`wsm irc account create A --raw <name>`). A's archi
 refuse while `shared_with` is non-empty unless
 `--force`, and warn B via its status (`host_state`).
 
+**What the guest's config holds, and what it never holds.** The override written at attach
+carries `mode: external`, `provider: ergo`, A's loopback plaintext listener
+(`server.host`/`server.port`), A's loopback API (`server.ergo_api`), the guest's
+`channel_prefix`, and B's own `bot.account`. It carries **no token**. A's HTTP API token is
+read at runtime out of A's own `api.token` (`ReadAPIToken`'s host branch), never copied into
+B's config, secrets or profile. Same machine, same user, same `$DataDir` is what makes that
+read legitimate — B can already read A's data dir, so pointing at the file grants nothing new
+— and it is what makes A rotating the token take effect at once and purging A revoke every
+guest. Cross-machine sharing is therefore not this path at all: **A's token is never handed
+out**, and an off-machine B authenticates as an ordinary account A's operator provisioned for
+it.
+
+**Detach order is load-bearing.** `wsm irc disable B` runs, in this order: B's final reconcile
+with nothing desired on its borrowed channels (while B's bot still holds the privilege A
+delegated, which is the only time it can strip its own grants) → A's delegate entries naming B
+removed → B dropped from A's `shared_with` and saved (before the signal, or A's reconcile
+would read a profile still listing B and suspend nothing) → A signalled (its reconcile
+suspends B's bot and runs the revoke sweep) → B's `host_workspace` cleared last, since the
+first step needs it. A stopped A at that point leaves B recorded `pending_detach`, reported as
+exit 1 with the hint to rerun once A is up; an A purged with `--force` leaves B reporting
+`host_state: gone`, and B's own disable still clears its side.
+
 **Guests (host-owned allow list)**: on a host channel template entry,
 `guests: [{profile: <id>, role: voice|op}]`. Host reconcile resolves the profile to an
 account on its server (resolver chain) and applies a persistent role; `+v` bypasses `+i`.

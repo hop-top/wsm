@@ -559,17 +559,20 @@ func runIRCAttach(
 		))
 	}
 
+	// Checked against the reference before the host is resolved: a
+	// workspace naming itself is a usage mistake knowable from the two
+	// arguments alone, and resolving first would diagnose it as
+	// whatever else happens to be wrong with its own IRC state.
+	if sharesRef(rt.ws, flags.SharedWith) {
+		return selfHostError()
+	}
+
 	host, err := resolveHostRuntime(ctx, app, flags.SharedWith)
 	if err != nil {
 		return err
 	}
 	if host.ws.ID == rt.ws.ID {
-		return &output.Error{
-			Code:         output.CodeUsage,
-			Message:      "--shared-with names this same workspace",
-			SuggestedFix: "name the workspace whose server should host this one",
-			ExitCode:     2,
-		}
+		return selfHostError()
 	}
 
 	if done, derr := previewDryRun(cmd,
@@ -645,6 +648,31 @@ func attachError(err error, guestName, hostName string) error {
 		))
 	default:
 		return workspace.NewErrorPrerequisite(err.Error())
+	}
+}
+
+// sharesRef reports whether ref names ws itself, by id or by name.
+//
+// Compared before the host is resolved, so `--shared-with` naming the
+// workspace being enabled is diagnosed as the usage mistake it is
+// rather than as a fault in that workspace's own IRC state. The name
+// comparison is case-insensitive because workspace references resolve
+// that way everywhere else.
+func sharesRef(ws *model.Workspace, ref string) bool {
+	ref = strings.TrimSpace(ref)
+	if ref == "" || ws == nil {
+		return false
+	}
+	return ref == ws.ID || strings.EqualFold(ref, ws.Name)
+}
+
+// selfHostError is the refusal for a workspace named as its own host.
+func selfHostError() error {
+	return &output.Error{
+		Code:         output.CodeUsage,
+		Message:      "--shared-with names this same workspace",
+		SuggestedFix: "name the workspace whose server should host this one",
+		ExitCode:     2,
 	}
 }
 
