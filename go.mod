@@ -11,6 +11,7 @@ require (
 	github.com/mattn/go-sqlite3 v1.14.24
 	github.com/oklog/ulid/v2 v2.1.1
 	github.com/spf13/cobra v1.10.2
+	golang.org/x/crypto v0.50.0
 	gopkg.in/yaml.v3 v3.0.1
 	hop.top/kit v0.4.0-alpha.6
 )
@@ -76,7 +77,6 @@ require (
 	github.com/wk8/go-ordered-map/v2 v2.1.8 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
-	golang.org/x/crypto v0.50.0 // indirect
 	golang.org/x/exp v0.0.0-20260410095643-746e56fc9e2f // indirect
 	golang.org/x/mod v0.35.0 // indirect
 	golang.org/x/net v0.53.0 // indirect
