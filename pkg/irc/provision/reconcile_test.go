@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"hop.top/wsm/pkg/irc"
@@ -961,8 +962,26 @@ func TestReconcileBorrowedUnregisteredHostChannel(t *testing.T) {
 	if cr.Registered {
 		t.Error("an unregistered host channel must not report as registered")
 	}
+	if cr.Foreign {
+		t.Error("an unregistered channel is not a foreign registration")
+	}
 	if cr.Err != "host channel not registered" {
 		t.Errorf("err = %q, want %q", cr.Err, "host channel not registered")
+	}
+
+	// The operator has to be able to see this in status.json without reading
+	// the per-channel error: an unjoined borrowed channel is a degraded
+	// reconcile, not a silent no-op. This is also what separates the guard
+	// from the generic error path, which reports nothing here.
+	var degraded bool
+	for _, reason := range rep.Degraded {
+		if strings.Contains(reason, channel) &&
+			strings.Contains(reason, "host channel not registered") {
+			degraded = true
+		}
+	}
+	if !degraded {
+		t.Errorf("the guard must surface as degraded, got %v", rep.Degraded)
 	}
 
 	// Nothing may be granted in a channel wsm refused to join. Applying a
@@ -973,6 +992,15 @@ func TestReconcileBorrowedUnregisteredHostChannel(t *testing.T) {
 	if len(d.Profile.AuthoredRoles[channel]) != 0 {
 		t.Errorf("roles were authored in an unjoined channel: %+v",
 			d.Profile.AuthoredRoles[channel])
+	}
+
+	// The bot must never have asked to have the channel registered on its
+	// behalf: the ensure call carries Borrowed, which is what tells every
+	// provider to keep its hands off the registration.
+	for _, ch := range roles.ensured {
+		if ch.Name == channel && !ch.Borrowed {
+			t.Error("an unregistered host channel was ensured without Borrowed")
+		}
 	}
 }
 
