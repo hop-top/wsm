@@ -35,6 +35,7 @@ same CLI in both modes.
 | Backfill | `CHATHISTORY` when the server offers it; otherwise reported unsupported |
 | Export | none from ergo (verified); wsm is system of record |
 | Sharing | a managed server may host other workspaces: `--shared-with`, guests, halfop-capped delegation |
+| Bot channels | three access levels (fixed, owner-managed, self-service); discovery via `DirectoryProvider` |
 | Exit codes | story 015 (2 usage, 3 not found, 4 conflict, 5 backend, 6 forbidden) + new 7 prerequisite |
 
 ## Non-goals (v1)
@@ -83,7 +84,7 @@ subcommand, one CLI group. See components diagram.
 | Package | Responsibility | Mode |
 |---------|----------------|------|
 | `pkg/irc` | `Config`, `Profile`, paths, account/channel name sanitizing, ports, backoff | both |
-| `pkg/irc/provider` | `AccountProvider`, `RoleProvider`, `Caps`, `ErrUnsupported`, registry, `AccountResolver` | both |
+| `pkg/irc/provider` | `AccountProvider`, `RoleProvider`, `DirectoryProvider`, `Caps`, `ErrUnsupported`, registry, resolvers | both |
 | `pkg/irc/provider/ergo` | ergo adapter: HTTP client for accounts, `CS` commands for roles | both |
 | `pkg/irc/provider/plain` | services-less adapter: no accounts, live `MODE +o/+v`, `NAMES` as truth | external |
 | `pkg/irc/provider/conformance` | one test set run against every provider behind an env var | test |
@@ -106,6 +107,11 @@ const (
     CapSuspendAccount
     CapPersistentRoles   // roles survive bot absence (services)
     CapRegisterChannel
+    CapListChannels      // directory: enumerate channels
+    CapChannelFounder    // directory: who registered a channel
+    CapJoinHidden        // directory: join despite +i/+k by privilege
+    CapPurgeChannel      // directory: drop a registration and empty the channel
+    CapRelayIdentity     // directory: decode bridge-relayed messages
 )
 
 type AccountProvider interface {
@@ -122,12 +128,26 @@ type RoleProvider interface {
     ApplyRoles(ctx, channel string, add, remove []ModeChange) error
 }
 
+type DirectoryProvider interface {
+    Caps() Caps
+    ListChannels(ctx) ([]ChannelInfo, error)              // Name, Topic, Registered, Founder, Users
+    Founder(ctx, channel string) (string, error)
+    JoinHidden(ctx, channel string) error
+    Purge(ctx, channel string) error
+    RelayedIdentity(msg ircmsg.Message) (RelayIdentity, bool) // Nick, Service, Bot
+}
+
+type Providers struct{ Accounts AccountProvider; Roles RoleProvider; Directory DirectoryProvider }
+
 var ErrUnsupported = errors.New("irc: operation not supported by provider")
 ```
 
 Every method on a provider that lacks the capability returns `ErrUnsupported`; reconcile
 treats that as "skip and report", never as failure. Registry: `provider.Open(name, deps)` for
-`ergo` and `plain`; unknown name → config validation error. No autodetection.
+`ergo` and `plain`; unknown name → config validation error. No autodetection. Mapping of
+the directory capabilities: ergo lists via `/v1/list` or `LIST`, founder via `CS INFO`,
+hidden join via `SAJOIN` (oper), purge via `CS PURGE`, relay identity from ergo's `relaymsg`
+nick form and tag; plain lists via `LIST` only and reports everything else unsupported.
 
 `AccountResolver` answers "which account does member X use on server S":
 
@@ -217,6 +237,7 @@ irc:
     - name: "#{{ws}}-ops"
       members: principals
       modes: "+ntRi"
+  unmanaged_channels: report   # ignore | report | purge — registered channels wsm does not own
 ```
 
 Validation: `mode: managed` ⇒ `provider: ergo`; `mode: external` ⇒ `server.host` set;
@@ -393,6 +414,39 @@ reconcile suspends B's bot.
 <profile>[:role]` and `--borrowed <host-ws>:<#c>`; `wsm irc account create <ws> --raw <name>`
 provisions an arbitrary account for cross-machine guests.
 
+## Bots and channel access: three levels
+
+Bots (a Slack bridge, a CI notifier, any non-agent client) are members like agents: an aps
+profile listed in `members.yaml`, usually as a delegate. What they may do with channels comes
+in three levels, each stricter about who decides.
+
+| Level | Who decides | Mechanism | Tracked by wsm |
+|-------|-------------|-----------|----------------|
+| 1 Fixed membership | workspace config | template `members: all\|principals\|list`, `member_list`, or `guests:` on specific channels | yes: roles authored, capture on |
+| 2 Owner-managed via wsm | whoever may run `wsm irc channel` for the workspace | `channel add #c --owner <profile>`: wsm bot founder, owner `+o`, owner voices/invites agents | yes |
+| 3 Self-service on the server | the member flagged `channel_creator` | bot joins and registers `#<ws>-<label>-*` itself; wsm discovers, adopts, captures; roles inside are the bot's | discovery only |
+
+**Level 2 access control**: creating a channel through the CLI needs the `irc.enable`
+capability on the manager and write access to the workspace's config. There is no per-member
+"may create via CLI" right. Anyone who can already edit the workspace can add channels; the
+CLI is not a self-service surface for bots, level 3 is.
+
+**Level 3 mechanics** (`DirectoryProvider`): the daemon lists channels every 60 s and on
+every reconcile. A registered channel whose name matches a creator's namespace and whose
+founder is that creator's account is adopted: the wsm bot joins (by privilege when `+i`),
+records it under `discovered` with its owner, and captures messages. Roles inside are
+foreign and never diffed. When the founder changes or the registration disappears, wsm
+releases it. Registered channels matching no template and no namespace are unmanaged and
+handled per `unmanaged_channels`: ignored, reported in status, or purged after a ten-minute
+grace. That policy is how "permission to create" is enforced: ergo lets any account register,
+wsm decides which registrations survive. On external servers only channels under the
+workspace's `channel_prefix` are ever classified.
+
+**Relayed messages**: a bridge with op status may use ergo's `relaymsg` to speak as
+`alice/slack`. The directory provider decodes that; capture records `Attribution: relay`,
+`AgentID` = the bridge's profile, `Nick` = the relayed nick. Servers without the capability
+leave such messages attributed by nick.
+
 ## Lifecycle mapping
 
 Hook subscribes to `wsm.runtime.workspace.#` in the CLI process when `auto_provision` is on
@@ -421,7 +475,8 @@ wsm irc sync <ws>                                                  SIGHUP daemon
 wsm irc account create|rotate|suspend <ws> <member>          via provider; unsupported → 7
 wsm irc creds <ws> <member> [--env]                                what wsm holds / resolved account
 wsm irc url <ws> [--web]                                           irc://… | wss://…
-wsm irc channel add|rm|list <ws> [<#c>] [--members all|principals] [--purge]
+wsm irc channel add|rm|list <ws> [<#c>] [--members all|principals|list] [--owner <p>] [--purge]
+wsm irc channel adopt|release|purge <ws> <#c>                      discovery control
 wsm irc backfill <ws> [--channel <#c>]
 wsm irc daemon <ws>                                                hidden; foreground
 ```
@@ -510,6 +565,7 @@ must match `go.mod` before the ergo job is added.
 | 052 | IRC remote access over WebSocket/TLS | system-integrator |
 | 053 | IRC provider adapter contract | integrator |
 | 054 | IRC shared servers: guests and delegation | operations-manager |
+| 055 | IRC bot channels: access levels, discovery, relay | operations-manager, integrator |
 
 Story 015 gains exit code 7. Plan `docs/plans/01i-irc-implementation.md` sequences them.
 
