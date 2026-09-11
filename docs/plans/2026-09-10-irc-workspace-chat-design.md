@@ -436,16 +436,22 @@ every reconcile. A registered channel whose name matches a creator's namespace a
 founder is that creator's account is adopted: the wsm bot joins (by privilege when `+i`),
 records it under `discovered` with its owner, and captures messages. Roles inside are
 foreign and never diffed. When the founder changes or the registration disappears, wsm
-releases it. Registered channels matching no template and no namespace are unmanaged and
-handled per `unmanaged_channels`: ignored, reported in status, or purged after a ten-minute
-grace. That policy is how "permission to create" is enforced: ergo lets any account register,
-wsm decides which registrations survive. On external servers only channels under the
-workspace's `channel_prefix` are ever classified.
+releases it. Channels founded by another workspace's bot on the same server (guests of a
+shared host, any `wsm-*` account) are peers: listed, never touched. Registered channels
+matching no template, no namespace and no peer are unmanaged and handled per
+`unmanaged_channels`: ignored, reported in status, or purged after a ten-minute grace. That
+policy is how "permission to create" is enforced: ergo lets any account register, wsm decides
+which registrations survive. On external servers only channels under the workspace's
+`channel_prefix` are ever classified; a purge policy without a prefix is a config error.
+`channel adopt` and `release` are requests the daemon executes, so only the daemon's bot ever
+joins or parts.
 
 **Relayed messages**: a bridge with op status may use ergo's `relaymsg` to speak as
-`alice/slack`. The directory provider decodes that; capture records `Attribution: relay`,
-`AgentID` = the bridge's profile, `Nick` = the relayed nick. Servers without the capability
-leave such messages attributed by nick.
+`alice/slack`. The directory provider decodes that from the server-set tag only, never from
+the nick shape, which a client could forge. Capture records `Attribution: relay`, `AgentID` =
+the bridge's profile, `Nick` = the relayed nick; the relayed nick and content are the bridge's
+claim, not verified identity. Servers without the capability leave such messages attributed
+by nick.
 
 ## Lifecycle mapping
 
@@ -475,7 +481,8 @@ wsm irc sync <ws>                                                  SIGHUP daemon
 wsm irc account create|rotate|suspend <ws> <member>          via provider; unsupported → 7
 wsm irc creds <ws> <member> [--env]                                what wsm holds / resolved account
 wsm irc url <ws> [--web]                                           irc://… | wss://…
-wsm irc channel add|rm|list <ws> [<#c>] [--members all|principals|list] [--owner <p>] [--purge]
+wsm irc channel add|rm|list <ws> [<#c>] [--members all|principals|list] [--member-list <p,..>]
+                                   [--owner <p>] [--guest <p>[:role]] [--purge] [--force]
 wsm irc channel adopt|release|purge <ws> <#c>                      discovery control
 wsm irc backfill <ws> [--channel <#c>]
 wsm irc daemon <ws>                                                hidden; foreground
@@ -494,6 +501,8 @@ busy, TLS missing, external server unreachable, provider lacks capability).
  "server":{"id":"wsm://…/irc","host":"127.0.0.1","port":6700,"tls":false},
  "caps":{"negotiated":["sasl","message-tags"],"provider":["create_account","persistent_roles"]},
  "channels":[{"name":"#ws","registered":true,"members":4}],
+ "discovered":[{"name":"#ws-bridge-x","owner":"bridge","joined":true}],
+ "peer":[{"name":"#b-dev","founder":"wsm-b"}],"unmanaged":[],
  "accounts":{"managed":5,"unresolved":[]},
  "cursor":{"#ws":"2026-09-10T12:00:00Z"},"ergo_version":"2.19.1",
  "last_reconcile":{"accounts":{"created":0,"existing":5,"suspended":0,"failed":[]},
