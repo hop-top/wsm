@@ -637,12 +637,14 @@ Per CLI conventions §8.1:
 | 2    | Usage error (bad flags/args)                                      |
 | 3    | Not found (workspace/space/snapshot)                              |
 | 4    | Conflict (already exists, in use) **or policy denied** — see [policies.md](policies.md) |
-| 5    | Unauthorized / forbidden (capability)                             |
-| 64   | Backend / persistence failure (wsm)                               |
+| 5    | Backend / persistence failure; also kit's `--confirm` refusal    |
+| 6    | Forbidden (capability gate denied the operation)                  |
+| 7    | Prerequisite not satisfied (missing binary, busy port, unreachable server) |
 
-Codes 64+ are tool-specific. wsm error helpers
-(`workspace.NewErrorUsage`, `NewErrorNotFound`, `NewErrorBackend`,
-`NewErrorForbidden`) map to these codes via `kit/cli` error rendering.
+wsm error helpers (`workspace.NewErrorUsage`, `NewErrorNotFound`,
+`NewErrorBackend`, `NewErrorForbidden`, `NewErrorPrerequisite`) map to
+these codes via `kit/cli` error rendering. Exit `7` messages state the
+corrective action.
 
 Policy denials produced by the runtime policy engine are routed
 through `*output.Error` with `CodeConflict` (exit 4); message is

@@ -286,8 +286,9 @@ From `cmd/wsm/main.go`:
 | 2 | Usage error: unknown command or flag, invalid `--format`, missing argument |
 | 3 | Not found: workspace, space, snapshot |
 | 4 | Conflict: already exists, or a policy denied the change |
-| 5 | Unauthorized or forbidden, including a destructive command refused by `--confirm` |
-| 64 | Backend or persistence failure |
+| 5 | Backend or persistence failure; also a destructive command refused by `--confirm` |
+| 6 | Forbidden: blocked by a capability gate |
+| 7 | Prerequisite not satisfied: missing binary, busy port, unreachable server |
 | 130 | Interrupted |
 
 ## Agent usage

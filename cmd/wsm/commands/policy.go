@@ -129,13 +129,19 @@ func resetPolicyForTest() {
 // *output.Error envelope so kit's RunE wrapper surfaces the right
 // Code + ExitCode (otherwise everything becomes CodeGeneric exit 1).
 //
-// Maps:
-//   - policy denial   → CONFLICT  (exit 4)
-//   - ErrorKindNotFound → NOT_FOUND (exit 3)
-//   - ErrorKindConflict → CONFLICT  (exit 4)
-//   - ErrorKindForbidden → UNAUTHORIZED (exit 5)
-//   - ErrorKindUsage  → USAGE   (exit 2)
-//   - ErrorKindBackend → tool-specific 64
+// Maps (per docs/stories/015-exit-code-contract.md):
+//   - policy denial        → CONFLICT     (exit 4)
+//   - ErrorKindUsage       → USAGE        (exit 2)
+//   - ErrorKindNotFound    → NOT_FOUND    (exit 3)
+//   - ErrorKindConflict    → CONFLICT     (exit 4)
+//   - ErrorKindBackend     → GENERIC      (exit 5, scenario 5)
+//   - ErrorKindForbidden   → UNAUTHORIZED (exit 6, scenario 7)
+//   - ErrorKindPrerequisite → GENERIC     (exit 7, scenario 8)
+//
+// Exit 5 is the backend/persistence slot and 6 the capability-denial
+// slot. kit's own confirm gate emits UNAUTHORIZED exit 5 envelopes
+// directly; those short-circuit this function via the embedded
+// ExitCode and are unaffected.
 //
 // The translation lives at the cmd layer because pkg/workspace cannot
 // import hop.top/kit/go/console/output without dragging charmbracelet
@@ -171,7 +177,7 @@ func mapPolicyDenialError(err error) error {
 		return &output.Error{
 			Code:     output.CodeUnauthorized,
 			Message:  err.Error(),
-			ExitCode: 5,
+			ExitCode: 6,
 		}
 	case workspace.IsKind(err, workspace.ErrorKindUsage):
 		return &output.Error{
@@ -183,7 +189,15 @@ func mapPolicyDenialError(err error) error {
 		return &output.Error{
 			Code:     output.CodeGeneric,
 			Message:  err.Error(),
-			ExitCode: 64,
+			ExitCode: 5,
+		}
+	case workspace.IsKind(err, workspace.ErrorKindPrerequisite):
+		// Message carries the corrective action; SuggestedFix would be
+		// dropped by the framework-level renderer (see root.go).
+		return &output.Error{
+			Code:     output.CodeGeneric,
+			Message:  err.Error(),
+			ExitCode: 7,
 		}
 	}
 	return err

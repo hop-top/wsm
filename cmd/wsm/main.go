@@ -41,17 +41,21 @@ func main() {
 	}
 }
 
-// exitCodeForError maps a wsm error to a CLI exit code per CLI conv §8.1:
+// exitCodeForError maps a wsm error to a CLI exit code per
+// docs/stories/015-exit-code-contract.md:
 //
-//	1   = generic error
-//	2   = usage error
-//	3   = not found
-//	4   = conflict
-//	5   = unauthorized / forbidden
-//	64+ = tool-specific (we use 64 for backend / persistence failures)
+//	1 = generic error
+//	2 = usage error
+//	3 = not found
+//	4 = conflict (including policy denial)
+//	5 = backend / persistence failure   (scenario 5)
+//	6 = forbidden / capability denied   (scenario 7)
+//	7 = prerequisite not satisfied      (scenario 8)
 //
-// Historically Backend mapped to 5, colliding with the §8.1 reserved
-// slot for unauthorized. Forbidden now claims 5; Backend moved to 64.
+// Must stay in lockstep with mapPolicyDenialError in
+// cmd/wsm/commands/policy.go: that one renders the envelope for errors
+// reaching kit's RunE wrapper, this one is the fallback for errors
+// that arrive unwrapped (PersistentPreRunE, framework paths).
 func exitCodeForError(err error) int {
 	// kit/runtime/policy vetoes (T-1288) are surfaced via the kit cli
 	// RunE middleware as *output.Error envelopes. Honour the embedded
@@ -67,10 +71,12 @@ func exitCodeForError(err error) int {
 		return 3
 	case workspace.IsKind(err, workspace.ErrorKindConflict):
 		return 4
-	case workspace.IsKind(err, workspace.ErrorKindForbidden):
-		return 5
 	case workspace.IsKind(err, workspace.ErrorKindBackend):
-		return 64
+		return 5
+	case workspace.IsKind(err, workspace.ErrorKindForbidden):
+		return 6
+	case workspace.IsKind(err, workspace.ErrorKindPrerequisite):
+		return 7
 	case isCobraUsageError(err):
 		return 2
 	default:
