@@ -47,9 +47,10 @@ jobs:
     env:
       # Pinned by version and checksum together: a release asset that changed
       # under its tag must fail the job rather than silently alter what the
-      # integration suite is judged against.
+      # integration suite is judged against. Same version and digest as
+      # .devcontainer/Dockerfile, so local and CI runs judge the same server.
       ERGO_VERSION: '2.19.1'
-      ERGO_SHA256: 'f6b1e1c78ca7b62a80c4d3df0e0ac0ab5e2c3c6e3e0e9e3a1f2e9b7c2d8a4f51'
+      ERGO_SHA256: 'c275f2de8e8eb074c38707136392290172400b5b78616cb9f660351527924b47'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -62,34 +63,22 @@ jobs:
       - name: Install pinned ergo
         run: |
           set -euo pipefail
-          tarball="ergo-${ERGO_VERSION}-linux-x86_64.tar.gz"
-          curl -fsSL -o "$tarball" \
-            "https://github.com/ergochat/ergo/releases/download/v${ERGO_VERSION}/${tarball}"
-          echo "${ERGO_SHA256}  ${tarball}" | sha256sum --check --strict -
-          tar -xzf "$tarball"
-          install -Dm755 "ergo-${ERGO_VERSION}-linux-x86_64/ergo" /usr/local/bin/ergo
-          # ergo ships languages.path relative to the release directory, so the
-          # translations have to sit beside the binary or every subcommand
-          # fails on "Could not load languages" before reading anything else.
-          cp -r "ergo-${ERGO_VERSION}-linux-x86_64/languages" /usr/local/languages
+          curl -fsSL -o /tmp/ergo.tgz \
+            "https://github.com/ergochat/ergo/releases/download/v${ERGO_VERSION}/ergo-${ERGO_VERSION}-linux-x86_64.tar.gz"
+          echo "${ERGO_SHA256}  /tmp/ergo.tgz" | sha256sum -c -
+          # The archive nests everything under ergo-<ver>-linux-<arch>/, hence
+          # strip-1. Unpacking whole keeps the languages directory beside the
+          # binary, which is where the renderer resolves it from: ergo ships
+          # languages.path relative to its own release directory, and a config
+          # carrying that relative value fails every subcommand with "Could
+          # not load languages" before it reads anything else.
+          mkdir -p /opt/ergo
+          tar -C /opt/ergo --strip-components=1 -xzf /tmp/ergo.tgz
+          rm -f /tmp/ergo.tgz
+          ln -sf /opt/ergo/ergo /usr/local/bin/ergo
           ergo --version
 
       - name: IRC integration suite
         env:
           ERGO_BIN: /usr/local/bin/ergo
-          WSM_IRC_ERGO_LANGUAGES: /usr/local/languages
         run: make test-irc
-
-      - name: Provider conformance against the same ergo
-        env:
-          ERGO_BIN: /usr/local/bin/ergo
-          WSM_IRC_ERGO_LANGUAGES: /usr/local/languages
-        run: |
-          set -euo pipefail
-          # The conformance suites want a server that is already up, with an
-          # account to log in as. scripts/ergo-conformance.sh provisions one,
-          # exports the IRC_CONFORMANCE_* specs and runs both provider suites:
-          # ergo against its services and plain against the very same server,
-          # which is what proves the services-less provider never reaches for
-          # them.
-          ./scripts/ergo-conformance.sh

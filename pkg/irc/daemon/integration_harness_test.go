@@ -119,6 +119,7 @@ func (s *ergoServer) writeConfig(t *testing.T, binary string) {
 		DB:       filepath.Join(s.dir, "ircd.db"),
 		TLSDir:   s.dir,
 		APIToken: filepath.Join(s.dir, "api-token"),
+		Secrets:  filepath.Join(s.dir, "secrets.yaml"),
 	}
 	if err := irc.SaveAPIToken(paths.APIToken, s.token); err != nil {
 		t.Fatalf("save api token: %v", err)
@@ -131,7 +132,16 @@ func (s *ergoServer) writeConfig(t *testing.T, binary string) {
 	cfg.Binary = binary
 	cfg.ServerName = "wsm.integration"
 	cfg.Bot.Account = s.botAccount
-	cfg.Bot.Password = s.botSecret
+
+	// The bot secret reaches the renderer the way it does in production: an
+	// empty SecretRef means the password lives in the workspace's secrets
+	// store, and ReadBotPassword is what goes and finds it. Passing the
+	// passphrase in by hand would skip the one step that decides whether the
+	// hash written into the oper block belongs to the secret actually in force.
+	secrets := irc.Secrets{s.botAccount: s.botSecret}
+	if err := secrets.Save(paths.Secrets); err != nil {
+		t.Fatalf("save irc secrets: %v", err)
+	}
 
 	profile := irc.Profile{
 		Mode:       irc.ModeManaged,
@@ -149,7 +159,7 @@ func (s *ergoServer) writeConfig(t *testing.T, binary string) {
 			binary, err, managed.EnvLanguagesPath)
 	}
 
-	rendered, err := managed.Renderer{Paths: paths}.RenderConfig(cfg, profile, irc.Secrets{})
+	rendered, err := managed.Renderer{Paths: paths}.RenderConfig(cfg, profile, secrets)
 	if err != nil {
 		t.Fatalf("render ergo config: %v", err)
 	}
