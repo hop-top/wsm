@@ -6,6 +6,7 @@ require (
 	charm.land/bubbletea/v2 v2.0.5
 	charm.land/lipgloss/v2 v2.0.3
 	github.com/Netflix/go-expect v0.0.0-20220104043353-73e0943537d2
+	github.com/ergochat/irc-go v0.7.0
 	github.com/mattn/go-isatty v0.0.21
 	github.com/mattn/go-sqlite3 v1.14.24
 	github.com/oklog/ulid/v2 v2.1.1
