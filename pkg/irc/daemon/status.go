@@ -100,6 +100,13 @@ type Status struct {
 	// ErgoVersion is the managed server's version, when known.
 	ErgoVersion string `json:"ergo_version,omitempty"`
 
+	// HostState is the state of the workspace hosting this one, when this
+	// workspace is a guest on another's server. Read from the host's own
+	// status.json, which is legible only because both live under the same
+	// $DataDir on the same machine. Empty when this workspace is not a
+	// guest; "gone" when the host's state has been removed from under it.
+	HostState string `json:"host_state,omitempty"`
+
 	// Discovered lists the creator-namespace channels wsm has adopted.
 	Discovered []provision.DiscoveredChannel `json:"discovered,omitempty"`
 	// Peer lists channels founded by another wsm bot on this server. Listed

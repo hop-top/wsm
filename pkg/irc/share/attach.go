@@ -392,6 +392,37 @@ type HostState struct {
 // back, a purged one does not.
 const StateGone = "gone"
 
+// StateStopped is the host state a guest reports when the host's state is
+// still on disk but no daemon is serving it.
+const StateStopped = "stopped"
+
+// ReadHostState reports the state of the workspace hosting this one.
+//
+// The host's status.json is read directly, which is possible only because both
+// workspaces live under the same $DataDir on the same machine — the same
+// property that lets the guest read the host's API token. A host whose profile
+// is gone entirely was purged, which is reported as StateGone rather than as a
+// missing file: the guest needs to tell "my host is down" from "my host no
+// longer exists", because only the second one means its own attachment is
+// never coming back.
+//
+// Failure is not an error. A guest reporting its own state must not fail
+// because the host's is unreadable, so an unparseable or absent status yields
+// StateStopped: no daemon is demonstrably serving it.
+func ReadHostState(hostPaths irc.Paths, statusState func(irc.Paths) (string, bool)) string {
+	if !hostStateExists(hostPaths) {
+		return StateGone
+	}
+	if statusState == nil {
+		return StateStopped
+	}
+	state, ok := statusState(hostPaths)
+	if !ok || state == "" {
+		return StateStopped
+	}
+	return state
+}
+
 // addShared appends id unless it is already listed. The list is a set; a
 // duplicate would make the host's guest count wrong and its refusal message
 // name the same workspace twice.

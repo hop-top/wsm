@@ -23,6 +23,7 @@ import (
 	"hop.top/wsm/pkg/irc/managed"
 	"hop.top/wsm/pkg/irc/provider"
 	"hop.top/wsm/pkg/irc/provider/ergo"
+	"hop.top/wsm/pkg/irc/share"
 	"hop.top/wsm/pkg/model"
 	"hop.top/wsm/pkg/workspace"
 )
@@ -394,17 +395,8 @@ func runIRCEnable(
 	ref string,
 	flags ircEnableFlags,
 ) error {
-	// Sharing is the subject of its own task: the host-side guards,
-	// the delegate grants and the guest's borrowed channels are all
-	// absent, and an enable that silently ignored the flag would
-	// record a profile claiming a relationship nothing enforces.
 	if flags.SharedWith != "" {
-		return &output.Error{
-			Code:         output.CodeUsage,
-			Message:      "--shared-with is not implemented",
-			SuggestedFix: "enable this workspace on its own server for now",
-			ExitCode:     2,
-		}
+		return runIRCAttach(ctx, cmd, app, opts, ref, flags)
 	}
 
 	rt, err := resolveIRCRuntime(ctx, app, ref)
@@ -523,6 +515,239 @@ func runIRCEnable(
 		return err
 	}
 	return renderIRCEnabled(rt, profile, status, opts)
+}
+
+// runIRCAttach enables a workspace as a guest on another workspace's
+// managed server.
+//
+// The host is resolved through the same path as any other workspace
+// reference, so `--shared-with` accepts a name or an id exactly as the
+// positional argument does. Everything that can be refused is refused
+// before anything is written: the capability, the guest's root, an
+// already-enabled guest, and the host's own suitability.
+func runIRCAttach(
+	ctx context.Context,
+	cmd *cobra.Command,
+	app *appContext,
+	opts *globalOptions,
+	ref string,
+	flags ircEnableFlags,
+) error {
+	rt, err := resolveIRCRuntime(ctx, app, ref)
+	if err != nil {
+		return err
+	}
+	if err := requireCapability(app, workspace.CapIRCEnable); err != nil {
+		return err
+	}
+
+	root, err := flags.root()
+	if err != nil {
+		return workspace.NewErrorPrerequisite(err.Error())
+	}
+	if err := validateRoot(root); err != nil {
+		return err
+	}
+
+	// An already-enabled workspace is not attached behind its own back:
+	// re-pointing a live workspace at a different server would strand
+	// the accounts and channels it already has on the old one.
+	if _, lerr := irc.LoadProfile(rt.paths.Profile); lerr == nil {
+		return workspace.NewErrorConflict(fmt.Sprintf(
+			"IRC is already enabled for %q: disable it before attaching it "+
+				"to another workspace's server", rt.ws.Name,
+		))
+	}
+
+	host, err := resolveHostRuntime(ctx, app, flags.SharedWith)
+	if err != nil {
+		return err
+	}
+	if host.ws.ID == rt.ws.ID {
+		return &output.Error{
+			Code:         output.CodeUsage,
+			Message:      "--shared-with names this same workspace",
+			SuggestedFix: "name the workspace whose server should host this one",
+			ExitCode:     2,
+		}
+	}
+
+	if done, derr := previewDryRun(cmd,
+		map[string]any{
+			"workspace":   rt.ws.Name,
+			"shared_with": host.ws.Name,
+			"root":        root,
+		},
+		cli.Effect{
+			Kind:       "create",
+			Target:     "irc:" + rt.ws.ID,
+			Reversible: true,
+			Detail: fmt.Sprintf("attach %q to %q's IRC server as a guest",
+				rt.ws.Name, host.ws.Name),
+		},
+	); done {
+		return derr
+	}
+
+	accounts, err := share.NewHostAccounts(host.profile, host.paths)
+	if err != nil {
+		return workspace.NewErrorPrerequisite(fmt.Sprintf(
+			"cannot reach %q's ergo API: %v", host.ws.Name, err))
+	}
+
+	guest := &share.Profiles{
+		ID: rt.ws.ID, Name: rt.ws.Name, Paths: rt.paths, Root: root,
+	}
+	hostProfiles := &share.Profiles{
+		ID: host.ws.ID, Name: host.ws.Name, Paths: host.paths,
+		Profile: host.profile, Root: host.profile.Root,
+	}
+
+	if err := share.Attach(ctx, guest, hostProfiles, share.Config{
+		Accounts: accounts,
+		Running:  daemonRunning,
+	}); err != nil {
+		return attachError(err, rt.ws.Name, host.ws.Name)
+	}
+
+	status, _, err := startDaemon(rt)
+	if err != nil {
+		return err
+	}
+	return renderIRCEnabled(rt, guest.Profile, status, opts)
+}
+
+// attachError maps a share failure onto the exit-code contract.
+//
+// The reserved bot account is a conflict (exit 4) rather than a
+// prerequisite: nothing about the environment is broken, the operation
+// collides with a name the host has already given out. An unsuitable
+// host is a prerequisite (exit 7), because the fix is to change the
+// host's state and retry.
+func attachError(err error, guestName, hostName string) error {
+	switch {
+	case errors.Is(err, share.ErrBotAccountReserved):
+		return workspace.NewErrorConflict(fmt.Sprintf(
+			"%v: the host reserves the %s namespace; remove the stale account "+
+				"on %q, or rename this workspace",
+			err, irc.BotAccountPrefix, hostName,
+		))
+	case errors.Is(err, share.ErrHostNotManaged):
+		return workspace.NewErrorPrerequisite(fmt.Sprintf(
+			"%q does not run its own IRC server, so it cannot host %q: "+
+				"attach to a managed workspace, or enable %q with --external",
+			hostName, guestName, guestName,
+		))
+	case errors.Is(err, share.ErrHostNotRunning):
+		return workspace.NewErrorPrerequisite(fmt.Sprintf(
+			"%q's IRC daemon is not running: run `wsm irc start %s` first",
+			hostName, hostName,
+		))
+	default:
+		return workspace.NewErrorPrerequisite(err.Error())
+	}
+}
+
+// hostRuntime is the resolved state of a workspace acting as a host.
+type hostRuntime struct {
+	ws      *model.Workspace
+	paths   irc.Paths
+	profile irc.Profile
+}
+
+// resolveHostRuntime resolves the workspace named by --shared-with and
+// loads the IRC state that decides whether it can host anything.
+func resolveHostRuntime(ctx context.Context, app *appContext, ref string) (*hostRuntime, error) {
+	ws, err := app.manager.ResolveWorkspaceRef(ctx, ref)
+	if err != nil {
+		return nil, err
+	}
+	paths, err := irc.ResolvePaths(irc.PathsInput{
+		DataDir:  app.cfg.DataDir,
+		StateDir: app.cfg.StateDir,
+	}, ws.ID)
+	if err != nil {
+		return nil, workspace.NewErrorPrerequisite(err.Error())
+	}
+	profile, err := irc.LoadProfile(paths.Profile)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, workspace.NewErrorPrerequisite(fmt.Sprintf(
+				"IRC is not enabled for %q, so it cannot host another "+
+					"workspace: run `wsm irc enable %s` first", ws.Name, ws.Name,
+			))
+		}
+		return nil, workspace.NewErrorPrerequisite(fmt.Sprintf("read irc profile: %v", err))
+	}
+	return &hostRuntime{ws: ws, paths: paths, profile: profile}, nil
+}
+
+// daemonRunning reports whether a workspace's daemon is live, which is
+// what share.Attach and share.Detach probe the host with.
+func daemonRunning(paths irc.Paths) bool {
+	_, running := daemonState(paths)
+	return running
+}
+
+// detachFromHost unwinds a guest's attachment before its daemon stops.
+//
+// Ordering is share.Detach's contract, not this function's: everything
+// here does is resolve the host and translate a failure. A host that is
+// stopped leaves the detach pending, which is exit 1 with the rerun
+// hint rather than a hard failure — the guest has already been excluded
+// on the host side, so the operator's next move is to start the host,
+// not to undo anything.
+func detachFromHost(
+	ctx context.Context,
+	app *appContext,
+	rt *ircRuntime,
+	profile *irc.Profile,
+) error {
+	guest := &share.Profiles{
+		ID: rt.ws.ID, Name: rt.ws.Name, Paths: rt.paths,
+		Profile: *profile, Root: profile.Root,
+	}
+
+	// The host may be gone entirely (purged with --force). That is not a
+	// failure: the guest still has to clear its own side, which Detach
+	// does when the host's state no longer exists.
+	var hostProfiles *share.Profiles
+	if host, err := resolveHostRuntime(ctx, app, profile.HostWorkspace); err == nil {
+		hostProfiles = &share.Profiles{
+			ID: host.ws.ID, Name: host.ws.Name, Paths: host.paths,
+			Profile: host.profile, Root: host.profile.Root,
+		}
+	} else if hostPaths, perr := irc.ResolvePaths(irc.PathsInput{
+		DataDir:  app.cfg.DataDir,
+		StateDir: app.cfg.StateDir,
+	}, profile.HostWorkspace); perr == nil {
+		hostProfiles = &share.Profiles{ID: profile.HostWorkspace, Paths: hostPaths}
+	}
+
+	err := share.Detach(ctx, guest, hostProfiles, share.Config{
+		Running: daemonRunning,
+		Signal: func(paths irc.Paths) error {
+			status, running := daemonState(paths)
+			if !running {
+				return nil
+			}
+			return signalDaemon(status.PID, syscall.SIGHUP)
+		},
+	})
+	*profile = guest.Profile
+
+	if errors.Is(err, share.ErrHostStoppedAtDetach) {
+		return &output.Error{
+			Code:         output.CodeGeneric,
+			Message:      err.Error(),
+			SuggestedFix: fmt.Sprintf("run `wsm irc disable %s` again once the host is up", rt.ws.Name),
+			ExitCode:     1,
+		}
+	}
+	if err != nil {
+		return workspace.NewErrorPrerequisite(err.Error())
+	}
+	return nil
 }
 
 // provisionManaged prepares everything a wsm-owned ergo needs.
@@ -852,6 +1077,18 @@ func runIRCDisable(
 		// to confirm an operation that is going to be refused anyway.
 		if gerr := gatePurge(cmd); gerr != nil {
 			return gerr
+		}
+	}
+
+	// A guest is detached before its daemon stops: the final reconcile
+	// that strips the roles it authored on the host needs a live bot,
+	// and stopping first would strand them there as roles nobody claims.
+	if profile.HostWorkspace != "" {
+		if derr := detachFromHost(ctx, app, rt, &profile); derr != nil {
+			return derr
+		}
+		if serr := irc.SaveProfile(rt.paths.Profile, profile); serr != nil {
+			return workspace.NewErrorPrerequisite(serr.Error())
 		}
 	}
 
