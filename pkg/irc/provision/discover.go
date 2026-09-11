@@ -162,6 +162,7 @@ func Discover(ctx context.Context, d Deps, desired DesiredState) (DiscoverReport
 			// ours, or is provably another wsm bot's, is not a candidate
 			// for purging however long it sat unmanaged before.
 			delete(d.Profile.UnmanagedSeen, info.Name)
+			releaseIfAdopted(ctx, d, info.Name, &rep)
 			if class == ClassPeer {
 				rep.Peer = append(rep.Peer, PeerChannel{
 					Name: info.Name, Founder: info.Founder,
@@ -173,10 +174,19 @@ func Discover(ctx context.Context, d Deps, desired DesiredState) (DiscoverReport
 			adopt(ctx, d, info, owner, class, &rep)
 
 		case ClassUnmanaged:
+			// An adoption that no longer classifies as one ends here: the
+			// founder changed hands, or the creator flag was cleared. The
+			// release runs BEFORE the sweep so the channel is reported
+			// unmanaged in the same pass that stops claiming it, rather
+			// than lingering as both for a cycle.
+			releaseIfAdopted(ctx, d, info.Name, &rep)
 			sweep(ctx, d, info, &rep)
 
 		case ClassOutOfScope:
-			// Not this workspace's business: neither adopted nor swept.
+			// Not this workspace's business to sweep, but an adoption that
+			// has fallen out of scope is still dropped: wsm must not claim
+			// a channel it has stopped classifying.
+			releaseIfAdopted(ctx, d, info.Name, &rep)
 		}
 	}
 
@@ -301,13 +311,21 @@ func (sc scope) classify(
 
 	// 3. Already adopted: keep it, so a join that failed is retried rather
 	// than reclassified every cycle.
+	//
+	// Keeping it requires a reason that still holds today. An adoption record
+	// is evidence of a past decision, not a standing claim: a channel whose
+	// creator flag has been cleared would otherwise re-confirm itself from
+	// its own record every pass and stay adopted forever.
 	if rec, ok := d.Profile.Discovered[info.Name]; ok {
 		// A founder change means the channel changed hands and the
 		// adoption no longer holds.
 		if founder != "" && rec.Owner != "" && founder != rec.Owner {
 			return sc.unownedClass(info), founder
 		}
-		return ClassAdopted, rec.Owner
+		if sc.stillAdoptable(info.Name, rec.Owner, founder) {
+			return ClassAdopted, rec.Owner
+		}
+		return sc.unownedClass(info), founder
 	}
 
 	// 4. Operator-requested adoption.
@@ -325,6 +343,26 @@ func (sc scope) classify(
 	}
 
 	return sc.unownedClass(info), founder
+}
+
+// stillAdoptable reports whether an existing adoption has a reason to survive
+// this pass: the operator still asks for it, or its owner still holds a
+// namespace covering the name.
+//
+// The founder is consulted as a fallback owner because an adoption recorded
+// before a founder lookup succeeded can carry an empty owner; the namespace
+// test still has to be made against somebody.
+func (sc scope) stillAdoptable(name, owner, founder string) bool {
+	if _, ok := sc.requested[name]; ok {
+		return true
+	}
+	if owner == "" {
+		owner = founder
+	}
+	if owner == "" {
+		return false
+	}
+	return sc.inNamespace(name, owner)
 }
 
 // unownedClass is what a channel that nothing claims falls back to: unmanaged
@@ -578,6 +616,21 @@ func releaseVanished(
 		}
 		release(ctx, d, name, rep)
 	}
+}
+
+// releaseIfAdopted drops an adoption the current pass no longer classifies as
+// one, and does nothing when the channel was never adopted.
+//
+// This is the half of release that a still-listed channel needs.
+// releaseVanished covers the channel that disappeared; this covers the one
+// that is still there but has stopped being ours: the founder changed hands,
+// the creator flag was cleared, or it fell out of the sweep scope. Without it
+// a Profile.Discovered entry would outlive every reason it was created.
+func releaseIfAdopted(ctx context.Context, d Deps, name string, rep *DiscoverReport) {
+	if _, ok := d.Profile.Discovered[name]; !ok {
+		return
+	}
+	release(ctx, d, name, rep)
 }
 
 // release parts a channel and forgets the adoption.
