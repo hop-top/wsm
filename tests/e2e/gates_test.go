@@ -4,10 +4,15 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
 )
+
+// e2eRefRegexp matches a repo-relative reference to an e2e test file as it
+// appears in story markdown, e.g. `tests/e2e/workspace_test.go`.
+var e2eRefRegexp = regexp.MustCompile(`tests/e2e/[A-Za-z0-9_.-]+\.go`)
 
 func TestStoryCoverageMatrix_001To026(t *testing.T) {
 	r := newRunner(t)
@@ -35,9 +40,36 @@ func TestStoryCoverageMatrix_001To026(t *testing.T) {
 		if err != nil {
 			t.Fatalf("read %s: %v", file, err)
 		}
-		if strings.Contains(string(content), "tests/e2e/") {
+
+		// Every e2e path a story names must resolve to a real file. A story
+		// that quotes a path which was never created claims coverage it does
+		// not have, so resolve each reference against the repo root.
+		refs := uniqueStrings(e2eRefRegexp.FindAllString(string(content), -1))
+		for _, ref := range refs {
+			abs := filepath.Join(r.root, filepath.FromSlash(ref))
+			info, err := os.Stat(abs)
+			if err != nil {
+				t.Errorf("story %s references %s, which does not exist on disk", base, ref)
+				continue
+			}
+			if info.IsDir() {
+				t.Errorf("story %s references %s, which is a directory, not a test file", base, ref)
+			}
+		}
+		if len(refs) > 0 {
 			covered[id] = true
 		}
+	}
+
+	// Stories with no end-to-end coverage at all. The TUI ships (see
+	// cmd/wsm/commands/tui_charm.go) and is exercised by unit tests in
+	// pkg/tui, but nothing drives it end to end. These are exempt from the
+	// "must name an e2e file" rule rather than being papered over with a
+	// reference to a file that does not exist, or a stub test that asserts
+	// nothing. Delete an entry here once real coverage lands.
+	noE2ECoverage := map[string]bool{
+		"021": true,
+		"022": true,
 	}
 
 	for i := 1; i <= 26; i++ {
@@ -47,10 +79,27 @@ func TestStoryCoverageMatrix_001To026(t *testing.T) {
 		} else {
 			id = "0" + strconv.Itoa(i)
 		}
+		if noE2ECoverage[id] {
+			continue
+		}
 		if !covered[id] {
-			t.Fatalf("story %s is missing an e2e reference in docs/stories", id)
+			t.Errorf("story %s is missing an e2e reference in docs/stories", id)
 		}
 	}
+}
+
+func uniqueStrings(in []string) []string {
+	seen := make(map[string]struct{}, len(in))
+	out := make([]string, 0, len(in))
+	for _, s := range in {
+		if _, ok := seen[s]; ok {
+			continue
+		}
+		seen[s] = struct{}{}
+		out = append(out, s)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func TestCIIncludesConformanceGates(t *testing.T) {

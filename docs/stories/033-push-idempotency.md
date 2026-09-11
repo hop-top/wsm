@@ -39,7 +39,6 @@ Each entry is hashed on parse. On push, existing hashes are checked against the 
 - `pkg/format/idempotency_test.go` -- `TestIdempotency_HashCollision`
 
 ### E2E
-- `tests/e2e/sessions_push_test.go` -- `TestSessionsPush_Idempotent_GrowingFile`
-- `tests/e2e/sessions_push_test.go` -- `TestSessionsPush_Idempotent_IdenticalFile`
-- `tests/e2e/sessions_push_test.go` -- `TestSessionsPush_SessionLevel`
-- `tests/e2e/sessions_push_test.go` -- `TestSessionsPush_Force`
+None. This story is not implemented yet -- neither the unit tests listed
+above nor any end-to-end test exist. Coverage must be added alongside the
+implementation.

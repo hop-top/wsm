@@ -33,6 +33,6 @@ Output is a table showing IDE name, path, session count, and last modified times
 - `pkg/format/discover_test.go` -- `TestDiscover_TTYDetection`
 
 ### E2E
-- `tests/e2e/sessions_discover_test.go` -- `TestSessionsDiscover_FindsSessions`
-- `tests/e2e/sessions_discover_test.go` -- `TestSessionsDiscover_JSONOutput`
-- `tests/e2e/sessions_discover_test.go` -- `TestSessionsDiscover_EmptyResult`
+None. This story is not implemented yet -- neither the unit tests listed
+above nor any end-to-end test exist. Coverage must be added alongside the
+implementation.

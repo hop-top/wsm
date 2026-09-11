@@ -27,4 +27,6 @@ As a user, I want to push Aider sessions into wsm so that my Aider conversation 
 - `pkg/format/aider/adapter_test.go` -- `TestSequentialTimestamps`
 
 ### E2E
-- `tests/e2e/sessions_push_test.go` -- `TestSessionsPush_Aider`
+None. This story is not implemented yet -- neither the unit tests listed
+above nor any end-to-end test exist. Coverage must be added alongside the
+implementation.
