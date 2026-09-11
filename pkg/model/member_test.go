@@ -95,6 +95,68 @@ func TestMember_IRCAccountsDoesNotAffectValidate(t *testing.T) {
 	}
 }
 
+func TestMember_ChannelCreatorOptional(t *testing.T) {
+	// channel_creator and channel_namespace are additive: a member without
+	// them stays valid and both keep their zero values.
+	m := Member{ProfileID: "x", Capacity: CapacityPrincipal}
+	if err := m.Validate(); err != nil {
+		t.Fatalf("channel_creator should be optional: %v", err)
+	}
+	if m.ChannelCreator {
+		t.Error("channel_creator should default to false")
+	}
+	if m.ChannelNamespace != "" {
+		t.Error("channel_namespace should default to empty")
+	}
+}
+
+func TestMember_ChannelCreatorDoesNotAffectValidate(t *testing.T) {
+	// A creator with an explicit namespace validates like any other member:
+	// the flag grants a capability, it does not add a requirement.
+	m := Member{
+		ProfileID:        "sami",
+		Capacity:         CapacityPrincipal,
+		ChannelCreator:   true,
+		ChannelNamespace: "sami-labs",
+	}
+	if err := m.Validate(); err != nil {
+		t.Fatalf("a creator member should validate: %v", err)
+	}
+}
+
+func TestMember_ChannelLabel(t *testing.T) {
+	// The label is what the irc side sanitizes into an account name and,
+	// for a creator, into the default namespace. AuditLabel wins when set
+	// so a member's channels follow the name humans see in audit logs.
+	tests := []struct {
+		name   string
+		member Member
+		want   string
+	}{
+		{
+			name:   "falls back to profile id",
+			member: Member{ProfileID: "sami", Capacity: CapacityPrincipal},
+			want:   "sami",
+		},
+		{
+			name: "audit label wins",
+			member: Member{
+				ProfileID:  "sami",
+				Capacity:   CapacityPrincipal,
+				AuditLabel: "sami-eng",
+			},
+			want: "sami-eng",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.member.ChannelLabel(); got != tt.want {
+				t.Errorf("ChannelLabel() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestValidateCapacity(t *testing.T) {
 	for _, c := range []Capacity{CapacityPrincipal, CapacityDelegate} {
 		if err := ValidateCapacity(c); err != nil {

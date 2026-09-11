@@ -13,6 +13,7 @@ package provision
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"hop.top/wsm/pkg/irc"
@@ -60,8 +61,17 @@ type DesiredState struct {
 	// Unresolved lists profile ids with no account on the server, in
 	// encounter order. Members appear as the bare profile id; guests are
 	// prefixed "guest:" so a caller can tell a missing colleague from a
-	// missing outsider without a second lookup.
+	// missing outsider without a second lookup. An owner who is no longer a
+	// member is prefixed "owner:".
 	Unresolved []string
+	// Namespaces maps each creator member's account to the channel-name
+	// glob it may register under. The sweeper reads this to tell a
+	// creator's own channel from an unmanaged one; an empty map means no
+	// member may create channels.
+	Namespaces map[string]string
+	// Warnings are non-fatal findings that need both the config and the
+	// member list to spot, which Config.Validate cannot see on its own.
+	Warnings []irc.Warning
 }
 
 // Channel is one owned channel's desired state: the provider's view plus the
@@ -105,6 +115,10 @@ func Desired(
 	// member in five channels costs one resolver call, and so a profile that
 	// cannot be resolved is reported once rather than five times.
 	resolved := newAccountCache(res, serverID)
+
+	if err := addNamespaces(ctx, cfg, ws, members, resolved, &st); err != nil {
+		return DesiredState{}, err
+	}
 
 	for _, tmpl := range cfg.Channels {
 		if tmpl.Borrowed != nil {
@@ -154,12 +168,132 @@ func ownedChannel(
 	if err := addMembers(ctx, &ch, tmpl.Members, tmpl.MemberList, members, resolved, st); err != nil {
 		return Channel{}, err
 	}
+	if err := addOwner(ctx, &ch, tmpl.Owner, members, resolved, st); err != nil {
+		return Channel{}, err
+	}
 	if err := addGuests(ctx, &ch, tmpl.Guests, resolved, st); err != nil {
 		return Channel{}, err
 	}
 	addDelegates(&ch, tmpl.Delegates)
 
 	return ch, nil
+}
+
+// addOwner gives an owner-managed channel's owner +o. The wsm bot stays the
+// channel founder: the owner runs the channel day to day, but handing over
+// founder would put the registration itself beyond wsm's reach, and a founder
+// cannot be demoted by the bot that gave the rung away.
+//
+// An owner who is no longer a member -- removed from members.yaml, suspended --
+// is recorded as "owner:<profile>" in Unresolved and granted nothing. Leaving
+// the grant out is the point rather than an omission: DiffRoles revokes exactly
+// the authored roles that are no longer desired, so a removed owner's +o is
+// stripped on the next reconcile instead of surviving because nobody asked for
+// it to go.
+func addOwner(
+	ctx context.Context,
+	ch *Channel,
+	owner string,
+	members []model.Member,
+	resolved *accountCache,
+	st *DesiredState,
+) error {
+	if owner == "" {
+		return nil
+	}
+
+	if !isMember(members, owner) {
+		st.addUnresolved("owner:" + owner)
+		return nil
+	}
+
+	account, ok, err := resolved.lookup(ctx, owner)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		st.addUnresolved(owner)
+		return nil
+	}
+
+	grant(ch, account, irc.RoleOp, irc.KindMember)
+	return nil
+}
+
+// isMember reports whether profileID is still on the workspace's member list.
+func isMember(members []model.Member, profileID string) bool {
+	for _, m := range members {
+		if m.ProfileID == profileID {
+			return true
+		}
+	}
+	return false
+}
+
+// addNamespaces records the channel glob each creator member may register
+// under, and warns when a template channel would collide with one.
+//
+// A creator's channels are discovered and adopted, never authored; a template
+// channel is authored and its roles diffed. A name that is both would have wsm
+// fighting its own adoption logic every reconcile, so the overlap is reported
+// rather than silently resolved in either direction.
+func addNamespaces(
+	ctx context.Context,
+	cfg irc.Config,
+	ws model.Workspace,
+	members []model.Member,
+	resolved *accountCache,
+	st *DesiredState,
+) error {
+	for _, m := range members {
+		if !m.ChannelCreator {
+			continue
+		}
+		account, ok, err := resolved.lookup(ctx, m.ProfileID)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			st.addUnresolved(m.ProfileID)
+			continue
+		}
+
+		ns := irc.CreatorNamespace(m.ChannelLabel(), m.ChannelNamespace)
+		glob := irc.CreatorGlob(cfg.ChannelPrefix, ns)
+		if st.Namespaces == nil {
+			st.Namespaces = map[string]string{}
+		}
+		st.Namespaces[account] = glob
+
+		st.warnTemplateOverlap(cfg, ws, glob, m.ProfileID)
+	}
+	return nil
+}
+
+// warnTemplateOverlap reports every template channel whose name falls inside a
+// creator's namespace.
+func (st *DesiredState) warnTemplateOverlap(cfg irc.Config, ws model.Workspace, glob, profileID string) {
+	stem := strings.TrimSuffix(glob, "*")
+	for i, tmpl := range cfg.Channels {
+		if tmpl.Borrowed != nil {
+			continue
+		}
+		// The template is compared after expansion and prefixing, because
+		// that is the name that would actually be registered.
+		name := irc.ChannelName(cfg.ChannelPrefix, tmpl.Name, ws.Name)
+		if !strings.HasPrefix(name, stem) {
+			continue
+		}
+		st.Warnings = append(st.Warnings, irc.Warning{
+			Field: fmt.Sprintf("irc.channels[%d].name", i),
+			Message: fmt.Sprintf(
+				"channel %q falls inside the creator namespace %q of member %q; "+
+					"wsm authors roles in a template channel but only adopts a "+
+					"creator's, so the two would contend every reconcile",
+				name, glob, profileID,
+			),
+		})
+	}
 }
 
 // borrowedChannel builds the borrowing side of a shared channel: this
@@ -296,15 +430,20 @@ func grant(ch *Channel, account string, role irc.Role, kind Kind) {
 // An empty selector means MembersAll: a template that names no rule wants
 // everyone, which is what the config default renders to.
 //
-// MembersList is accepted here but selects nobody until explicit member lists
-// land: silently treating a list template as "everyone" would over-share a
-// channel that was configured to be narrow, so the safe reading of a
-// not-yet-implemented rule is the empty one.
+// MembersList includes exactly the profile ids named in memberList. Config
+// validation rejects an empty list under the list rule, so an empty one here
+// means a hand-edited config; it selects nobody, which keeps a narrow channel
+// narrow rather than falling back to "everyone".
 func selects(sel irc.Members, memberList []string, m model.Member) bool {
 	switch sel {
 	case irc.MembersPrincipals:
 		return m.Capacity == model.CapacityPrincipal
 	case irc.MembersList:
+		for _, id := range memberList {
+			if id == m.ProfileID {
+				return true
+			}
+		}
 		return false
 	case irc.MembersAll, "":
 		return true

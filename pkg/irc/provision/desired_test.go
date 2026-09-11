@@ -295,17 +295,133 @@ func TestDesiredChannels(t *testing.T) {
 			wantKinds: map[string]Kind{"alice-acct": irc.KindMember},
 		},
 		{
-			name: "members list selector grants nobody until lists land",
+			// The list selector resolves its profile ids the same way
+			// "all" does: named members get the role their capacity
+			// earns, and everyone else is left out.
+			name: "members list selector grants exactly the listed ids",
 			cfg: baseConfig(irc.ChannelTemplate{
 				Name:       "#{{ws}}",
 				Members:    irc.MembersList,
-				MemberList: []string{"alice"},
+				MemberList: []string{"alice", "bot-a"},
+			}),
+			members:  members,
+			accounts: accounts,
+			wantName: "#reed-forge",
+			wantRoles: map[string]irc.Role{
+				"alice-acct": irc.RoleOp,
+				"bot-a-acct": irc.RoleVoice,
+			},
+			wantKinds: map[string]Kind{
+				"alice-acct": irc.KindMember,
+				"bot-a-acct": irc.KindMember,
+			},
+		},
+		{
+			// An id on the list that is not a member of this workspace
+			// is simply not selected; it is not a resolution failure.
+			name: "members list ignores ids that are not members",
+			cfg: baseConfig(irc.ChannelTemplate{
+				Name:       "#{{ws}}",
+				Members:    irc.MembersList,
+				MemberList: []string{"alice", "stranger"},
+			}),
+			members:   members,
+			accounts:  accounts,
+			wantName:  "#reed-forge",
+			wantRoles: map[string]irc.Role{"alice-acct": irc.RoleOp},
+			wantKinds: map[string]Kind{"alice-acct": irc.KindMember},
+		},
+		{
+			// A listed member with no account on the server lands in
+			// Unresolved under its bare profile id, like any member.
+			name: "members list reports an unresolvable listed member",
+			cfg: baseConfig(irc.ChannelTemplate{
+				Name:       "#{{ws}}",
+				Members:    irc.MembersList,
+				MemberList: []string{"ghost"},
+			}),
+			members:   []model.Member{principal("ghost")},
+			accounts:  accounts,
+			wantName:  "#reed-forge",
+			wantRoles: map[string]irc.Role{},
+			wantKinds: map[string]Kind{},
+			wantUnres: []string{"ghost"},
+		},
+		{
+			// The owner gets +o as a member-kind role. The wsm bot is
+			// not in Members at all: it stays founder, which is a
+			// registration property rather than a channel role.
+			name: "owner is opped, kind member",
+			cfg: baseConfig(irc.ChannelTemplate{
+				Name:       "#{{ws}}",
+				Members:    irc.MembersList,
+				MemberList: []string{},
+				Owner:      "bob",
+			}),
+			members:   members,
+			accounts:  accounts,
+			wantName:  "#reed-forge",
+			wantRoles: map[string]irc.Role{"bob-acct": irc.RoleOp},
+			wantKinds: map[string]Kind{"bob-acct": irc.KindMember},
+		},
+		{
+			// A delegate owner is still opped: owner is an explicit
+			// grant, so it outranks the +v its capacity would earn.
+			name: "owner op outranks the capacity default",
+			cfg: baseConfig(irc.ChannelTemplate{
+				Name:    "#{{ws}}",
+				Members: irc.MembersAll,
+				Owner:   "bot-a",
+			}),
+			members:  members,
+			accounts: accounts,
+			wantName: "#reed-forge",
+			wantRoles: map[string]irc.Role{
+				"alice-acct": irc.RoleOp,
+				"bot-a-acct": irc.RoleOp,
+				"bob-acct":   irc.RoleOp,
+			},
+			wantKinds: map[string]Kind{
+				"alice-acct": irc.KindMember,
+				"bot-a-acct": irc.KindMember,
+				"bob-acct":   irc.KindMember,
+			},
+		},
+		{
+			// Removed or suspended owner: reported under an "owner:"
+			// prefix and granted nothing, so DiffRoles sees a role it
+			// authored and no longer wants, and revokes it.
+			name: "owner who is no longer a member desires no role",
+			cfg: baseConfig(irc.ChannelTemplate{
+				Name:       "#{{ws}}",
+				Members:    irc.MembersList,
+				MemberList: []string{},
+				Owner:      "removed",
 			}),
 			members:   members,
 			accounts:  accounts,
 			wantName:  "#reed-forge",
 			wantRoles: map[string]irc.Role{},
 			wantKinds: map[string]Kind{},
+			wantUnres: []string{"owner:removed"},
+		},
+		{
+			// Still a member, but with no account on the server: that
+			// is an ordinary resolution failure, not a removal, so it
+			// carries no "owner:" prefix.
+			name: "owner who is a member but unresolvable is reported bare",
+			cfg: baseConfig(irc.ChannelTemplate{
+				Name:       "#{{ws}}",
+				Members:    irc.MembersList,
+				MemberList: []string{},
+				Owner:      "ghost",
+			}),
+			members:   []model.Member{principal("ghost")},
+			accounts:  accounts,
+			wantName:  "#reed-forge",
+			wantRoles: map[string]irc.Role{},
+			wantKinds: map[string]Kind{},
+			wantUnres: []string{"ghost"},
 		},
 	}
 
@@ -350,6 +466,226 @@ func TestDesiredChannels(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// creator returns a channel-creator member, optionally with an explicit
+// namespace.
+func creator(id, namespace string) model.Member {
+	return model.Member{
+		ProfileID:        id,
+		Capacity:         model.CapacityPrincipal,
+		ChannelCreator:   true,
+		ChannelNamespace: namespace,
+	}
+}
+
+// TestDesiredNamespaces pins the creator namespace export the sweeper consumes:
+// keyed by account, prefixed like any other channel, and holding creators only.
+func TestDesiredNamespaces(t *testing.T) {
+	tests := []struct {
+		name     string
+		prefix   string
+		members  []model.Member
+		accounts map[string]string
+		want     map[string]string
+	}{
+		{
+			name:     "defaults to the sanitized account name",
+			members:  []model.Member{creator("sami", "")},
+			accounts: map[string]string{"sami": "sami-acct"},
+			want:     map[string]string{"sami-acct": "#sami-*"},
+		},
+		{
+			// The audit label is what the account name is derived
+			// from, so the namespace follows it rather than the id.
+			name: "audit label drives the default namespace",
+			members: []model.Member{{
+				ProfileID:      "p-17",
+				Capacity:       model.CapacityPrincipal,
+				AuditLabel:     "Sami Eng",
+				ChannelCreator: true,
+			}},
+			accounts: map[string]string{"p-17": "sami-eng"},
+			want:     map[string]string{"sami-eng": "#sami-eng-*"},
+		},
+		{
+			name:     "explicit namespace overrides the default",
+			members:  []model.Member{creator("sami", "sami-labs")},
+			accounts: map[string]string{"sami": "sami-acct"},
+			want:     map[string]string{"sami-acct": "#sami-labs-*"},
+		},
+		{
+			// On a shared server the creator's namespace must sit
+			// inside the workspace's prefix, not beside it. The key
+			// stays the bare account: the prefix namespaces channels,
+			// not account names.
+			name:     "channel prefix is applied to the glob",
+			prefix:   "acme-",
+			members:  []model.Member{creator("sami", "")},
+			accounts: map[string]string{"sami": "sami-acct"},
+			want:     map[string]string{"sami-acct": "#acme-sami-*"},
+		},
+		{
+			name: "non-creators are absent",
+			members: []model.Member{
+				principal("alice"),
+				delegate("bot-a", "alice"),
+			},
+			accounts: map[string]string{"alice": "alice-acct", "bot-a": "bot-a-acct"},
+			want:     nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := baseConfig(irc.ChannelTemplate{Name: "#{{ws}}-ops", Members: irc.MembersAll})
+			cfg.ChannelPrefix = tt.prefix
+			res := &stubResolver{accounts: tt.accounts}
+
+			got, err := Desired(context.Background(), cfg, testProfile(),
+				testWorkspace(), tt.members, res)
+			if err != nil {
+				t.Fatalf("Desired: unexpected error: %v", err)
+			}
+
+			if tt.want == nil {
+				if len(got.Namespaces) != 0 {
+					t.Errorf("namespaces = %v, want none", got.Namespaces)
+				}
+				return
+			}
+			if !reflect.DeepEqual(got.Namespaces, tt.want) {
+				t.Errorf("namespaces = %v, want %v", got.Namespaces, tt.want)
+			}
+		})
+	}
+}
+
+// TestDesiredNamespaceUnresolvedCreator pins that a creator with no account
+// exports no namespace: the sweeper keys on accounts, and a namespace with no
+// account behind it could only ever match somebody else's channel.
+func TestDesiredNamespaceUnresolvedCreator(t *testing.T) {
+	cfg := baseConfig(irc.ChannelTemplate{Name: "#{{ws}}", Members: irc.MembersAll})
+	res := &stubResolver{accounts: map[string]string{}}
+
+	got, err := Desired(context.Background(), cfg, testProfile(), testWorkspace(),
+		[]model.Member{creator("ghost", "")}, res)
+	if err != nil {
+		t.Fatalf("Desired: unexpected error: %v", err)
+	}
+
+	if len(got.Namespaces) != 0 {
+		t.Errorf("namespaces = %v, want none for an unresolved creator", got.Namespaces)
+	}
+	if want := []string{"ghost"}; !equalStrings(got.Unresolved, want) {
+		t.Errorf("unresolved = %v, want %v", got.Unresolved, want)
+	}
+}
+
+// TestDesiredNamespaceOverlapWarning pins the warning raised when a template
+// channel falls inside a creator's namespace. wsm authors roles in a template
+// channel but only adopts a creator's, so a name that is both would have the
+// two halves contending every reconcile.
+func TestDesiredNamespaceOverlapWarning(t *testing.T) {
+	cfg := baseConfig(
+		irc.ChannelTemplate{Name: "#sami-standup", Members: irc.MembersAll},
+		irc.ChannelTemplate{Name: "#{{ws}}", Members: irc.MembersAll},
+	)
+	res := &stubResolver{accounts: map[string]string{"sami": "sami-acct"}}
+
+	got, err := Desired(context.Background(), cfg, testProfile(), testWorkspace(),
+		[]model.Member{creator("sami", "")}, res)
+	if err != nil {
+		t.Fatalf("Desired: unexpected error: %v", err)
+	}
+
+	if len(got.Warnings) != 1 {
+		t.Fatalf("warnings = %v, want exactly 1", got.Warnings)
+	}
+	w := got.Warnings[0]
+	if w.Field != "irc.channels[0].name" {
+		t.Errorf("warning field = %q, want irc.channels[0].name", w.Field)
+	}
+	if w.Message == "" {
+		t.Error("warning carries no message")
+	}
+	// The overlap is a warning, never a refusal: the channel is still
+	// desired, so an operator who means it keeps a working workspace.
+	if len(got.Channels) != 2 {
+		t.Errorf("channels = %d, want 2 (a warning must not drop the channel)", len(got.Channels))
+	}
+}
+
+// TestDesiredNoNamespaceOverlapWarning pins the negative: a template that only
+// shares a stem prefix with the namespace is not inside it. "#sami-ops" is in
+// the "sami" namespace; "#samizdat" is not, and warning about it would train
+// operators to ignore the finding.
+func TestDesiredNoNamespaceOverlapWarning(t *testing.T) {
+	cfg := baseConfig(irc.ChannelTemplate{Name: "#samizdat", Members: irc.MembersAll})
+	res := &stubResolver{accounts: map[string]string{"sami": "sami-acct"}}
+
+	got, err := Desired(context.Background(), cfg, testProfile(), testWorkspace(),
+		[]model.Member{creator("sami", "")}, res)
+	if err != nil {
+		t.Fatalf("Desired: unexpected error: %v", err)
+	}
+	if len(got.Warnings) != 0 {
+		t.Errorf("warnings = %v, want none", got.Warnings)
+	}
+}
+
+// TestDesiredOwnerRemovedStripsAuthoredOp is the one that matters for a removed
+// owner: it pins the consequence rather than the intermediate state.
+//
+// Desiring no role for a removed owner is only correct because DiffRoles
+// revokes an authored role that is no longer desired. A test that stopped at
+// "Members is empty" would still pass if the grant were re-added somewhere
+// downstream, so this drives the desired map through DiffRoles and asserts the
+// +o is actually taken back.
+func TestDesiredOwnerRemovedStripsAuthoredOp(t *testing.T) {
+	cfg := baseConfig(irc.ChannelTemplate{
+		Name:       "#{{ws}}",
+		Members:    irc.MembersList,
+		MemberList: []string{},
+		Owner:      "removed",
+	})
+	res := &stubResolver{accounts: map[string]string{"removed": "removed-acct"}}
+
+	// "removed" still resolves to an account -- the account outlives the
+	// membership -- but is no longer in members, which is exactly the
+	// removed/suspended case.
+	got, err := Desired(context.Background(), cfg, testProfile(), testWorkspace(),
+		[]model.Member{principal("alice")}, res)
+	if err != nil {
+		t.Fatalf("Desired: unexpected error: %v", err)
+	}
+	if len(got.Channels) != 1 {
+		t.Fatalf("channels = %d, want 1", len(got.Channels))
+	}
+	desired := got.Channels[0].Members
+
+	if role, ok := desired["removed-acct"]; ok {
+		t.Fatalf("removed owner still desires %q; the authored op would never be stripped", role)
+	}
+	if want := []string{"owner:removed"}; !equalStrings(got.Unresolved, want) {
+		t.Errorf("unresolved = %v, want %v", got.Unresolved, want)
+	}
+
+	// The server still shows the +o wsm granted last time, and wsm's
+	// authored map still claims it.
+	actual := map[string]irc.Role{"removed-acct": irc.RoleOp}
+	authored := map[string]irc.AuthoredRole{
+		"removed-acct": {Role: irc.RoleOp, Kind: irc.KindMember},
+	}
+
+	_, remove, _, foreign := DiffRoles(desired, actual, authored)
+
+	if len(remove) != 1 || remove[0].Account != "removed-acct" || remove[0].Role != irc.RoleOp {
+		t.Errorf("remove = %v, want a single -o on removed-acct", remove)
+	}
+	if len(foreign) != 0 {
+		t.Errorf("foreign = %v, want none (wsm authored this op)", foreign)
 	}
 }
 

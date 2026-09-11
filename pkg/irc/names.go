@@ -56,6 +56,30 @@ func ChannelName(prefix, template, wsName string) string {
 	return sigil + prefix + name
 }
 
+// CreatorNamespace returns the namespace stem for a creator member: the
+// explicit namespace when set, else the sanitized form of label (the member's
+// AuditLabel or ProfileID), which is the same derivation that produces its
+// account name.
+//
+// No collision set is consulted. The namespace is a name the operator can read
+// off the member, so deriving it from a -2 suffix that only reconcile knows
+// about would make it unpredictable; an operator whose two members sanitize to
+// the same stem sets ChannelNamespace explicitly.
+func CreatorNamespace(label, explicit string) string {
+	if explicit != "" {
+		return sanitizeAccountBase(explicit)
+	}
+	return sanitizeAccountBase(label)
+}
+
+// CreatorGlob returns the channel-name pattern a creator may register under:
+// every channel starting "#<namespace>-". The configured prefix is applied the
+// same way it is for a template channel, so on a shared server a creator's
+// namespace sits inside the workspace's prefix rather than beside it.
+func CreatorGlob(prefix, namespace string) string {
+	return ChannelName(prefix, "#"+namespace+"-*", "")
+}
+
 // SanitizeAccount derives a server account name from a member label
 // (AuditLabel when set, else ProfileID).
 //

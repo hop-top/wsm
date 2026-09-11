@@ -141,6 +141,91 @@ func TestSanitizeAccount_NeverBotPrefix(t *testing.T) {
 	}
 }
 
+func TestCreatorNamespace(t *testing.T) {
+	tests := []struct {
+		name     string
+		label    string
+		explicit string
+		want     string
+	}{
+		{
+			name:  "defaults to the sanitized label",
+			label: "Sami Eng",
+			want:  "sami-eng",
+		},
+		{
+			name:     "explicit namespace wins, still sanitized",
+			label:    "sami",
+			explicit: "Sami Labs",
+			want:     "sami-labs",
+		},
+		{
+			name:  "sanitizing matches the account derivation",
+			label: "noor_ops",
+			want:  SanitizeAccount("noor_ops", nil),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := CreatorNamespace(tt.label, tt.explicit)
+			if got != tt.want {
+				t.Errorf("CreatorNamespace(%q, %q) = %q, want %q",
+					tt.label, tt.explicit, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCreatorGlob(t *testing.T) {
+	tests := []struct {
+		name      string
+		prefix    string
+		namespace string
+		want      string
+	}{
+		{
+			name:      "unprefixed",
+			namespace: "sami",
+			want:      "#sami-*",
+		},
+		{
+			// The prefix must land after the '#', or the result is not a
+			// channel name at all.
+			name:      "prefix applied inside the sigil",
+			prefix:    "acme-",
+			namespace: "sami",
+			want:      "#acme-sami-*",
+		},
+		{
+			name:      "multi-segment namespace keeps its shape",
+			prefix:    "acme-",
+			namespace: "sami-eng",
+			want:      "#acme-sami-eng-*",
+		},
+		{
+			// Re-prefixing an already-prefixed namespace is a no-op, so a
+			// creator cannot be pushed out of the workspace's prefix by
+			// spelling it out.
+			name:      "already prefixed is idempotent",
+			prefix:    "acme-",
+			namespace: "acme-sami",
+			want:      "#acme-sami-*",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := CreatorGlob(tt.prefix, tt.namespace)
+			if got != tt.want {
+				t.Errorf("CreatorGlob(%q, %q) = %q, want %q",
+					tt.prefix, tt.namespace, got, tt.want)
+			}
+			if !strings.HasSuffix(got, "-*") {
+				t.Errorf("glob %q lost its trailing wildcard", got)
+			}
+		})
+	}
+}
+
 func TestSanitizeAccount_Collisions(t *testing.T) {
 	taken := map[string]bool{"reed": true}
 

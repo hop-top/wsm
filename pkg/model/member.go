@@ -49,6 +49,31 @@ type Member struct {
 	// that server. Bring-your-own accounts in external mode: wsm reads the
 	// entry matching its configured server id and never invents one.
 	IRCAccounts map[string]string `json:"irc_accounts,omitempty" yaml:"irc_accounts,omitempty"`
+
+	// ChannelCreator lets this member register its own channels on the
+	// server, inside the namespace ChannelNamespace names. wsm never
+	// authors roles in those channels: it discovers them, adopts them and
+	// captures, and the roles inside stay the creator's own.
+	ChannelCreator bool `json:"channel_creator,omitempty" yaml:"channel_creator,omitempty"`
+
+	// ChannelNamespace is the stem the creator's channels must start with.
+	// Empty means the member's sanitized account name, which is what
+	// ChannelNamespaceOrDefault returns; set it only to widen or move a
+	// creator's namespace away from that default.
+	ChannelNamespace string `json:"channel_namespace,omitempty" yaml:"channel_namespace,omitempty"`
+}
+
+// ChannelLabel returns the label this member's server identity is derived
+// from: AuditLabel when set, else ProfileID.
+//
+// The sanitizing itself lives in pkg/irc, which owns the account-name rules and
+// already imports this package; doing it here would invert that dependency. So
+// this returns the raw label and the irc side turns it into an account name.
+func (m *Member) ChannelLabel() string {
+	if m.AuditLabel != "" {
+		return m.AuditLabel
+	}
+	return m.ProfileID
 }
 
 // Validate checks required fields and cross-field constraints.
