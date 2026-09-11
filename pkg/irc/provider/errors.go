@@ -40,4 +40,16 @@ var (
 	// ErrPrivilege reports that the operation needs a server-level
 	// privilege (oper) the bot does not hold.
 	ErrPrivilege = errors.New("irc: server privilege required")
+
+	// ErrHostChannelNotRegistered reports that a borrowed channel does not
+	// exist on the host's server yet. It is distinct from
+	// ErrForeignChannel, which means the opposite: the host registered it
+	// and wsm may join.
+	//
+	// A guest must not join an unregistered channel. The first client into
+	// an empty channel is handed +o, which would make the borrower the de
+	// facto owner of a channel it came to borrow — and on a server with
+	// services, the founder of whatever gets registered next. Reporting
+	// this instead of joining keeps the guest a guest.
+	ErrHostChannelNotRegistered = errors.New("irc: host channel not registered")
 )

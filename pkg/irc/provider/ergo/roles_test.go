@@ -61,12 +61,18 @@ func TestRolesCapsMatrix(t *testing.T) {
 	}
 }
 
-// TestEnsureChannelBorrowedJoinsOnly pins the guest-side rule: a borrowed
-// channel belongs to the host, so wsm joins it and touches nothing else.
+// TestEnsureChannelBorrowedJoinsOnly pins the guest-side rule: once the host's
+// registration is confirmed, a borrowed channel gets a JOIN and nothing else.
 // Registering, setting modes or setting the topic would be a guest
 // reconfiguring someone else's channel.
 func TestEnsureChannelBorrowedJoinsOnly(t *testing.T) {
 	transport := bottest.New()
+	transport.SetScript(map[string][]ircmsg.Message{
+		"CS INFO": {
+			notice("Channel #a-dev is registered"),
+			notice("Founder: hostbot"),
+		},
+	})
 	roles := &Roles{transport: transport, nick: "botty"}
 
 	ch := provider.Channel{
@@ -82,13 +88,88 @@ func TestEnsureChannelBorrowedJoinsOnly(t *testing.T) {
 	}
 
 	sent := transport.SentLines()
-	if len(sent) != 1 || sent[0] != "JOIN #a-dev" {
-		t.Fatalf("sent = %q, want only a JOIN", sent)
+	if !sentContains(sent, "JOIN #a-dev") {
+		t.Fatalf("sent = %q, want a JOIN once the host registration is confirmed", sent)
 	}
-	for _, forbidden := range []string{"CS ", "MODE", "TOPIC"} {
+	// CS INFO is the one ChanServ command a borrower may issue: it asks a
+	// question rather than changing anything.
+	for _, forbidden := range []string{"CS REGISTER", "CS AMODE", "CS TRANSFER", "MODE", "TOPIC"} {
 		if sentContains(sent, forbidden) {
 			t.Errorf("a borrowed channel must not issue %s", forbidden)
 		}
+	}
+}
+
+// TestEnsureChannelBorrowedUnregisteredDoesNotJoin is the seizure guard.
+//
+// The first client into an empty channel is handed +o by the server, and on a
+// server with services that is the account which then registers it. A guest
+// that joined a host channel the host had not created yet would therefore end
+// up owning the channel it came to borrow. So an unregistered host channel is
+// reported and NOT joined — the probe has to precede the JOIN, because a check
+// made afterwards would already have taken the channel.
+func TestEnsureChannelBorrowedUnregisteredDoesNotJoin(t *testing.T) {
+	transport := bottest.New()
+	transport.SetScript(map[string][]ircmsg.Message{
+		"CS INFO": {notice("Channel #a-dev is not registered")},
+	})
+	roles := &Roles{transport: transport, nick: "botty"}
+
+	ch := provider.Channel{Name: "#a-dev", Borrowed: true}
+
+	err := roles.EnsureChannel(context.Background(), ch)
+	if !errors.Is(err, provider.ErrHostChannelNotRegistered) {
+		t.Fatalf("EnsureChannel = %v, want ErrHostChannelNotRegistered", err)
+	}
+
+	sent := transport.SentLines()
+	if sentContains(sent, "JOIN") {
+		t.Fatalf("an unregistered host channel must not be joined: sent = %q", sent)
+	}
+	// Nor may it be claimed by any other route.
+	for _, forbidden := range []string{"CS REGISTER", "CS TRANSFER"} {
+		if sentContains(sent, forbidden) {
+			t.Errorf("a borrower must never issue %s", forbidden)
+		}
+	}
+}
+
+// TestApplyRolesBorrowedFallsBackToLiveMode pins the borrowed provider path
+// end to end: a guest bot that the host gave halfop is refused a persistent
+// CS AMODE and falls back to a live MODE for a role within its ceiling, while
+// a role above it is refused outright rather than sent.
+//
+// Verified live on ergo 2.19.1: a non-founder halfop may set AMODE +v but is
+// told "Insufficient privileges" for +o, and live MODE agrees with 482.
+func TestApplyRolesBorrowedFallsBackToLiveMode(t *testing.T) {
+	transport := bottest.New()
+	transport.SetNames(map[string]string{"botty": "%"}) // halfop, host-granted
+	transport.SetScript(map[string][]ircmsg.Message{
+		"CS AMODE": {notice("Insufficient privileges")},
+	})
+	roles := &Roles{transport: transport, nick: "botty"}
+
+	add := []provider.ModeChange{{Account: "alice", Role: irc.RoleVoice}}
+	if err := roles.ApplyRoles(context.Background(), "#a-dev", add, nil); err != nil {
+		t.Fatalf("ApplyRoles: %v", err)
+	}
+
+	sent := transport.SentLines()
+	if !sentContains(sent, "CS AMODE #a-dev +v alice") {
+		t.Errorf("the persistent path must be tried first: sent = %q", sent)
+	}
+	if !sentContains(sent, "MODE #a-dev +v alice") {
+		t.Errorf("a refused AMODE must fall back to a live MODE: sent = %q", sent)
+	}
+
+	// The same bot may not grant op, in either form.
+	above := []provider.ModeChange{{Account: "bob", Role: irc.RoleOp}}
+	err := roles.ApplyRoles(context.Background(), "#a-dev", above, nil)
+	if !errors.Is(err, provider.ErrPrivilege) {
+		t.Fatalf("ApplyRoles(op) = %v, want ErrPrivilege", err)
+	}
+	if sentContains(transport.SentLines(), "MODE #a-dev +o") {
+		t.Error("a grant above the bot's own role must not be attempted")
 	}
 }
 

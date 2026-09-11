@@ -42,11 +42,14 @@ func (r *Roles) Caps() provider.Caps {
 
 // EnsureChannel brings the channel to its desired state.
 //
-// A borrowed channel gets a JOIN and nothing else. The host owns the
-// registration, the modes and the topic; touching any of them would be the
-// guest reconfiguring someone else's channel. It then reports
-// ErrForeignChannel, which is the expected outcome reconcile records rather
-// than a failure.
+// A borrowed channel is inspected with CS INFO BEFORE anything else and is
+// joined only once the host's registration is confirmed. An unregistered
+// channel is reported as ErrHostChannelNotRegistered without a JOIN: the
+// first client into an empty channel is handed +o, so joining here would
+// make the borrower the owner of the channel it came to borrow. Once the
+// registration is confirmed the channel gets a JOIN and nothing else — the
+// host owns the modes and the topic — and reports ErrForeignChannel, which
+// is the expected outcome reconcile records rather than a failure.
 //
 // An owned channel is joined, inspected with CS INFO and registered when
 // unregistered. A channel already registered to someone else is transferred
@@ -54,11 +57,25 @@ func (r *Roles) Caps() provider.Caps {
 // ErrForeignChannel so reconcile applies roles live and leaves the
 // registration alone.
 func (r *Roles) EnsureChannel(ctx context.Context, ch provider.Channel) error {
+	// The borrowed probe runs before the JOIN, which is the whole point:
+	// checking afterwards would already have seized an empty channel.
+	if ch.Borrowed {
+		state, err := r.channelState(ctx, ch.Name)
+		if err != nil {
+			return err
+		}
+		if !state.Registered {
+			return fmt.Errorf(
+				"irc/ergo: %s: %w", ch.Name, provider.ErrHostChannelNotRegistered)
+		}
+		if err := r.transport.Join(ctx, ch.Name); err != nil {
+			return fmt.Errorf("irc/ergo: join %s: %w", ch.Name, err)
+		}
+		return fmt.Errorf("irc/ergo: %s is borrowed: %w", ch.Name, provider.ErrForeignChannel)
+	}
+
 	if err := r.transport.Join(ctx, ch.Name); err != nil {
 		return fmt.Errorf("irc/ergo: join %s: %w", ch.Name, err)
-	}
-	if ch.Borrowed {
-		return fmt.Errorf("irc/ergo: %s is borrowed: %w", ch.Name, provider.ErrForeignChannel)
 	}
 
 	state, err := r.channelState(ctx, ch.Name)
