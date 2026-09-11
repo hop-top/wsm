@@ -59,6 +59,11 @@ type Deps struct {
 	// the only workspace on this machine".
 	DataDir string
 
+	// Clock is the time source discovery stamps adoptions and the unmanaged
+	// grace against. Nil means the system clock. Injectable because the purge
+	// grace is a ten-minute wait no test can afford to serve honestly.
+	Clock irc.Clock
+
 	// OnUnauthorized recovers from a rejected credential: managed mode rotates
 	// the API token and reloads the server out of band. Nil means no recovery
 	// is possible, which is external mode's normal state: the failure is

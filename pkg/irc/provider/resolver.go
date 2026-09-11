@@ -210,6 +210,29 @@ func (r *LocalWorkspacesResolver) ProfileFor(_ context.Context, account, serverI
 	return "", false, nil
 }
 
+// BotAccounts lists the bot accounts of every local workspace enabled against
+// serverID, in no particular order.
+//
+// The sweeper reads this to recognise a peer. A channel founded by another
+// workspace's bot must never be adopted, swept or purged, and the bot-account
+// prefix alone does not cover a workspace whose bot was named explicitly.
+// An unreadable data directory yields an empty set rather than an error: a
+// missing neighbour makes discovery more cautious, never less.
+func (r *LocalWorkspacesResolver) BotAccounts(serverID string) []string {
+	seen := map[string]bool{}
+	_ = r.eachProfile(serverID, func(_ string, p irc.Profile) {
+		if p.BotAccount != "" {
+			seen[p.BotAccount] = true
+		}
+	})
+
+	out := make([]string, 0, len(seen))
+	for account := range seen {
+		out = append(out, account)
+	}
+	return out
+}
+
 // eachProfile visits every local workspace profile recorded against serverID,
 // skipping the workspace this resolver was told to ignore. A missing data dir
 // is a normal state, not a failure; an unreadable individual profile is
