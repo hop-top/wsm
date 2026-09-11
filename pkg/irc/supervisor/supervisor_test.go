@@ -76,6 +76,62 @@ func (c *steppedClock) After(d time.Duration) <-chan time.Time {
 	return ch
 }
 
+// gatedClock parks every After on a channel the test controls, so a test can
+// hold the supervise loop inside its backoff wait for as long as it likes and
+// release it at an exact moment. Unlike fakeClock, which fires at once, this
+// makes the restart window a thing the test opens and closes by hand rather
+// than something it has to catch by timing.
+type gatedClock struct {
+	mu     sync.Mutex
+	calls  int
+	waited []time.Duration
+	gate   chan time.Time
+}
+
+// newGatedClock returns a clock whose After blocks until release is called.
+func newGatedClock() *gatedClock {
+	return &gatedClock{gate: make(chan time.Time)}
+}
+
+// Now returns a fixed instant; this clock exists to gate, not to measure.
+func (g *gatedClock) Now() time.Time { return time.Unix(0, 0) }
+
+// After records d and returns a channel that fires only once the test
+// releases the gate.
+func (g *gatedClock) After(d time.Duration) <-chan time.Time {
+	g.mu.Lock()
+	g.calls++
+	g.waited = append(g.waited, d)
+	g.mu.Unlock()
+	return g.gate
+}
+
+// waits reports how many times the supervise loop has entered a backoff wait.
+func (g *gatedClock) waits() int {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.calls
+}
+
+// release unblocks every parked and future After.
+func (g *gatedClock) release() { close(g.gate) }
+
+// waitForBackoff blocks until the supervise loop has parked inside its backoff
+// wait, i.e. the restart window is open. It fails loudly rather than returning
+// so a caller can never proceed as though the window had opened when it had
+// not.
+func waitForBackoff(t *testing.T, c *gatedClock) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		if c.waits() > 0 {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatal("the supervise loop never entered a backoff wait; the restart window never opened and this test exercised nothing")
+}
+
 // fakeBinary writes an executable shell script into dir and returns its path.
 // The script stands in for ergo so no real server is ever needed: the body
 // decides whether this "ergo" sleeps, exits, or logs.
@@ -605,29 +661,47 @@ func TestStop_DuringBackoffDoesNotRestart(t *testing.T) {
 	}
 }
 
-func TestStop_DuringRespawnLeavesNoOrphan(t *testing.T) {
-	// Stop landing while a restart is in flight must still end with every
-	// child dead. A slow Ready probe holds the respawn open so Stop is
-	// guaranteed to arrive mid-restart rather than by luck.
+func TestStop_DuringBackoffNeverForksAReplacement(t *testing.T) {
+	// The orphan window is the gap between a child dying and its
+	// replacement being registered. While the supervise loop sits in its
+	// backoff wait, s.cmd is nil, so Stop's snapshot of the current child
+	// is empty and its SIGTERM has nothing to aim at. Anything the loop
+	// forks after that point is a process Stop has already decided it does
+	// not own, and nothing else would ever reap it.
 	//
-	// Note on coverage: this asserts the observable contract (nothing
-	// survives Stop), not the specific mechanism. Stop waits for the
-	// supervise loop to drain, and that loop reaps its own in-flight child,
-	// so the explicit stopping-channel guards in spawnAndWaitReady are
-	// defence in depth here rather than the only thing preventing an
-	// orphan — deleting them does not turn this test red.
-	clock := &fakeClock{}
+	// Three independent mechanisms close that window, and each one alone is
+	// sufficient: backoff.Wait reports false once stopping is closed, the
+	// stopped() guard at the top of spawnAndWaitReady refuses to fork, and
+	// Stop's drain blocks on the loop's exited channel so Stop cannot
+	// return while the loop is still in a position to spawn. Because they
+	// are redundant rather than layered, removing any one of them — or all
+	// three — still forks no replacement here: what fails first when all
+	// three are gone is the phase, because the loop burns its whole restart
+	// budget and lands in degraded instead of stopped.
+	//
+	// So this test pins the observable contract of the window, not a single
+	// mechanism, and it says so rather than claiming a mutation sensitivity
+	// it does not have. What it will not do is pass without having run: the
+	// window has to open, Stop's snapshot has to be empty, and the original
+	// child has to be on the record, or the test fails instead of returning
+	// green.
+	//
+	// The window is held open with a gated clock rather than a sleep, so
+	// this is a decision the test makes rather than a race it hopes to
+	// win: the loop is parked in backoff until the test releases it, and
+	// the release happens only after Stop has begun.
+	clock := newGatedClock()
 	dir := t.TempDir()
 
-	// Children record their own pid, so the test can check the whole
-	// lineage rather than only the one the Supervisor last reported.
+	// Children record their own pid, so the whole lineage can be checked
+	// rather than only the one the Supervisor last reported.
 	pidDir := filepath.Join(dir, "pids")
 	if err := os.MkdirAll(pidDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	body := fmt.Sprintf(`echo $$ >> %q; sleep 30`, filepath.Join(pidDir, "all"))
+	lineage := filepath.Join(pidDir, "all")
+	body := fmt.Sprintf(`echo $$ >> %q; sleep 30`, lineage)
 
-	respawning := make(chan struct{}, 16)
 	s := &Supervisor{
 		Binary:   fakeBinary(t, dir, "fake-ergo", body),
 		ConfPath: filepath.Join(dir, "ergo.yaml"),
@@ -636,35 +710,21 @@ func TestStop_DuringRespawnLeavesNoOrphan(t *testing.T) {
 		Backoff:  testBackoff(clock, 5),
 	}
 
-	var probes int
-	s.Ready = func(ctx context.Context) error {
-		probes++
-		// The first probe (from Start) returns at once; later ones are
-		// respawns, and they dawdle so Stop can land mid-flight.
-		if probes > 1 {
-			select {
-			case respawning <- struct{}{}:
-			default:
-			}
-			time.Sleep(150 * time.Millisecond)
-		}
-		return nil
-	}
-
 	if err := s.Start(context.Background()); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
 	first := s.Status().PID
+	if first <= 0 {
+		t.Fatalf("Start reported pid %d; there is no child to race against", first)
+	}
 
 	// Start returns as soon as the fork succeeds, which can be before the
-	// child has run its first line. Wait for the lineage file, otherwise
-	// killing the child immediately can leave it never recorded and the
-	// assertion below with nothing to check.
-	lineage := filepath.Join(pidDir, "all")
-	waitForFile(t, lineage)
+	// child has run its first line. Waiting for the lineage file makes the
+	// original child's presence a fact rather than an assumption.
+	waitForRecordedPIDs(t, lineage, 1)
 
-	// Kill the child out from under the supervisor so it starts a restart
-	// that the slow probe holds open.
+	// Kill the child out from under the supervisor so the loop notices an
+	// unexpected exit and enters its restart backoff.
 	proc, err := os.FindProcess(first)
 	if err != nil {
 		t.Fatalf("find first child: %v", err)
@@ -673,44 +733,134 @@ func TestStop_DuringRespawnLeavesNoOrphan(t *testing.T) {
 		t.Fatalf("kill first child: %v", err)
 	}
 
-	// Stop exactly while a respawn is inside its readiness probe.
-	select {
-	case <-respawning:
-	case <-time.After(10 * time.Second):
-		t.Fatal("no respawn was observed")
+	// The loop must actually reach its backoff wait, otherwise the window
+	// this test exists to exercise never opened.
+	waitForBackoff(t, clock)
+
+	// With the loop parked mid-restart, Stop's view of the current child is
+	// empty. That emptiness is what makes this the orphan window rather
+	// than the ordinary path: Stop's SIGTERM has no target, so nothing but
+	// the loop declining to spawn keeps a late child from surviving.
+	s.mu.Lock()
+	snapshot := s.cmd
+	s.mu.Unlock()
+	if snapshot != nil {
+		t.Fatalf("s.cmd = %v during backoff, want nil; Stop would terminate the child directly and this would be the ordinary path, not the orphan window", snapshot)
 	}
+
+	// Release the backoff only once Stop is under way, so the loop is given
+	// every chance to fork a replacement that Stop never snapshotted.
+	released := make(chan struct{})
+	go func() {
+		defer close(released)
+		time.Sleep(50 * time.Millisecond)
+		clock.release()
+	}()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := s.Stop(ctx); err != nil {
 		t.Fatalf("Stop: %v", err)
 	}
+	<-released
 
 	if got := s.Status().Phase; got != PhaseStopped {
 		t.Errorf("Phase = %q, want %q", got, PhaseStopped)
 	}
 
-	// Every child this test ever spawned must now be dead. A surviving one
-	// is the orphan the guards exist to prevent.
-	//
-	// Give any respawn that was in flight during Stop a moment to record
-	// itself, so an orphan cannot escape the check by being written late.
-	time.Sleep(300 * time.Millisecond)
+	// Stop must not return while the loop can still spawn. Once Stop is
+	// done the loop has drained, so no further child can appear no matter
+	// how long the test waits.
+	s.mu.Lock()
+	exited := s.exited
+	s.mu.Unlock()
+	if exited == nil {
+		t.Fatal("no supervise loop was ever started; this test exercised nothing")
+	}
+	select {
+	case <-exited:
+	default:
+		t.Fatal("Stop returned while the supervise loop was still running; a restart can still fork a child that nothing will reap")
+	}
 
-	data, err := os.ReadFile(lineage)
+	// The released backoff had its chance. Give a loop that ignores the
+	// teardown a generous, bounded opportunity to fork and record a
+	// replacement: a correct supervisor will never take it, so this waits
+	// out the full window on every healthy run, while a loop that forked
+	// one anyway reveals itself as a second pid. The duration only sets how
+	// much slack a broken supervisor gets, never whether a correct one
+	// passes.
+	if pid, ok := awaitExtraChild(lineage, 2*time.Second); ok {
+		t.Errorf("child %d was forked after Stop took its empty snapshot; nothing will ever reap it", pid)
+	}
+
+	// The original must also be gone, not merely unreplaced.
+	pids := recordedPIDs(t, lineage)
+	if len(pids) == 0 {
+		t.Fatal("no child pids were recorded; the original child never ran and this test proves nothing")
+	}
+	for _, pid := range pids {
+		waitForDead(t, pid)
+	}
+}
+
+// awaitExtraChild watches path for a pid beyond the first and reports the
+// first one it sees, or false if none appeared within window. It is the
+// inverse of the usual helper: the expected outcome is that nothing happens,
+// so it always waits the full window before reporting success.
+func awaitExtraChild(path string, window time.Duration) (int, bool) {
+	deadline := time.Now().Add(window)
+	for time.Now().Before(deadline) {
+		data, err := os.ReadFile(path)
+		if err == nil {
+			fields := strings.Fields(string(data))
+			if len(fields) > 1 {
+				if pid, convErr := strconv.Atoi(fields[1]); convErr == nil {
+					return pid, true
+				}
+			}
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	return 0, false
+}
+
+// waitForRecordedPIDs blocks until path holds exactly n pids. A fake child
+// appends its pid as its first act, but the write lands a moment after the
+// fork returns, so waiting on the file's existence alone is not enough to know
+// the child is on the record.
+func waitForRecordedPIDs(t *testing.T, path string, n int) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		data, err := os.ReadFile(path)
+		if err == nil && len(strings.Fields(string(data))) == n {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	data, _ := os.ReadFile(path)
+	t.Fatalf("timed out waiting for %d recorded child pids; lineage = %v", n, strings.Fields(string(data)))
+}
+
+// recordedPIDs reads the pids the fake children appended to path. It fails the
+// test rather than returning an error, because every caller treats an
+// unreadable lineage as a broken scenario rather than a result.
+func recordedPIDs(t *testing.T, path string) []int {
+	t.Helper()
+	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read child pids: %v", err)
 	}
-	if len(strings.Fields(string(data))) == 0 {
-		t.Fatal("no child pids were recorded; the test proves nothing")
-	}
-	for _, line := range strings.Fields(string(data)) {
-		pid, convErr := strconv.Atoi(line)
-		if convErr != nil {
-			continue
+	var out []int
+	for _, field := range strings.Fields(string(data)) {
+		pid, err := strconv.Atoi(field)
+		if err != nil {
+			t.Fatalf("lineage contains %q, which is not a pid", field)
 		}
-		waitForDead(t, pid)
+		out = append(out, pid)
 	}
+	return out
 }
 
 func TestStart_TwiceIsRejected(t *testing.T) {
