@@ -26,6 +26,13 @@ the event log.`,
 	}
 	cli.SetTopLevelVerb(cmd)
 	cmd.AddCommand(
+		newIRCEnableCmd(opts),
+		newIRCDisableCmd(opts),
+		newIRCStartCmd(opts),
+		newIRCStopCmd(opts),
+		newIRCRestartCmd(opts),
+		newIRCStatusCmd(opts),
+		newIRCSyncCmd(opts),
 		newIRCDaemonCmd(opts),
 	)
 	return cmd
