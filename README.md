@@ -343,7 +343,7 @@ Conventions for coding agents working in this repository: [AGENTS.md](AGENTS.md)
 - [docs/ecosystem.md](docs/ecosystem.md): what wsm owns and what ash, usp, and aps own; who it is for
 - [docs/integration/go-module.md](docs/integration/go-module.md): embedding `hop.top/wsm` as a Go module; package layout
 - [docs/integration/aps-wsm-integration.md](docs/integration/aps-wsm-integration.md) and [hop-clis-comparison.md](docs/integration/hop-clis-comparison.md): aps as a vendored dependency, hop as an orchestrator; [decision-guide.md](docs/integration/decision-guide.md) weighs the two
-- [docs/stories/](docs/stories/README.md): 47 stories across 4 personas, with acceptance criteria
+- [docs/stories/](docs/stories/README.md): 55 stories across 4 personas, with acceptance criteria
 - [docs/personas/](docs/personas/README.md): User, Maintainer, External Client, Integrator
 - [docs/diagrams/session-management-sequences.md](docs/diagrams/session-management-sequences.md): sequence diagrams
 - [e2e/conformance/README.md](e2e/conformance/README.md): the 12-factor AI-CLI conformance grading behind the badge

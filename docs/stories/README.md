@@ -24,6 +24,17 @@ User stories for the wsm (Workspace Session Manager) project, organized by perso
 | 028 | [Session Management and Branching](028-session-management.md) | Session Management | P1 |
 | 047 | [Single Entry Append](047-single-entry-append.md) | Session Management | P1 |
 
+### Workspace IRC
+
+| ID | Story | Feature | Priority |
+|----|-------|---------|----------|
+| 048 | [IRC Enable and Lifecycle](048-irc-enable-and-lifecycle.md) | Workspace IRC | P1 |
+| 049 | [IRC Member Accounts and Credentials](049-irc-member-accounts-and-credentials.md) | Workspace IRC | P1 |
+| 050 | [IRC Channels and Roles via Providers](050-irc-channels-and-roles-via-providers.md) | Workspace IRC | P1 |
+| 052 | [IRC Remote Access over WebSocket and TLS](052-irc-remote-access-websocket-tls.md) | Workspace IRC | P2 |
+| 054 | [IRC Shared Servers, Guests, and Delegation](054-irc-shared-servers-guests-and-delegation.md) | Workspace IRC | P2 |
+| 055 | [IRC Bot Channels: Access Levels, Discovery, and Relay](055-irc-bot-channels-discovery-and-relay.md) | Workspace IRC | P2 |
+
 ### IDE Session Import
 
 | ID | Story | Feature | Priority |
@@ -55,6 +66,8 @@ User stories for the wsm (Workspace Session Manager) project, organized by perso
 | 025 | [Repository Foundation and Governance](025-repo-foundation-and-governance.md) | Repo standards | P1 |
 | 026 | [Test Harness and Conformance Gates](026-test-harness-and-conformance-gates.md) | 001-024 | P0 |
 | 045 | [Format Adapter Conformance Tests](045-format-adapter-conformance-tests.md) | IDE Session Import | P0 |
+| 050 | [IRC Channels and Roles via Providers](050-irc-channels-and-roles-via-providers.md) | Workspace IRC | P1 |
+| 054 | [IRC Shared Servers, Guests, and Delegation](054-irc-shared-servers-guests-and-delegation.md) | Workspace IRC | P2 |
 
 ## External Client (Scripting/CI)
 
@@ -64,6 +77,7 @@ User stories for the wsm (Workspace Session Manager) project, organized by perso
 | 014 | [Pipe-Friendly Output](014-pipe-friendly-output.md) | Output Modes | P1 |
 | 015 | [Exit Code Contract](015-exit-code-contract.md) | Output Modes | P0 |
 | 023 | [UI Rendering Modes](023-ui-rendering-modes.md) | Output Modes | P1 |
+| 051 | [IRC Message Capture and Backfill](051-irc-message-capture-and-backfill.md) | Workspace IRC | P1 |
 
 ## Integrator (Go Module)
 
@@ -77,3 +91,7 @@ User stories for the wsm (Workspace Session Manager) project, organized by perso
 | 029 | [Format Adapter Interface](029-format-adapter-interface.md) | IDE Session Import | P0 |
 | 046 | [Format Adapter Interface Review](046-format-adapter-interface-review.md) | IDE Session Import | P1 |
 | 047 | [Single Entry Append](047-single-entry-append.md) | Session Management | P1 |
+| 049 | [IRC Member Accounts and Credentials](049-irc-member-accounts-and-credentials.md) | Workspace IRC | P1 |
+| 051 | [IRC Message Capture and Backfill](051-irc-message-capture-and-backfill.md) | Workspace IRC | P1 |
+| 053 | [IRC Provider Adapter Contract](053-irc-provider-adapter-contract.md) | Workspace IRC | P1 |
+| 055 | [IRC Bot Channels: Access Levels, Discovery, and Relay](055-irc-bot-channels-discovery-and-relay.md) | Workspace IRC | P2 |
