@@ -66,15 +66,23 @@ Verified against ergo v2.19.1 docs and source (MANUAL.md, API.md, default.yaml, 
   draft/chathistory labeled-response`; plain clients degrade
 - `CHATHISTORY AFTER <target> timestamp=<ts> <limit>`; cap `chathistory-maxmessages` (1000)
 - Default history in RAM (2048/channel), lost on restart; `restrictions.expire-time` 1w
-- `ergo initdb|mkcerts|gentoken|genpasswd|run --conf`; oper passwords bcrypt
+- `ergo initdb|mkcerts|gentoken|genpasswd|run --conf`; oper passwords bcrypt. `mkcerts` writes
+  `fullchain.pem` + `privkey.pem` relative to cwd; order is `mkcerts` → `initdb` → `run`, and
+  `languages.path` must be absolute in the rendered config
 - Go client lib: `github.com/ergochat/irc-go` (ircevent: SASL, labeled response, batches)
 
-Probe before coding (implementation plan carries these as first tasks): `api.listener`
-accepts `host:port` only vs unix socket; `mkcerts` output paths; `gentoken` format; oper class
-only via config; `saregister` response for existing account; `/v1/list` shape; `CS AMODE`
-listing and `CS INFO` line formats; `CHATHISTORY` paging at the limit; `NAMES` prefix output
-with `multi-prefix` for the plain provider; whether a halfop/chanop may set `CS AMODE` at or
-below its own level (delegation persistence).
+Probed against a live ergo 2.19.1; every item above has a verdict in
+[probes.md](2026-09-10-irc-workspace-chat-design/probes.md), with raw fixture lines under
+[probes/](2026-09-10-irc-workspace-chat-design/probes/). Four deviations were found and are
+corrected in this document: `mkcerts` writes `privkey.pem` (not `key.pem`); `/v1/list` names
+the owner field `owner` (not `founder`); `saregister` returns HTTP 200 with
+`errorCode: ACCOUNT_EXISTS` for a duplicate, so adapters must branch on the JSON body, never
+the status; and there is no `CS UNPURGE` — the surface is `CS PURGE ADD|DEL|LIST` with a
+confirmation round trip on `ADD`. Confirmed as assumed: `api.listener` is `host:port` only
+(but a bad value is a soft failure that leaves ergo running without the API), `gentoken` emits
+a bare base64url token, oper class is config-only, and a non-founder halfop may set persistent
+`CS AMODE +v` while a chanop may set `+o` — the hierarchy matches ordinary `/MODE`, so the
+delegation model below holds.
 
 ## Architecture
 
@@ -145,9 +153,12 @@ var ErrUnsupported = errors.New("irc: operation not supported by provider")
 Every method on a provider that lacks the capability returns `ErrUnsupported`; reconcile
 treats that as "skip and report", never as failure. Registry: `provider.Open(name, deps)` for
 `ergo` and `plain`; unknown name → config validation error. No autodetection. Mapping of
-the directory capabilities: ergo lists via `/v1/list` or `LIST`, founder via `CS INFO`,
-hidden join via `SAJOIN` (oper), purge via `CS PURGE`, relay identity from ergo's `relaymsg`
-nick form and tag; plain lists via `LIST` only and reports everything else unsupported.
+the directory capabilities: ergo lists via `/v1/list` (the registered-owner field is `owner`,
+not `founder`; `userCount` is live occupancy, not membership) or `LIST`, founder via `CS INFO`
+or `/v1/ns/info`, hidden join via `SAJOIN` (oper), purge via `CS PURGE ADD` (two-step: the
+first call returns a confirmation code that must be echoed back as the sole trailing argument)
+and `CS PURGE DEL` to undo, relay identity from ergo's `relaymsg` server-set tag; plain lists
+via `LIST` only and reports everything else unsupported.
 
 `AccountResolver` answers "which account does member X use on server S":
 
@@ -183,7 +194,7 @@ $DataDir/irc/<workspace-id>/        durable
   profile.yaml      mode, server id, root (workspace dir), ports, bot account, account map
   ergo.yaml         managed: rendered; regenerated on enable/sync (never hand-edited)
   ircd.db           managed: ergo buntdb
-  tls/              managed: fullchain.pem key.pem (mkcerts unless supplied)
+  tls/              managed: fullchain.pem privkey.pem (mkcerts unless supplied)
   api.token         managed: 0600, ergo API bearer token
   secrets.yaml      0600, {account: passphrase}; managed: all members; external: bot only
 $StateDir/irc/<workspace-id>/       volatile
@@ -317,7 +328,7 @@ nick is not present gets roles on next join (bot subscribes to `JOIN`).
 
 `wsm irc channel add|rm|list` edits the workspace-local `irc.channels` override then signals
 reconcile. `rm` clears roles and, where supported, sets `+i`; `--purge` drops registration
-(`CS PURGE` on ergo, no-op elsewhere).
+(`CS PURGE ADD` plus its confirmation round trip on ergo, no-op elsewhere).
 
 ## Capture and backfill
 
@@ -557,7 +568,7 @@ busy, TLS missing, external server unreachable, provider lacks capability).
   the bot class.
 - External: TLS on by default; `insecure_skip_verify` is a loud warning in `status`; wsm holds
   only the bot password unless it created member accounts itself.
-- `secrets.yaml`, `api.token`, `tls/key.pem` 0600; dirs 0700; passphrases never logged;
+- `secrets.yaml`, `api.token`, `tls/privkey.pem` 0600; dirs 0700; passphrases never logged;
   `creds --json` carries `"sensitive": true`.
 - `--purge` and workspace delete are the only data-removing paths; both confirmed.
 

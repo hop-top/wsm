@@ -1,0 +1,42 @@
+# ChanServ AMODE + INFO + REGISTER NOTICE lines, ergo 2.19.1, verbatim.
+# All lines are NOTICEs from ChanServ!ChanServ@localhost to the caller.
+
+# --- CS INFO on an UNREGISTERED channel ---
+@time=2026-09-11T10:22:36.410Z :ChanServ!ChanServ@localhost NOTICE botty :Channel #unreg is not registered
+
+# --- CS REGISTER success ---
+@time=2026-09-11T10:22:38.837Z :ChanServ!ChanServ@localhost NOTICE botty :Channel #probe successfully registered
+
+# --- founder receives +q as a real MODE, not only a persistent mode ---
+@time=2026-09-11T10:24:26.197Z;msgid=5vpxaepxm4gg6vqdgf8k76s2ps :ChanServ!ChanServ@localhost MODE #multi +q botty
+
+# --- CS INFO on a REGISTERED channel (3 NOTICE lines) ---
+@time=2026-09-11T10:22:40.036Z :ChanServ!ChanServ@localhost NOTICE botty :Channel #probe is registered
+@time=2026-09-11T10:22:40.036Z :ChanServ!ChanServ@localhost NOTICE botty :Founder: botty
+@time=2026-09-11T10:22:40.036Z :ChanServ!ChanServ@localhost NOTICE botty :Registered at: Fri, 11 Sep 2026 10:22:38 UTC
+
+# --- CS AMODE set, one NOTICE per change ---
+@time=2026-09-11T10:22:41.245Z :ChanServ!ChanServ@localhost NOTICE botty :Successfully set persistent mode +v on alice
+@time=2026-09-11T10:22:42.452Z :ChanServ!ChanServ@localhost NOTICE botty :Successfully set persistent mode +o on carol
+@time=2026-09-11T10:22:56.559Z :ChanServ!ChanServ@localhost NOTICE botty :Successfully set persistent mode +h on bob
+
+# --- CS AMODE set that changes nothing ---
+@time=2026-09-11T10:23:06.269Z :ChanServ!ChanServ@localhost NOTICE carol :No changes were made
+
+# --- CS AMODE set refused for lack of privilege ---
+@time=2026-09-11T10:23:02.629Z :ChanServ!ChanServ@localhost NOTICE bob :Insufficient privileges
+
+# --- CS AMODE listing: header line then one line per account ---
+# Header: "Channel <#c> has <N> persistent modes set"
+# Entry:  "Account <account> receives mode <+X>"
+@time=2026-09-11T10:22:43.657Z :ChanServ!ChanServ@localhost NOTICE botty :Channel #probe has 3 persistent modes set
+@time=2026-09-11T10:22:43.662Z :ChanServ!ChanServ@localhost NOTICE botty :Account botty receives mode +q
+@time=2026-09-11T10:22:43.662Z :ChanServ!ChanServ@localhost NOTICE botty :Account carol receives mode +o
+@time=2026-09-11T10:22:43.663Z :ChanServ!ChanServ@localhost NOTICE botty :Account alice receives mode +v
+
+# --- CS AMODE listing after delegation probe (4 entries incl. halfop) ---
+@time=2026-09-11T10:23:11.099Z :ChanServ!ChanServ@localhost NOTICE botty :Channel #deleg has 4 persistent modes set
+@time=2026-09-11T10:23:11.099Z :ChanServ!ChanServ@localhost NOTICE botty :Account botty receives mode +q
+@time=2026-09-11T10:23:11.099Z :ChanServ!ChanServ@localhost NOTICE botty :Account carol receives mode +o
+@time=2026-09-11T10:23:11.099Z :ChanServ!ChanServ@localhost NOTICE botty :Account dave receives mode +o
+@time=2026-09-11T10:23:11.099Z :ChanServ!ChanServ@localhost NOTICE botty :Account bob receives mode +h

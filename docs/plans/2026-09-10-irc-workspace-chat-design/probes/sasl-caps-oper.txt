@@ -1,0 +1,47 @@
+# Connection registration, SASL PLAIN, cap negotiation, OPER, labeled-response.
+# ergo 2.19.1 via github.com/ergochat/irc-go v0.7.0 ircevent.
+
+# --- CAP LS 302 (two lines, continuation marked by the '*' param) ---
+:ergo.test CAP * LS * :account-notify account-tag away-notify batch cap-notify chghost draft/account-registration=before-connect draft/channel-rename draft/chathistory draft/event-playback draft/extended-isupport draft/languages=17,en,~bs,~de,~el,~en-AU,~es,~fi,~fr-FR,~it,~nl,~no,~pl,~pt-BR,~ro,~sq-AL,~tr-TR,~zh-CN draft/metadata-2=before-connect,max-subs=100,max-keys=100 draft/metadata-3=before-connect,max-subs=100,max-keys=100 draft/multiline=max-bytes=4096,max-lines=100 draft/persistence draft/pre-away
+:ergo.test CAP * LS :draft/read-marker draft/relaymsg=/ draft/whoami echo-message ergo.chat/nope extended-join extended-monitor invite-notify labeled-response message-tags multi-prefix no-implicit-names sasl=PLAIN,EXTERNAL,SCRAM-SHA-256 server-time setname standard-replies userhost-in-names znc.in/playback znc.in/self-message
+
+# --- every requested cap ACKed, one CAP ACK line each ---
+:ergo.test CAP * ACK sasl
+:ergo.test CAP * ACK message-tags
+:ergo.test CAP * ACK account-tag
+@time=2026-09-11T10:22:00.405Z :ergo.test CAP * ACK server-time
+@time=2026-09-11T10:22:00.405Z :ergo.test CAP * ACK echo-message
+@time=2026-09-11T10:22:00.405Z :ergo.test CAP * ACK batch
+@time=2026-09-11T10:22:00.405Z :ergo.test CAP * ACK draft/chathistory
+@time=2026-09-11T10:22:00.405Z :ergo.test CAP * ACK labeled-response
+@time=2026-09-11T10:22:00.405Z :ergo.test CAP * ACK multi-prefix
+
+# --- SASL PLAIN success ---
+@time=2026-09-11T10:22:00.407Z :ergo.test 900 * * botty :You are now logged in as botty
+@time=2026-09-11T10:22:00.407Z :ergo.test 903 * :Authentication successful
+
+# --- ISUPPORT lines worth pinning (PREFIX, CHATHISTORY, NICKLEN, CASEMAPPING) ---
+@time=2026-09-11T10:22:00.408Z :ergo.test 005 botty AWAYLEN=390 BOT=B CASEMAPPING=ascii CHANLIMIT=#:100 CHANMODES=Ibe,k,fl,CEMRUimnstu CHANNELLEN=64 CHANTYPES=# CHATHISTORY=1000 ELIST=U EXCEPTS EXTBAN=,m FORWARD=f INVEX :are supported by this server
+@time=2026-09-11T10:22:00.408Z :ergo.test 005 botty KICKLEN=390 MAXLIST=beI:100 MAXTARGETS=4 MODES MONITOR=100 MSGREFTYPES=msgid,timestamp NETWORK=ErgoTest NICKLEN=32 PREFIX=(qaohv)~&@%+ SAFELIST SAFERATE STATUSMSG=~&@%+ TARGMAX=NAMES:1,LIST:1,KICK:,WHOIS:1,USERHOST:10,PRIVMSG:4,TAGMSG:4,NOTICE:4,MONITOR:100 :are supported by this server
+@time=2026-09-11T10:22:00.408Z :ergo.test 005 botty TOPICLEN=390 UTF8ONLY WHOX draft/CHATHISTORY=1000 :are supported by this server
+
+# --- OPER success: RPL_YOUREOPER (381) then a user MODE +o ---
+@time=2026-09-11T10:22:01.613Z :ergo.test 381 botty :You are now an IRC operator
+@time=2026-09-11T10:22:01.613Z :ergo.test MODE botty +o
+
+# --- labeled-response: WHOIS wrapped in a batch (batch= tag on every line) ---
+@time=2026-09-11T10:22:02.813Z;batch=1 :ergo.test 311 botty botty ~u gwfgs6htdzzrg.irc * botty
+@batch=1;time=2026-09-11T10:22:02.813Z :ergo.test 313 botty botty :is the server administrator
+@time=2026-09-11T10:22:02.813Z;batch=1 :ergo.test 338 botty botty ~u@127.0.0.1 127.0.0.1 :Actual user@host, Actual IP
+@batch=1;time=2026-09-11T10:22:02.813Z :ergo.test 379 botty botty :is using modes +Zio
+@time=2026-09-11T10:22:02.813Z;batch=1 :ergo.test 671 botty botty :is using a secure connection
+@time=2026-09-11T10:22:02.813Z;batch=1 :ergo.test 330 botty botty botty :is logged in as
+@time=2026-09-11T10:22:02.813Z;batch=1 :ergo.test 317 botty botty 2 1789122120 :seconds idle, signon time
+@batch=1;time=2026-09-11T10:22:02.813Z :ergo.test 318 botty botty :End of /WHOIS list
+
+# --- SAJOIN into a +i +k channel as oper: plain JOIN, no error ---
+@account=botty;msgid=538ud7q8zdgh2cakgdbu7gkhg6;time=2026-09-11T10:22:49.686Z :botty!~u@gwfgs6htdzzrg.irc JOIN #locked
+
+# --- nick reservation is strict: an unauthenticated client cannot take a
+#     registered nick (relevant to bot reconnect races) ---
+:ergo.test FAIL NICK NICKNAME_RESERVED botty :Nickname is reserved by a different account
