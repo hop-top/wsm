@@ -89,7 +89,7 @@ channels:
 oper-classes:
     "wsm":
         title: "wsm"
-        capabilities: ["accreg", "chanreg", "sajoin", "samode", "kill", "rehash", "history"]
+        capabilities: ["accreg", "ban", "chanreg", "sajoin", "samode", "kill", "rehash", "history"]
 
 opers:
     # The wsm bot. Password is the bot's own secret, bcrypt-hashed; the bot
