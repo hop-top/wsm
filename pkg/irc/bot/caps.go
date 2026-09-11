@@ -28,6 +28,10 @@ const (
 	CapMultiPrefix = "multi-prefix"
 	// CapBatch groups related lines; labeled-response needs it.
 	CapBatch = "batch"
+	// CapChatHistory lets the bot replay a channel's past messages, which is
+	// the whole of what backfill does. Without it backfill reports
+	// unsupported and issues no commands at all.
+	CapChatHistory = "draft/chathistory"
 )
 
 // capSet is the negotiated capability set, implementing provider.CapSet.
