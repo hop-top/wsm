@@ -924,6 +924,144 @@ func TestReconcileBorrowedCapsAtMyRole(t *testing.T) {
 	}
 }
 
+// TestReconcileBorrowedUnregisteredHostChannel is the guest-side seizure
+// guard, at the reconcile level.
+//
+// A host channel that does not exist yet must not be joined: the first client
+// into an empty channel is handed +o, so the borrower would become the owner
+// of the channel it came to borrow. The report says so and no role is applied,
+// because there is no channel to apply one in.
+func TestReconcileBorrowedUnregisteredHostChannel(t *testing.T) {
+	const channel = "#a-dev"
+
+	roles := &fakeRoles{
+		caps:      allCaps,
+		myRole:    map[string]irc.Role{channel: irc.RoleOp},
+		ensureErr: map[string]error{channel: provider.ErrHostChannelNotRegistered},
+	}
+
+	d := reconcileDeps(t, &fakeAccounts{caps: allCaps}, roles,
+		[]model.Member{principal("alice")})
+	d.Cfg = baseConfig(irc.ChannelTemplate{
+		Name: "#ignored",
+		Borrowed: &irc.Borrowed{
+			Host: "ws-a", Channel: channel, Members: irc.MembersAll,
+		},
+	})
+
+	rep, err := Reconcile(context.Background(), d)
+	if err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+
+	cr := rep.Channels[0]
+	if !cr.Borrowed {
+		t.Error("channel not reported as borrowed")
+	}
+	if cr.Registered {
+		t.Error("an unregistered host channel must not report as registered")
+	}
+	if cr.Err != "host channel not registered" {
+		t.Errorf("err = %q, want %q", cr.Err, "host channel not registered")
+	}
+
+	// Nothing may be granted in a channel wsm refused to join. Applying a
+	// role here is what seizing the channel would look like.
+	if len(roles.applies) != 0 {
+		t.Errorf("roles were applied in an unjoined channel: %+v", roles.applies)
+	}
+	if len(d.Profile.AuthoredRoles[channel]) != 0 {
+		t.Errorf("roles were authored in an unjoined channel: %+v",
+			d.Profile.AuthoredRoles[channel])
+	}
+}
+
+// TestReconcileBorrowedMyRoleTable pins the ceiling at each rung the host can
+// leave the guest on.
+//
+// The none case is the one that matters most and the easiest to get backwards:
+// no privilege is the STRICTEST ceiling, not the absence of one. A host that
+// revoked the guest's role, and the default ergo wiring, both report no role,
+// so reading it as "no cap" would grant everything precisely when wsm may
+// grant nothing.
+func TestReconcileBorrowedMyRoleTable(t *testing.T) {
+	const channel = "#a-dev"
+
+	cases := []struct {
+		name       string
+		myRole     irc.Role
+		wantCapped []string
+		wantGrants []string
+	}{
+		{
+			// op: the principal's op and the delegate's voice both fit.
+			name:       "op grants both",
+			myRole:     irc.RoleOp,
+			wantCapped: nil,
+			wantGrants: []string{"alice-acct", "bot-a-acct"},
+		},
+		{
+			// halfop: voice fits, op does not.
+			name:       "halfop caps op to nothing",
+			myRole:     irc.RoleHalfop,
+			wantCapped: []string{"alice-acct"},
+			wantGrants: []string{"bot-a-acct"},
+		},
+		{
+			// none: the host granted nothing, so wsm grants nothing.
+			name:       "none caps everything",
+			myRole:     "",
+			wantCapped: []string{"alice-acct", "bot-a-acct"},
+			wantGrants: nil,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			roles := &fakeRoles{
+				caps:      allCaps,
+				myRole:    map[string]irc.Role{channel: tc.myRole},
+				ensureErr: map[string]error{channel: provider.ErrForeignChannel},
+			}
+
+			d := reconcileDeps(t, &fakeAccounts{caps: allCaps}, roles,
+				[]model.Member{principal("alice"), delegate("bot-a", "alice")})
+			d.Cfg = baseConfig(irc.ChannelTemplate{
+				Name: "#ignored",
+				Borrowed: &irc.Borrowed{
+					Host: "ws-a", Channel: channel, Members: irc.MembersAll,
+				},
+			})
+
+			rep, err := Reconcile(context.Background(), d)
+			if err != nil {
+				t.Fatalf("Reconcile: %v", err)
+			}
+
+			cr := rep.Channels[0]
+			if cr.MyRole != tc.myRole {
+				t.Errorf("my role = %q, want %q", cr.MyRole, tc.myRole)
+			}
+
+			if !equalStrings(cr.Capped, tc.wantCapped) {
+				t.Errorf("capped = %v, want %v", cr.Capped, tc.wantCapped)
+			}
+
+			touched := roles.touched()
+			for _, account := range tc.wantGrants {
+				if !touched[account] {
+					t.Errorf("%s was within the ceiling but not granted", account)
+				}
+			}
+			for _, account := range tc.wantCapped {
+				if touched[account] {
+					t.Errorf("%s was above the ceiling but a mode was still sent", account)
+				}
+			}
+		})
+	}
+}
+
 // TestReconcileReportsUnresolved pins that a member with no account is surfaced
 // rather than silently dropped.
 func TestReconcileReportsUnresolved(t *testing.T) {

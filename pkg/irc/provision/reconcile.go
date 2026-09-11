@@ -552,6 +552,15 @@ func reconcileBorrowed(ctx context.Context, d Deps, bc BorrowedChannel, rep *Rep
 	switch err := d.Roles.EnsureChannel(ctx, ensure); {
 	case err == nil:
 		cr.Registered = true
+	case errors.Is(err, provider.ErrHostChannelNotRegistered):
+		// The host has not created the channel yet. wsm must not join: the
+		// first client into an empty channel is handed +o, which would make
+		// this workspace the owner of a channel it only meant to borrow. No
+		// roles are applied either, since there is nothing to apply them in.
+		cr.Err = "host channel not registered"
+		rep.Degraded = append(rep.Degraded,
+			fmt.Sprintf("%s: host channel not registered, not joined", bc.Name))
+		return cr
 	case errors.Is(err, provider.ErrForeignChannel):
 		// Expected: the host registered it. Joining is all wsm needs.
 		cr.Foreign = true
@@ -574,11 +583,18 @@ func reconcileBorrowed(ctx context.Context, d Deps, bc BorrowedChannel, rep *Rep
 	}
 
 	// Cap the desired roles at what the bot itself holds.
+	//
+	// An empty MyRole is the strictest ceiling, not the absence of one: the
+	// bot holds no privilege here, so every grant is capped and nothing is
+	// attempted. Treating it as "no ceiling" would invert the rule exactly
+	// where it matters most — a host that revoked the guest's role, and the
+	// default ergo wiring, both report no role — and would fire grants the
+	// server is certain to refuse.
 	capped := map[string]irc.Role{}
 	kinds := map[string]Kind{}
 	for _, account := range sortedRoleKeys(bc.Members) {
 		role := bc.Members[account]
-		if cr.MyRole != "" && !role.AtMost(cr.MyRole) {
+		if !role.AtMost(cr.MyRole) {
 			cr.Capped = append(cr.Capped, account)
 			continue
 		}
