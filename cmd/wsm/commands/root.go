@@ -185,6 +185,7 @@ type appContext struct {
 	cfg          config.Config
 	backend      backend.Backend
 	manager      *workspace.Manager
+	caps         *workspace.Capabilities
 	bus          bus.Bus
 	policyUnwire func()
 }
@@ -251,10 +252,12 @@ func newAppContext(opts globalOptions) (*appContext, error) {
 	// fan-out is the bus adapter's job, not ours.
 	eventBus := bus.New()
 
+	caps := resolveCapabilities()
 	mgr, err := workspace.NewManager(b,
 		workspace.WithSessionID(opts.SessionID),
 		workspace.WithAgentID(opts.AgentID),
 		workspace.WithBus(eventBus),
+		workspace.WithCapabilities(caps),
 	)
 	if err != nil {
 		_ = b.Close()
@@ -271,7 +274,38 @@ func newAppContext(opts globalOptions) (*appContext, error) {
 		return nil, workspace.NewErrorBackend("wire policy engine", err)
 	}
 
-	return &appContext{cfg: cfg, backend: b, manager: mgr, bus: eventBus, policyUnwire: unwire}, nil
+	return &appContext{cfg: cfg, backend: b, manager: mgr, caps: caps, bus: eventBus, policyUnwire: unwire}, nil
+}
+
+// EnvDenyCapabilities names the capabilities to withhold from this
+// invocation, comma-separated, or "all" to withhold every one.
+//
+// Capability denial is a library-level policy: the manager is
+// constructed with AllCapabilities in production and no flag exposes
+// anything else, which leaves the forbidden path (exit 6) unreachable
+// from a real invocation and therefore untestable at the process
+// boundary. This seam closes that gap the same way WSM_POLICY_FILE
+// does for the policy engine — an environment variable a test sets,
+// never a documented operator control.
+const EnvDenyCapabilities = "WSM_DENY_CAPABILITIES"
+
+// resolveCapabilities builds the capability policy for this process.
+// The default is AllCapabilities; EnvDenyCapabilities narrows it.
+func resolveCapabilities() *workspace.Capabilities {
+	raw := strings.TrimSpace(os.Getenv(EnvDenyCapabilities))
+	if raw == "" {
+		return workspace.AllCapabilities()
+	}
+	if strings.EqualFold(raw, "all") {
+		return workspace.DenyAll()
+	}
+	denied := map[string]bool{}
+	for _, name := range strings.Split(raw, ",") {
+		if name = strings.TrimSpace(name); name != "" {
+			denied[name] = true
+		}
+	}
+	return workspace.DenyCapabilities(denied)
 }
 
 // NewRootCmd creates the root command for wsm via kit/cli.
