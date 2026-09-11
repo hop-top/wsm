@@ -49,7 +49,6 @@ hand only to watch a workspace's IRC session directly.`,
 		},
 	}
 
-	cli.SetTopLevelVerb(cmd)
 	// Layer-A: a long-running process that owns a server, a session and the
 	// event log. Re-running it against a workspace that already has a daemon
 	// is refused by the lock rather than duplicated, so the honest

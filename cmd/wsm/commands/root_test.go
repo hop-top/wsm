@@ -139,6 +139,33 @@ func TestLayerAAnnotationsPresent(t *testing.T) {
 	})
 }
 
+// TestTopLevelVerbOnlyOnDepthOne asserts kit/top-level-verb appears
+// only where it is true: on depth-1 verbs. The annotation is an
+// assertion about a command's position in the tree, so carrying it
+// deeper states something false — kit's shape validator reads it only
+// under `case 1:`, and the toolspec projector copies it onto every
+// manifest entry it walks.
+//
+// TestTopLevelVerbCountLock cannot catch this: it counts
+// root.Commands() and never inspects an annotation, so a stray tag at
+// depth 2 leaves its total untouched. Nothing else pins the negative
+// case, which is how `irc daemon` carried one unnoticed from the days
+// when it was the only child of a placeholder `irc` parent.
+func TestTopLevelVerbOnlyOnDepthOne(t *testing.T) {
+	root := NewRootCmd()
+
+	walkDepth(root, 0, func(cmd *cobra.Command, depth int) {
+		if cmd == root || isCobraBuiltin(cmd) {
+			return
+		}
+		if depth > 1 && cli.IsTopLevelVerb(cmd) {
+			t.Errorf("depth-%d command %q carries kit/top-level-verb; "+
+				"the annotation belongs only on depth-1 verbs",
+				depth, cmd.CommandPath())
+		}
+	})
+}
+
 // TestTopLevelVerbCountLock pins the depth-1 runnable verb count at
 // its steady-state value. kit's shape validator caps depth-1 verbs at
 // MaxTopLevelVerbs=10 but excludes reserved subcommands (`status`,
