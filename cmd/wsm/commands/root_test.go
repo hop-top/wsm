@@ -147,9 +147,9 @@ func TestLayerAAnnotationsPresent(t *testing.T) {
 // future kit-shipped reserved verbs) from the count. Locking the count
 // here prevents an unintended verb sneaking in unobserved.
 //
-// The steady-state count is 12, two over kit's default cap of 10, so
-// NewRootCmd raises Config.MaxTopLevelVerbs to match. Both additions
-// are deliberate:
+// The steady-state count is 13, three over kit's default cap of 10, so
+// NewRootCmd raises Config.MaxTopLevelVerbs to match. All three
+// additions are deliberate:
 //
 //   - capabilities: the machine-readable command surface agents read
 //     instead of scraping help text. Must be a depth-1 verb — it
@@ -158,11 +158,14 @@ func TestLayerAAnnotationsPresent(t *testing.T) {
 //     positional is a usage error (exit 2) instead of cobra's
 //     help-and-exit-0. Runnability is what makes it count; the verb
 //     itself is not new surface.
+//   - irc: workspace chat. A noun of its own with its own lifecycle
+//     (enable, start, status, sync, channels, accounts), so it fits
+//     under no existing group without misfiling every verb beneath it.
 //
 // Update this constant when intentionally adding or removing a
 // top-level verb.
 func TestTopLevelVerbCountLock(t *testing.T) {
-	const want = 12
+	const want = 13
 
 	root := NewRootCmd()
 	// kitRootInstance is populated by NewRootCmd. Use its IsReserved

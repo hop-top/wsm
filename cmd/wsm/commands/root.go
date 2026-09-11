@@ -79,6 +79,7 @@ var commandGroups = map[string]string{
 	"config":       "management",
 	"event":        "capture",
 	"snapshot":     "capture",
+	"irc":          "interact",
 	"completion":   "management",
 	"version":      "management",
 	"upgrade":      "management",
@@ -295,11 +296,13 @@ func NewRootCmd() *cobra.Command {
 		// (override XDG config file location); suppress the built-in so the
 		// custom global below remains the sole --config flag.
 		Disable: cli.Disable{Config: true},
-		// Two intentional additions over kit's default cap of 10:
-		// `capabilities` (machine-readable command surface, F5) and the
+		// Three intentional additions over kit's default cap of 10:
+		// `capabilities` (machine-readable command surface, F5), the
 		// hardened `config` group (usage-erroring RunE makes it a
-		// runnable depth-1 verb). Locked by TestTopLevelVerbCountLock.
-		MaxTopLevelVerbs: 12,
+		// runnable depth-1 verb), and `irc` (workspace chat: its own
+		// noun with a lifecycle of its own, so it groups under no
+		// existing verb). Locked by TestTopLevelVerbCountLock.
+		MaxTopLevelVerbs: 13,
 		Help: cli.HelpConfig{
 			Disclaimer: "Workspace & Session Manager (wsm) for IDE-agnostic session storage.",
 			// management is pre-registered + auto-hidden by cli.New;
@@ -465,6 +468,7 @@ func NewRootCmd() *cobra.Command {
 		newEventGroupCmd(&opts),
 		newDeviceGroupCmd(&opts),
 		newSnapshotGroupCmd(&opts),
+		newIRCGroupCmd(&opts),
 		newConfigCmd(&opts),
 		newCompletionCmd(root, &opts),
 		newTUICmd(&opts),
