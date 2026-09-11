@@ -125,7 +125,12 @@ type infoResponse struct {
 // account that already exists is reported as provider.ErrExists, which
 // callers treat as success and keep the existing credentials.
 func (c *Client) SARegister(ctx context.Context, account, passphrase string) error {
-	body := map[string]string{"accountName": account, "password": passphrase}
+	// The key is "passphrase", which is what ergo's handler decodes. A body
+	// naming it anything else is not rejected: the unknown key is dropped and
+	// the account is registered and verified with an EMPTY passphrase, so the
+	// call answers {"success":true} and nobody can ever log in as the account
+	// — including wsm's own bot. Pinned by TestSARegisterSendsPassphrase.
+	body := map[string]string{"accountName": account, "passphrase": passphrase}
 	var res apiResult
 	if err := c.post(ctx, "/v1/ns/saregister", body, &res); err != nil {
 		return err
@@ -141,7 +146,10 @@ func (c *Client) SARegister(ctx context.Context, account, passphrase string) err
 
 // Passwd rotates the passphrase of an existing account.
 func (c *Client) Passwd(ctx context.Context, account, passphrase string) error {
-	body := map[string]string{"accountName": account, "password": passphrase}
+	// Same key, same silent failure as SARegister: ergo's passwd handler
+	// decodes the very same request shape, so a misnamed field rotates the
+	// account to an empty passphrase while reporting success.
+	body := map[string]string{"accountName": account, "passphrase": passphrase}
 	var res apiResult
 	if err := c.post(ctx, "/v1/ns/passwd", body, &res); err != nil {
 		return err
