@@ -56,9 +56,37 @@ type Role string
 const (
 	// RoleVoice is +v: may speak in a moderated channel.
 	RoleVoice Role = "voice"
+	// RoleHalfop is +h: may set channel modes below operator. Not every
+	// server implements it, so it is only ever a delegation ceiling or an
+	// observed role, never a role wsm grants from config.
+	RoleHalfop Role = "halfop"
 	// RoleOp is +o: channel operator.
 	RoleOp Role = "op"
 )
+
+// roleRank orders roles by privilege: op outranks halfop outranks voice. An
+// unknown role ranks 0 so it never satisfies a ceiling.
+func roleRank(r Role) int {
+	switch r {
+	case RoleVoice:
+		return 1
+	case RoleHalfop:
+		return 2
+	case RoleOp:
+		return 3
+	default:
+		return 0
+	}
+}
+
+// Outranks reports whether r is strictly more privileged than other.
+func (r Role) Outranks(other Role) bool { return roleRank(r) > roleRank(other) }
+
+// AtMost reports whether r is within the ceiling, i.e. no more privileged
+// than ceiling. Used to cap what a delegate bot may grant.
+func (r Role) AtMost(ceiling Role) bool {
+	return roleRank(r) != 0 && roleRank(r) <= roleRank(ceiling)
+}
 
 // UnmanagedPolicy decides what happens to registered channels wsm does not own.
 type UnmanagedPolicy string

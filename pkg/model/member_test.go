@@ -69,6 +69,32 @@ func TestMember_FacetOptional(t *testing.T) {
 	}
 }
 
+func TestMember_IRCAccountsOptional(t *testing.T) {
+	// irc_accounts is additive: a member without it stays valid, and the
+	// field defaults to nil rather than an empty map.
+	m := Member{ProfileID: "x", Capacity: CapacityPrincipal}
+	if err := m.Validate(); err != nil {
+		t.Fatalf("irc_accounts should be optional: %v", err)
+	}
+	if m.IRCAccounts != nil {
+		t.Error("irc_accounts should default to nil")
+	}
+}
+
+func TestMember_IRCAccountsDoesNotAffectValidate(t *testing.T) {
+	m := Member{
+		ProfileID:   "sami",
+		Capacity:    CapacityPrincipal,
+		IRCAccounts: map[string]string{"wsm://ws-1/irc": "sami-eng"},
+	}
+	if err := m.Validate(); err != nil {
+		t.Fatalf("a member with irc_accounts should validate: %v", err)
+	}
+	if got := m.IRCAccounts["wsm://ws-1/irc"]; got != "sami-eng" {
+		t.Errorf("account = %q, want sami-eng", got)
+	}
+}
+
 func TestValidateCapacity(t *testing.T) {
 	for _, c := range []Capacity{CapacityPrincipal, CapacityDelegate} {
 		if err := ValidateCapacity(c); err != nil {

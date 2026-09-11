@@ -44,6 +44,11 @@ type Member struct {
 	// SecretsScope restricts which aps SecretStore keys this member
 	// may access. Empty means no secret access.
 	SecretsScope string `json:"secrets_scope,omitempty" yaml:"secrets_scope,omitempty"`
+
+	// IRCAccounts maps an IRC server id to this member's account name on
+	// that server. Bring-your-own accounts in external mode: wsm reads the
+	// entry matching its configured server id and never invents one.
+	IRCAccounts map[string]string `json:"irc_accounts,omitempty" yaml:"irc_accounts,omitempty"`
 }
 
 // Validate checks required fields and cross-field constraints.
