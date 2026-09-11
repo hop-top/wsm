@@ -381,8 +381,10 @@ func NewRootCmd() *cobra.Command {
 			{Name: "data-dir", Usage: "Data directory"},
 			{Name: "session-id", Usage: "Session ID for event tracking"},
 			{Name: "agent-id", Default: "user", Usage: "Agent ID for event tracking"},
-			// CLI conv §5 canonical globals.
-			{Name: "offline", Usage: "Disable all network (skip sync, upgrade check, plugin downloads)", BoolVar: &opts.Offline},
+			// CLI conv §5 canonical globals. --offline is registered by
+			// cli.New itself as a reserved session global; re-declaring it
+			// here panics pflag with a redefinition. Read it off the Root
+			// (r.Offline()) instead of a local binding.
 			{Name: "profile", Usage: "Named profile (credentials/config)", StringVar: &opts.Profile},
 			{Name: "instance", Usage: "Backend instance", StringVar: &opts.Instance},
 		},
