@@ -41,3 +41,55 @@ jobs:
 
       - name: Dockerized Ubuntu test matrix
         run: make test-ubuntu-docker
+
+  irc-ergo:
+    runs-on: ubuntu-latest
+    env:
+      # Pinned by version and checksum together: a release asset that changed
+      # under its tag must fail the job rather than silently alter what the
+      # integration suite is judged against.
+      ERGO_VERSION: '2.19.1'
+      ERGO_SHA256: 'f6b1e1c78ca7b62a80c4d3df0e0ac0ab5e2c3c6e3e0e9e3a1f2e9b7c2d8a4f51'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Install pinned ergo
+        run: |
+          set -euo pipefail
+          tarball="ergo-${ERGO_VERSION}-linux-x86_64.tar.gz"
+          curl -fsSL -o "$tarball" \
+            "https://github.com/ergochat/ergo/releases/download/v${ERGO_VERSION}/${tarball}"
+          echo "${ERGO_SHA256}  ${tarball}" | sha256sum --check --strict -
+          tar -xzf "$tarball"
+          install -Dm755 "ergo-${ERGO_VERSION}-linux-x86_64/ergo" /usr/local/bin/ergo
+          # ergo ships languages.path relative to the release directory, so the
+          # translations have to sit beside the binary or every subcommand
+          # fails on "Could not load languages" before reading anything else.
+          cp -r "ergo-${ERGO_VERSION}-linux-x86_64/languages" /usr/local/languages
+          ergo --version
+
+      - name: IRC integration suite
+        env:
+          ERGO_BIN: /usr/local/bin/ergo
+          WSM_IRC_ERGO_LANGUAGES: /usr/local/languages
+        run: make test-irc
+
+      - name: Provider conformance against the same ergo
+        env:
+          ERGO_BIN: /usr/local/bin/ergo
+          WSM_IRC_ERGO_LANGUAGES: /usr/local/languages
+        run: |
+          set -euo pipefail
+          # The conformance suites want a server that is already up, with an
+          # account to log in as. scripts/ergo-conformance.sh provisions one,
+          # exports the IRC_CONFORMANCE_* specs and runs both provider suites:
+          # ergo against its services and plain against the very same server,
+          # which is what proves the services-less provider never reaches for
+          # them.
+          ./scripts/ergo-conformance.sh

@@ -1,6 +1,6 @@
 export GOFLAGS ?= -buildvcs=false
 
-.PHONY: help build test test-e2e test-integration test-ubuntu-docker verify-no-ui-leak fmt setup-aps-wsm \
+.PHONY: help build test test-e2e test-integration test-irc test-ubuntu-docker verify-no-ui-leak fmt setup-aps-wsm \
   12fcc-record 12fcc-grade 12fcc-badge
 
 help:
@@ -9,6 +9,7 @@ help:
 	@echo "  test                Run unit + default E2E tests"
 	@echo "  test-e2e            Run default E2E tests only"
 	@echo "  test-integration    Run integration_wsm-tagged tests (cross-tool e2e: rux/kit)"
+	@echo "  test-irc            Run integration_irc-tagged tests against a real ergo (ERGO_BIN)"
 	@echo "  test-ubuntu-docker  Run full test matrix inside Ubuntu Docker image"
 	@echo "  verify-no-ui-leak   Ensure pkg/* does not depend on charmbracelet"
 	@echo "  fmt                 Run gofmt on Go files"
@@ -30,6 +31,10 @@ test-e2e:
 test-integration:
 	@mkdir -p .tmp/gocache
 	GOCACHE=$$(pwd)/.tmp/gocache go test -tags integration_wsm ./... -count=1
+
+test-irc:
+	@mkdir -p .tmp/gocache
+	GOCACHE=$$(pwd)/.tmp/gocache go test -tags integration_irc ./... -count=1
 
 test-ubuntu-docker:
 	./scripts/run-tests-ubuntu-docker.sh

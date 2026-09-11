@@ -63,6 +63,9 @@ func TestCIIncludesConformanceGates(t *testing.T) {
 	text := string(content)
 	for _, needle := range []string{
 		"make test",
+		// The ergo integration job is gated on a pinned server install, so it
+		// is the one gate that can be dropped without any other test noticing.
+		"make test-irc",
 	} {
 		if !strings.Contains(text, needle) {
 			t.Fatalf("ci workflow missing required gate %q", needle)
