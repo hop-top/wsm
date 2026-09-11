@@ -1047,6 +1047,27 @@ func confirmFlagValue(cmd *cobra.Command) string {
 	return ""
 }
 
+// guardSharedHost refuses a teardown of a server other workspaces sit on.
+//
+// Guests are other workspaces whose channels and accounts live on this
+// server. Taking it down is not this workspace's decision alone, so the
+// refusal is a conflict rather than a prerequisite: nothing about the
+// environment is broken, the operation simply collides with someone
+// else's state. gerund names the half that does the damage ("disabling",
+// "stopping", "restarting") so every verb that stops a daemon refuses in
+// one shape rather than each inventing its own phrasing.
+func guardSharedHost(rt *ircRuntime, profile irc.Profile, gerund string, force bool) error {
+	if len(profile.SharedWith) == 0 || force {
+		return nil
+	}
+	return workspace.NewErrorConflict(fmt.Sprintf(
+		"workspace %q hosts %d guest workspace(s) on its IRC server (%s): "+
+			"%s it would cut them off; pass --force to proceed anyway",
+		rt.ws.Name, len(profile.SharedWith), strings.Join(profile.SharedWith, ", "),
+		gerund,
+	))
+}
+
 // runIRCDisable stops the daemon and optionally removes its directories.
 func runIRCDisable(
 	ctx context.Context,
@@ -1075,17 +1096,8 @@ func runIRCDisable(
 		return err
 	}
 
-	// Guests are other workspaces whose channels and accounts live on
-	// this server. Stopping it is not this workspace's decision alone,
-	// so the refusal is a conflict rather than a prerequisite: nothing
-	// about the environment is broken, the operation simply collides
-	// with someone else's state.
-	if len(profile.SharedWith) > 0 && !force {
-		return workspace.NewErrorConflict(fmt.Sprintf(
-			"workspace %q hosts %d guest workspace(s) on its IRC server (%s): "+
-				"disabling it would cut them off; pass --force to proceed anyway",
-			rt.ws.Name, len(profile.SharedWith), strings.Join(profile.SharedWith, ", "),
-		))
+	if err := guardSharedHost(rt, profile, "disabling", force); err != nil {
+		return err
 	}
 
 	if purge {
@@ -1228,6 +1240,8 @@ func checkRecordedPorts(profile irc.Profile, paths irc.Paths) error {
 
 // newIRCStopCmd builds `wsm irc stop`.
 func newIRCStopCmd(opts *globalOptions) *cobra.Command {
+	var force bool
+
 	cmd := &cobra.Command{
 		Use:   "stop <workspace>",
 		Short: "Stop a workspace's IRC daemon",
@@ -1236,26 +1250,41 @@ func newIRCStopCmd(opts *globalOptions) *cobra.Command {
 The daemon shuts the bot down, stops the managed server if it supervises
 one, and exits. Nothing is removed: start brings the workspace back with
 the same ports, accounts and history. Stopping a workspace whose daemon
-is already down succeeds and reports it.`,
+is already down succeeds and reports it.
+
+A workspace hosting guests is refused: stopping it takes the server out
+from under workspaces that are not this one. --force overrides that,
+leaving the guests to fail on their next reconnect.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
-				return runIRCStop(ctx, app, opts, args[0])
+				return runIRCStop(ctx, app, opts, args[0], force)
 			})
 		},
 	}
+	cmd.Flags().BoolVar(&force, "force", false, "Stop even while guest workspaces are hosted here")
 	cli.SetSideEffect(cmd, cli.SideEffectWriteLocal)
 	cli.SetIdempotency(cmd, cli.IdempotencyYes)
 	return cmd
 }
 
 // runIRCStop stops a workspace's daemon.
-func runIRCStop(ctx context.Context, app *appContext, opts *globalOptions, ref string) error {
+func runIRCStop(
+	ctx context.Context,
+	app *appContext,
+	opts *globalOptions,
+	ref string,
+	force bool,
+) error {
 	rt, err := resolveIRCRuntime(ctx, app, ref)
 	if err != nil {
 		return err
 	}
-	if _, err := rt.loadEnabledProfile(); err != nil {
+	profile, err := rt.loadEnabledProfile()
+	if err != nil {
+		return err
+	}
+	if err := guardSharedHost(rt, profile, "stopping", force); err != nil {
 		return err
 	}
 	stopped, err := stopDaemon(rt.paths)
@@ -1283,6 +1312,8 @@ func runIRCStop(ctx context.Context, app *appContext, opts *globalOptions, ref s
 
 // newIRCRestartCmd builds `wsm irc restart`.
 func newIRCRestartCmd(opts *globalOptions) *cobra.Command {
+	var force bool
+
 	cmd := &cobra.Command{
 		Use:   "restart <workspace>",
 		Short: "Restart a workspace's IRC daemon",
@@ -1291,27 +1322,41 @@ func newIRCRestartCmd(opts *globalOptions) *cobra.Command {
 Managed mode re-checks the recorded port triple between the two halves,
 after the old daemon has released it, so a port taken by something else
 in the meantime is reported rather than inherited. Restarting a stopped
-workspace simply starts it.`,
+workspace simply starts it.
+
+A workspace hosting guests is refused: the stop half drops the server
+out from under workspaces that are not this one, and the restart that
+follows cannot promise they reconnect. --force overrides that.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			return withApp(opts, func(ctx context.Context, app *appContext) error {
-				return runIRCRestart(ctx, app, opts, args[0])
+				return runIRCRestart(ctx, app, opts, args[0], force)
 			})
 		},
 	}
+	cmd.Flags().BoolVar(&force, "force", false, "Restart even while guest workspaces are hosted here")
 	cli.SetSideEffect(cmd, cli.SideEffectWriteLocal)
 	cli.SetIdempotency(cmd, cli.IdempotencyConditional)
 	return cmd
 }
 
 // runIRCRestart stops then starts a workspace's daemon.
-func runIRCRestart(ctx context.Context, app *appContext, opts *globalOptions, ref string) error {
+func runIRCRestart(
+	ctx context.Context,
+	app *appContext,
+	opts *globalOptions,
+	ref string,
+	force bool,
+) error {
 	rt, err := resolveIRCRuntime(ctx, app, ref)
 	if err != nil {
 		return err
 	}
 	profile, err := rt.loadEnabledProfile()
 	if err != nil {
+		return err
+	}
+	if err := guardSharedHost(rt, profile, "restarting", force); err != nil {
 		return err
 	}
 	if _, err := stopDaemon(rt.paths); err != nil {

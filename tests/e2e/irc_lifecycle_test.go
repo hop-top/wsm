@@ -585,6 +585,53 @@ func TestIRC_DisableRefusesSharedServer(t *testing.T) {
 	requireExitCode(t, forced, 0)
 }
 
+// TestIRC_StopRefusesSharedServer locks exit 4 on the other verbs that
+// take the server down. disable is not the only route to a stopped
+// daemon: stop does it outright and restart does it as its first half,
+// so an unguarded stop would hand a shared server the teardown that
+// disable refuses.
+func TestIRC_StopRefusesSharedServer(t *testing.T) {
+	sharedHost := func(t *testing.T, name string) (*e2eRunner, map[string]string) {
+		t.Helper()
+		r := newRunner(t)
+		id := r.mustCreateWorkspace(name)
+		env := ircEnv(t, r, "external")
+		writeProfile(t, r, id, map[string]any{
+			"mode": "external", "provider": "ergo", "server_id": "irc.example.com:6697",
+			"root": mustWorkspaceRoot(t), "bot_account": "wsm",
+			"shared_with": []string{"guest-a", "guest-b"},
+			"created_at":  time.Now().UTC().Format(time.RFC3339Nano),
+		})
+		return r, env
+	}
+
+	t.Run("stop", func(t *testing.T) {
+		r, env := sharedHost(t, "irc-stop-host")
+
+		refused := r.runWithEnv(env, "irc", "stop", "irc-stop-host")
+		requireExitCode(t, refused, 4)
+		if !strings.Contains(refused.Combined(), "guest") {
+			t.Fatalf("expected the refusal to name the guests, got:\n%s", refused.Combined())
+		}
+
+		// --force overrides it, exactly as it does on disable.
+		forced := r.runWithEnv(env, "irc", "stop", "irc-stop-host", "--force", "--format", "json")
+		requireExitCode(t, forced, 0)
+	})
+
+	// restart stops before it starts, so the same hole reaches the same
+	// server by another verb.
+	t.Run("restart", func(t *testing.T) {
+		r, env := sharedHost(t, "irc-restart-host")
+
+		refused := r.runWithEnv(env, "irc", "restart", "irc-restart-host")
+		requireExitCode(t, refused, 4)
+		if !strings.Contains(refused.Combined(), "guest") {
+			t.Fatalf("expected the refusal to name the guests, got:\n%s", refused.Combined())
+		}
+	})
+}
+
 // TestIRC_DisablePurgeRemovesState locks --purge behind the same
 // --confirm gate workspace delete uses, and proves it removes the
 // directories rather than merely claiming to.
