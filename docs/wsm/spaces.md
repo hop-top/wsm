@@ -24,7 +24,22 @@ Each entry written to `projects.yaml` carries `path`, `startup_cmd`, and
 | `--startup-cmd` | | Command rux runs on connect (empty = `$SHELL`) |
 | `--trust` | `local` | `local`, `verified`, `external`, `untrusted` |
 | `--cap` | | Space capability as an OASF URI (repeatable) |
-| `--auto` | `false` | Run the built-in detectors (Makefile, package.json, docker-compose, devcontainer, `.env.example`) against `--path` and report matches on stderr |
+| `--auto` | `false` | Run the built-in detectors (Makefile, package.json, docker-compose, devcontainer, `.env.example`) against `--path` and disclose what they infer. Reported only, never applied: the space is saved exactly as specified |
+
+### What `--auto` reports
+
+`--auto` discloses the inference without applying it. Structured output
+(`--format json|yaml`) gains an `_inferred` block naming, per field, whether
+the value was determined from the boundary scheme, determined by a detector
+that matched a file, or defaulted because nothing matched — plus a `matches`
+list of every detector that fired and the `kind` it assigned. The table view
+is unchanged; the same disclosure goes to stderr.
+
+Detector confidence scores are not reported. Every detector `--auto` runs is
+a file-existence check that hardcodes a confidence of `1.0` whenever it
+matches, so the value was identical on every line it ever appeared on and
+distinguished nothing. The `kind` each detector assigns (`build`, `runtime`)
+is reported instead, since that does vary between detectors.
 
 `--path` replaced the earlier `--boundary` flag without a
 backwards-compatible alias: the CLI is pre-1.0 and no callers of the old
