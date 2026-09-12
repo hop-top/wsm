@@ -36,6 +36,7 @@ func PreflightExternal(cfg Config) []access.Prerequisite {
 			"irc.server.host unreachable at %s: check the address and port, "+
 				"or that the server is running", addr,
 		),
+		Transience: access.TransienceTransient,
 	})
 
 	if cfg.Server.TLSEnabled() {
@@ -49,16 +50,18 @@ func PreflightExternal(cfg Config) []access.Prerequisite {
 				"TLS handshake failed against %s: check the server certificate, "+
 					"or set irc.server.tls false for a plaintext server", addr,
 			),
+			Transience: access.TransiencePermanent,
 		})
 
 		// Not a failure: the connection works, it is simply unauthenticated.
 		// Recorded as a prerequisite so status renders it alongside the rest.
 		if cfg.Server.InsecureSkipVerify {
 			prereqs = append(prereqs, access.Prerequisite{
-				Name:    "irc.server.insecure_skip_verify",
-				Level:   access.LevelRecommended,
-				Check:   func() error { return errInsecureSkipVerify },
-				Message: "irc.server.insecure_skip_verify is on: TLS certificates are not verified; unset it once the server presents a trusted certificate",
+				Name:       "irc.server.insecure_skip_verify",
+				Level:      access.LevelRecommended,
+				Check:      func() error { return errInsecureSkipVerify },
+				Message:    "irc.server.insecure_skip_verify is on: TLS certificates are not verified; unset it once the server presents a trusted certificate",
+				Transience: access.TransiencePermanent,
 			})
 		}
 	}

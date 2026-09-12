@@ -228,30 +228,30 @@ func writeBackfillRequest(paths irc.Paths, requestID string, channels []string) 
 	req := backfillRequest{ID: requestID, Channels: channels, At: time.Now().UTC()}
 	raw, err := json.MarshalIndent(req, "", "  ")
 	if err != nil {
-		return workspace.NewErrorPrerequisite(fmt.Sprintf("encode backfill request: %v", err))
+		return workspace.NewErrorBackend("encode backfill request", err)
 	}
 
 	if err := os.MkdirAll(paths.StateDir, 0o700); err != nil {
-		return workspace.NewErrorPrerequisite(fmt.Sprintf("create state dir: %v", err))
+		return workspace.NewErrorBackend("create state dir", err)
 	}
 	path := filepath.Join(paths.StateDir, backfillRequestName)
 
 	tmp, err := os.CreateTemp(paths.StateDir, ".backfill-*.json")
 	if err != nil {
-		return workspace.NewErrorPrerequisite(fmt.Sprintf("create backfill request: %v", err))
+		return workspace.NewErrorBackend("create backfill request", err)
 	}
 	tmpName := tmp.Name()
 	defer func() { _ = os.Remove(tmpName) }()
 
 	if _, err := tmp.Write(raw); err != nil {
 		_ = tmp.Close()
-		return workspace.NewErrorPrerequisite(fmt.Sprintf("write backfill request: %v", err))
+		return workspace.NewErrorBackend("write backfill request", err)
 	}
 	if err := tmp.Close(); err != nil {
-		return workspace.NewErrorPrerequisite(fmt.Sprintf("close backfill request: %v", err))
+		return workspace.NewErrorBackend("close backfill request", err)
 	}
 	if err := os.Rename(tmpName, path); err != nil {
-		return workspace.NewErrorPrerequisite(fmt.Sprintf("install backfill request: %v", err))
+		return workspace.NewErrorBackend("install backfill request", err)
 	}
 	return nil
 }
@@ -315,7 +315,7 @@ func runOfflineBackfill(
 
 	cursors, err := bot.LoadCursors(rt.paths.Cursors)
 	if err != nil {
-		return workspace.NewErrorPrerequisite(fmt.Sprintf("read cursors: %v", err))
+		return workspace.NewErrorBackend("read cursors", err)
 	}
 
 	targets := channels
@@ -384,7 +384,7 @@ func runOfflineBackfill(
 	// Saved while the lock is still held, so the cursor file is never
 	// written by a process that has given up its claim to it.
 	if serr := cursors.Save(); serr != nil {
-		return workspace.NewErrorPrerequisite(fmt.Sprintf("save cursors: %v", serr))
+		return workspace.NewErrorBackend("save cursors", serr)
 	}
 	doc.At = nowPtr()
 	return nil
@@ -416,12 +416,12 @@ func (l *workspaceLock) release() {
 func acquireWorkspaceLock(paths irc.Paths) (*workspaceLock, error) {
 	path := ircdaemon.LockPath(paths)
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return nil, workspace.NewErrorPrerequisite(fmt.Sprintf("create state dir: %v", err))
+		return nil, workspace.NewErrorBackend("create state dir", err)
 	}
 
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
-		return nil, workspace.NewErrorPrerequisite(fmt.Sprintf("open %s: %v", path, err))
+		return nil, workspace.NewErrorBackend(fmt.Sprintf("open %s", path), err)
 	}
 	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 		_ = f.Close()

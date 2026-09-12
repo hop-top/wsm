@@ -71,17 +71,17 @@ func runIRCDaemon(ctx context.Context, cmd *cobra.Command, app *appContext, ref 
 		StateDir: app.cfg.StateDir,
 	}, ws.ID)
 	if err != nil {
-		return workspace.NewErrorPrerequisite(err.Error())
+		return workspace.NewErrorNotConfigured(err.Error())
 	}
 
 	profile, err := irc.LoadProfile(paths.Profile)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return workspace.NewErrorPrerequisite(fmt.Sprintf(
+			return workspace.NewErrorNotConfigured(fmt.Sprintf(
 				"IRC is not enabled for %q: run `wsm irc enable %s` first", ws.Name, ws.Name,
 			))
 		}
-		return workspace.NewErrorPrerequisite(fmt.Sprintf("read irc profile: %v", err))
+		return workspace.NewErrorBackend("read irc profile", err)
 	}
 
 	// The config is the global file merged with the workspace's own override,
@@ -89,7 +89,7 @@ func runIRCDaemon(ctx context.Context, cmd *cobra.Command, app *appContext, ref 
 	// from an arbitrary working directory and cannot discover it otherwise.
 	cfg, err := irc.LoadWorkspace(app.cfg.ConfigFile, profile.Root)
 	if err != nil {
-		return workspace.NewErrorPrerequisite(fmt.Sprintf("load irc config: %v", err))
+		return workspace.NewErrorBackend("load irc config", err)
 	}
 
 	logFile, log, err := openDaemonLog(paths)
@@ -111,7 +111,10 @@ func runIRCDaemon(ctx context.Context, cmd *cobra.Command, app *appContext, ref 
 		Log:              log,
 	})
 	if err != nil {
-		return workspace.NewErrorPrerequisite(err.Error())
+		// Both of New's refusals are statements about wsm's own
+		// recorded state — a profile with no mode, paths that were
+		// never resolved — not about the environment around it.
+		return workspace.NewErrorNotConfigured(err.Error())
 	}
 
 	runCtx, stop := context.WithCancel(ctx)
@@ -186,11 +189,11 @@ func watchSignals(ctx context.Context, stop context.CancelFunc, d *ircdaemon.Dae
 // output explaining why the previous run ended.
 func openDaemonLog(paths irc.Paths) (*os.File, *slog.Logger, error) {
 	if err := os.MkdirAll(paths.StateDir, 0o700); err != nil {
-		return nil, nil, workspace.NewErrorPrerequisite(fmt.Sprintf("create state dir: %v", err))
+		return nil, nil, workspace.NewErrorBackend("create state dir", err)
 	}
 	f, err := os.OpenFile(paths.DaemonLog, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
-		return nil, nil, workspace.NewErrorPrerequisite(fmt.Sprintf("open daemon log: %v", err))
+		return nil, nil, workspace.NewErrorBackend("open daemon log", err)
 	}
 	return f, slog.New(slog.NewTextHandler(f, &slog.HandlerOptions{Level: slog.LevelInfo})), nil
 }

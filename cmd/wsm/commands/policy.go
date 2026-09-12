@@ -134,14 +134,30 @@ func resetPolicyForTest() {
 //   - ErrorKindUsage       → USAGE        (exit 2)
 //   - ErrorKindNotFound    → NOT_FOUND    (exit 3)
 //   - ErrorKindConflict    → CONFLICT     (exit 4)
-//   - ErrorKindBackend     → GENERIC      (exit 5, scenario 5)
-//   - ErrorKindForbidden   → UNAUTHORIZED (exit 6, scenario 7)
-//   - ErrorKindPrerequisite → GENERIC     (exit 7, scenario 8)
+//   - ErrorKindBackend      → GENERIC      (exit 5, scenario 5)
+//   - ErrorKindForbidden    → UNAUTHORIZED (exit 6, scenario 7)
+//   - ErrorKindPrerequisite → GENERIC      (exit 7, scenario 8)
+//   - ErrorKindNotConfigured → GENERIC     (exit 7, borrowed)
 //
 // Exit 5 is the backend/persistence slot and 6 the capability-denial
 // slot. kit's own confirm gate emits UNAUTHORIZED exit 5 envelopes
 // directly; those short-circuit this function via the embedded
 // ExitCode and are unaffected.
+//
+// NotConfigured borrows prerequisite's 7 rather than claiming a code of
+// its own. It is a distinct kind with a distinct fix, and it arguably
+// deserves a distinct number, but the exit-code table is being
+// renumbered separately and inventing a code here would collide with
+// that. The two are already told apart machine-readably by transience
+// plus Message; a follow-up can move NotConfigured onto its own slot
+// without touching a single call site.
+//
+// Every envelope this function builds carries an explicit Transience.
+// kit's TransienceForCode classifies only kit's own standard codes, so
+// a GENERIC envelope left unstamped renders "unknown" — which for these
+// kinds is not ignorance, it is wsm declining to say what it knows. The
+// value comes from the *workspace.Error when it carries one, and falls
+// back to the kind's default when it does not.
 //
 // The translation lives at the cmd layer because pkg/workspace cannot
 // import hop.top/kit/go/console/output without dragging charmbracelet
@@ -154,9 +170,10 @@ func mapPolicyDenialError(err error) error {
 	}
 	if workspace.IsPolicyDenial(err) {
 		return &output.Error{
-			Code:     output.CodeConflict,
-			Message:  err.Error(),
-			ExitCode: 4,
+			Code:       output.CodeConflict,
+			Message:    err.Error(),
+			ExitCode:   4,
+			Transience: output.TransiencePermanent,
 		}
 	}
 	switch {
@@ -166,39 +183,73 @@ func mapPolicyDenialError(err error) error {
 			Message:      err.Error(),
 			ExitCode:     3,
 			SuggestedFix: "Run 'wsm workspace list' to see available workspaces.",
+			Transience:   output.TransiencePermanent,
 		}
 	case workspace.IsKind(err, workspace.ErrorKindConflict):
 		return &output.Error{
-			Code:     output.CodeConflict,
-			Message:  err.Error(),
-			ExitCode: 4,
+			Code:       output.CodeConflict,
+			Message:    err.Error(),
+			ExitCode:   4,
+			Transience: output.TransiencePermanent,
 		}
 	case workspace.IsKind(err, workspace.ErrorKindForbidden):
 		return &output.Error{
-			Code:     output.CodeUnauthorized,
-			Message:  err.Error(),
-			ExitCode: 6,
+			Code:       output.CodeUnauthorized,
+			Message:    err.Error(),
+			ExitCode:   6,
+			Transience: output.TransiencePermanent,
 		}
 	case workspace.IsKind(err, workspace.ErrorKindUsage):
 		return &output.Error{
-			Code:     output.CodeUsage,
-			Message:  err.Error(),
-			ExitCode: 2,
+			Code:       output.CodeUsage,
+			Message:    err.Error(),
+			ExitCode:   2,
+			Transience: output.TransiencePermanent,
 		}
 	case workspace.IsKind(err, workspace.ErrorKindBackend):
+		// As with NotConfigured: the constructor owns the class, so no
+		// second default here to paper over its absence.
 		return &output.Error{
-			Code:     output.CodeGeneric,
-			Message:  err.Error(),
-			ExitCode: 5,
+			Code:       output.CodeGeneric,
+			Message:    err.Error(),
+			ExitCode:   5,
+			Transience: transienceFor(err, output.TransienceUnknown),
+		}
+	case workspace.IsKind(err, workspace.ErrorKindNotConfigured):
+		// No fallback: NotConfigured is permanent by construction and
+		// its constructor is the single place that says so. Defaulting
+		// here as well would mean a constructor that stopped setting
+		// the class still rendered "permanent", and the duplicate
+		// would hide the omission rather than surface it.
+		return &output.Error{
+			Code:       output.CodeGeneric,
+			Message:    err.Error(),
+			ExitCode:   7,
+			Transience: transienceFor(err, output.TransienceUnknown),
 		}
 	case workspace.IsKind(err, workspace.ErrorKindPrerequisite):
 		// Message carries the corrective action; SuggestedFix would be
 		// dropped by the framework-level renderer (see root.go).
+		//
+		// The fallback is TransienceUnknown rather than a guess: a
+		// prerequisite built by the bare constructor is one nobody has
+		// classified, and reporting it as permanent would tell an agent
+		// to stop retrying something that may well clear.
 		return &output.Error{
-			Code:     output.CodeGeneric,
-			Message:  err.Error(),
-			ExitCode: 7,
+			Code:       output.CodeGeneric,
+			Message:    err.Error(),
+			ExitCode:   7,
+			Transience: transienceFor(err, output.TransienceUnknown),
 		}
 	}
 	return err
+}
+
+// transienceFor returns the transience class err was constructed with,
+// or fallback when it carries none.
+func transienceFor(err error, fallback string) string {
+	if t := workspace.TransienceOf(err); t != "" {
+		return t
+	}
+	return fallback
 }

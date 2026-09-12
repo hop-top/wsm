@@ -248,7 +248,7 @@ func runIRCDelegateAdd(
 		MaxRole:   ceiling,
 	})
 	if err != nil {
-		return workspace.NewErrorPrerequisite(err.Error())
+		return workspace.NewErrorBackend("record delegation", err)
 	}
 	if amended == 0 {
 		return noSuchTemplateError(rt.ws.Name, channel)
@@ -335,7 +335,7 @@ func runIRCDelegateRm(
 
 	removed, err := share.RemoveDelegate(profile.Root, channel, guestID, guestName)
 	if err != nil {
-		return workspace.NewErrorPrerequisite(err.Error())
+		return workspace.NewErrorBackend("remove delegation", err)
 	}
 	if removed == 0 {
 		return workspace.NewErrorNotFound(fmt.Sprintf(
@@ -383,7 +383,7 @@ func runIRCDelegateList(
 
 	delegations, err := share.ListDelegates(profile.Root)
 	if err != nil {
-		return workspace.NewErrorPrerequisite(err.Error())
+		return workspace.NewErrorBackend("read delegations", err)
 	}
 
 	status, _ := daemonState(rt.paths)

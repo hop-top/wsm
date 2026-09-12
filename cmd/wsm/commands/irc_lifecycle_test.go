@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"errors"
 	"net"
 	"os"
 	"path/filepath"
@@ -9,9 +10,10 @@ import (
 	"testing"
 
 	"hop.top/kit/go/console/output"
-	ircdaemon "hop.top/wsm/pkg/irc/daemon"
-
+	"hop.top/wsm/pkg/access"
 	"hop.top/wsm/pkg/irc"
+	ircdaemon "hop.top/wsm/pkg/irc/daemon"
+	"hop.top/wsm/pkg/irc/managed"
 	"hop.top/wsm/pkg/workspace"
 )
 
@@ -337,4 +339,74 @@ func TestCheckRecordedPorts(t *testing.T) {
 			t.Fatalf("exit code = %d; want 7", oe.ExitCode)
 		}
 	})
+}
+
+// enforcePrereqs is the one gate through which the genuine environment
+// prerequisites flow, and the failures it produces do not share a retry
+// answer: a missing binary is permanent, a busy port is transient. The
+// class must therefore come from the failing check, not from the gate.
+func TestEnforcePrereqs_CarriesCheckTransience(t *testing.T) {
+	boom := errors.New("observed failure")
+
+	cases := []struct {
+		name  string
+		given access.Transience
+		want  string
+	}{
+		{"permanent check", access.TransiencePermanent, workspace.TransiencePermanent},
+		{"transient check", access.TransienceTransient, workspace.TransienceTransient},
+		{"unclassified check", access.TransienceUnknown, ""},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := enforcePrereqs([]access.Prerequisite{{
+				Name:       "probe",
+				Level:      access.LevelRequired,
+				Check:      func() error { return boom },
+				Message:    "the fix text",
+				Transience: tc.given,
+			}})
+			if err == nil {
+				t.Fatal("enforcePrereqs passed a failing required check")
+			}
+			if !workspace.IsKind(err, workspace.ErrorKindPrerequisite) {
+				t.Fatalf("kind = not prerequisite; got %v", err)
+			}
+			if got := workspace.TransienceOf(err); got != tc.want {
+				t.Errorf("transience = %q; want %q", got, tc.want)
+			}
+			// The fix text, not the observed error, is what the
+			// operator needs; that contract predates this change.
+			if err.Error() != "the fix text" {
+				t.Errorf("message = %q; want the check's Message", err.Error())
+			}
+		})
+	}
+}
+
+// The two real preflight sets must actually disagree about transience,
+// or the split bought nothing: this is the concrete pair the whole
+// exercise exists to tell apart.
+func TestPreflight_BinaryPermanentPortsTransient(t *testing.T) {
+	byName := map[string]access.Transience{}
+	for _, p := range managed.PreflightStatic(irc.Config{Binary: "definitely-not-a-real-binary"}) {
+		byName[p.Name] = p.Transience
+	}
+
+	if got := byName["irc.binary"]; got != access.TransiencePermanent {
+		t.Errorf("irc.binary transience = %q; want permanent (installing is the only fix)", got)
+	}
+	if got := byName["irc.port_range"]; got != access.TransienceTransient {
+		t.Errorf("irc.port_range transience = %q; want transient (ports free up)", got)
+	}
+
+	for _, p := range irc.PreflightExternal(irc.Config{
+		Mode:   irc.ModeExternal,
+		Server: irc.Server{Host: "127.0.0.1", Port: 1},
+	}) {
+		if p.Name == "irc.server.reachable" && p.Transience != access.TransienceTransient {
+			t.Errorf("irc.server.reachable transience = %q; want transient (servers come back)", p.Transience)
+		}
+	}
 }

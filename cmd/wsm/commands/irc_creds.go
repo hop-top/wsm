@@ -146,7 +146,7 @@ func runIRCCreds(
 
 	secrets, err := irc.LoadSecrets(rt.paths.Secrets)
 	if err != nil {
-		return workspace.NewErrorPrerequisite(err.Error())
+		return workspace.NewErrorBackend("load irc secrets", err)
 	}
 
 	if password, held := secrets.Get(account); held {
@@ -156,7 +156,7 @@ func runIRCCreds(
 		// is a real gap rather than a bring-your-own situation: the
 		// account exists on the server and nobody can authenticate as
 		// it until wsm sets a credential it also records.
-		return workspace.NewErrorPrerequisite(fmt.Sprintf(
+		return workspace.NewErrorNotConfigured(fmt.Sprintf(
 			"no passphrase on file for account %q: run `wsm irc account rotate %s %s`",
 			account, rt.ws.Name, member,
 		))
@@ -304,7 +304,7 @@ func resolveMemberAccount(
 ) (string, error) {
 	members, err := loadWorkspaceMembers(profile)
 	if err != nil {
-		return "", workspace.NewErrorPrerequisite(err.Error())
+		return "", workspace.NewErrorBackend("read workspace members", err)
 	}
 
 	profileID := member
@@ -315,6 +315,9 @@ func resolveMemberAccount(
 	resolver, _ := provider.ResolverFor(profile, members, rt.app.cfg.DataDir)
 	account, found, err := resolver.AccountFor(ctx, profileID, serverIDOf(rt, profile))
 	if err != nil {
+		// Unclassified: the resolver may be asking a server that is
+		// down (transient) or reading a provider mapping that does not
+		// exist (permanent).
 		return "", workspace.NewErrorPrerequisite(fmt.Sprintf("resolve account for %q: %v", member, err))
 	}
 	if !found {

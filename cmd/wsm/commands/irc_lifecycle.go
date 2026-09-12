@@ -70,7 +70,7 @@ type ircRuntime struct {
 func resolveIRCRuntime(ctx context.Context, app *appContext, ref string) (*ircRuntime, error) {
 	cfg, err := irc.Load(app.cfg.ConfigFile)
 	if err != nil {
-		return nil, workspace.NewErrorPrerequisite(fmt.Sprintf("load irc config: %v", err))
+		return nil, workspace.NewErrorBackend("load irc config", err)
 	}
 	if !cfg.Enabled {
 		return nil, ircDisabledError()
@@ -86,7 +86,7 @@ func resolveIRCRuntime(ctx context.Context, app *appContext, ref string) (*ircRu
 		StateDir: app.cfg.StateDir,
 	}, ws.ID)
 	if err != nil {
-		return nil, workspace.NewErrorPrerequisite(err.Error())
+		return nil, workspace.NewErrorNotConfigured(err.Error())
 	}
 
 	// A workspace that has been enabled carries a Root, and the config
@@ -96,7 +96,7 @@ func resolveIRCRuntime(ctx context.Context, app *appContext, ref string) (*ircRu
 	if profile, perr := irc.LoadProfile(paths.Profile); perr == nil && profile.Root != "" {
 		merged, mErr := irc.LoadWorkspace(app.cfg.ConfigFile, profile.Root)
 		if mErr != nil {
-			return nil, workspace.NewErrorPrerequisite(fmt.Sprintf("load irc config: %v", mErr))
+			return nil, workspace.NewErrorBackend("load irc config", mErr)
 		}
 		if !merged.Enabled {
 			return nil, ircDisabledError()
@@ -137,23 +137,31 @@ func (rt *ircRuntime) loadEnabledProfile() (irc.Profile, error) {
 	profile, err := irc.LoadProfile(rt.paths.Profile)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return irc.Profile{}, workspace.NewErrorPrerequisite(fmt.Sprintf(
+			return irc.Profile{}, workspace.NewErrorNotConfigured(fmt.Sprintf(
 				"IRC is not enabled for %q: run `wsm irc enable %s` first",
 				rt.ws.Name, rt.ws.Name,
 			))
 		}
-		return irc.Profile{}, workspace.NewErrorPrerequisite(fmt.Sprintf("read irc profile: %v", err))
+		return irc.Profile{}, workspace.NewErrorBackend("read irc profile", err)
 	}
 	return profile, nil
 }
 
 // enforcePrereqs runs a prerequisite set and reports the first required
-// failure as exit 7, carrying that check's fix text verbatim.
+// failure as exit 7, carrying that check's fix text verbatim and its
+// transience class alongside it.
 //
 // Message rather than the underlying error is surfaced because the
 // prerequisite authors wrote Message to be the corrective action; the
 // error beneath it names what was observed, which is the wrong half to
 // show someone who needs to know what to do next.
+//
+// The transience comes from the failing check rather than from this
+// function, because the failures this one gate produces do not share an
+// answer: a missing ergo binary is permanent and a busy port is
+// transient, and both arrive here as "a required prerequisite failed".
+// Collapsing them onto one class here is exactly the defect that made
+// the old single message unhelpful.
 func enforcePrereqs(prereqs []access.Prerequisite) error {
 	results, err := access.Enforce(prereqs)
 	if err == nil {
@@ -161,10 +169,26 @@ func enforcePrereqs(prereqs []access.Prerequisite) error {
 	}
 	for _, r := range results {
 		if !r.Passed && r.Prerequisite.Level == access.LevelRequired {
-			return workspace.NewErrorPrerequisite(r.Prerequisite.Message)
+			return prerequisiteFor(r.Prerequisite.Transience, r.Prerequisite.Message)
 		}
 	}
+	// No individual required failure to point at: Enforce found one but
+	// the results do not name it, so there is nothing to classify.
 	return workspace.NewErrorPrerequisite(err.Error())
+}
+
+// prerequisiteFor builds the workspace error matching a check's
+// declared transience. An unclassified check yields an unclassified
+// error, which reports as "unknown" rather than as a guess.
+func prerequisiteFor(t access.Transience, msg string) error {
+	switch t {
+	case access.TransiencePermanent:
+		return workspace.NewErrorPrerequisitePermanent(msg)
+	case access.TransienceTransient:
+		return workspace.NewErrorPrerequisiteTransient(msg)
+	default:
+		return workspace.NewErrorPrerequisite(msg)
+	}
 }
 
 // daemonState reports the live daemon's status and whether one is running.
@@ -197,12 +221,12 @@ func awaitDaemon(paths irc.Paths, pid int) (ircdaemon.Status, error) {
 		// A child that has already exited will never write a status,
 		// so waiting out the full timeout would only delay the report.
 		if !processAlive(pid) {
-			return ircdaemon.Status{}, workspace.NewErrorPrerequisite(fmt.Sprintf(
+			return ircdaemon.Status{}, workspace.NewErrorPrerequisiteTransient(fmt.Sprintf(
 				"irc daemon exited before reporting ready: see %s", paths.DaemonLog,
 			))
 		}
 		if time.Now().After(deadline) {
-			return ircdaemon.Status{}, workspace.NewErrorPrerequisite(fmt.Sprintf(
+			return ircdaemon.Status{}, workspace.NewErrorPrerequisiteTransient(fmt.Sprintf(
 				"irc daemon did not report ready within %s: see %s",
 				daemonReadyTimeout, paths.DaemonLog,
 			))
@@ -232,6 +256,9 @@ func startDaemon(rt *ircRuntime) (ircdaemon.Status, bool, error) {
 	}
 	pid, err := spawnDaemon(rt.paths, rt.ws.ID, nil)
 	if err != nil {
+		// Unclassified: spawning the daemon fails either on a resource
+		// ceiling the system may relieve (transient) or on an argv the
+		// kernel will keep rejecting (permanent).
 		return ircdaemon.Status{}, false, workspace.NewErrorPrerequisite(err.Error())
 	}
 	status, err := awaitDaemon(rt.paths, pid)
@@ -262,6 +289,10 @@ func stopDaemon(rt *ircRuntime) (bool, error) {
 		return false, nil
 	}
 	if err := signalDaemon(status.PID, syscall.SIGTERM); err != nil {
+		// Deliberately unclassified: a signal that fails after the
+		// liveness probe passed is either a daemon that exited in the
+		// gap (a retry clears it) or a permission refusal (it never
+		// will), and the errno alone does not reliably separate them.
 		return false, workspace.NewErrorPrerequisite(fmt.Sprintf("signal irc daemon: %v", err))
 	}
 	deadline := time.Now().Add(daemonReadyTimeout)
@@ -436,7 +467,7 @@ func runIRCEnable(
 
 	root, err := flags.root()
 	if err != nil {
-		return workspace.NewErrorPrerequisite(err.Error())
+		return workspace.NewErrorBackend("resolve workspace root", err)
 	}
 	if err := validateRoot(root); err != nil {
 		return err
@@ -448,7 +479,7 @@ func runIRCEnable(
 	// global one resolveIRCRuntime started with.
 	cfg, err := irc.LoadWorkspace(app.cfg.ConfigFile, root)
 	if err != nil {
-		return workspace.NewErrorPrerequisite(fmt.Sprintf("load irc config: %v", err))
+		return workspace.NewErrorBackend("load irc config", err)
 	}
 	if !cfg.Enabled {
 		return ircDisabledError()
@@ -512,7 +543,7 @@ func runIRCEnable(
 	}
 
 	if err := rt.paths.EnsureDirs(); err != nil {
-		return workspace.NewErrorPrerequisite(err.Error())
+		return workspace.NewErrorBackend("create irc directories", err)
 	}
 
 	switch mode {
@@ -534,7 +565,7 @@ func runIRCEnable(
 	}
 
 	if err := irc.SaveProfile(rt.paths.Profile, profile); err != nil {
-		return workspace.NewErrorPrerequisite(err.Error())
+		return workspace.NewErrorBackend("save irc profile", err)
 	}
 
 	status, _, err := startDaemon(rt)
@@ -570,7 +601,7 @@ func runIRCAttach(
 
 	root, err := flags.root()
 	if err != nil {
-		return workspace.NewErrorPrerequisite(err.Error())
+		return workspace.NewErrorBackend("resolve workspace root", err)
 	}
 	if err := validateRoot(root); err != nil {
 		return err
@@ -621,7 +652,7 @@ func runIRCAttach(
 
 	accounts, err := share.NewHostAccounts(host.profile, host.paths)
 	if err != nil {
-		return workspace.NewErrorPrerequisite(fmt.Sprintf(
+		return workspace.NewErrorPrerequisiteTransient(fmt.Sprintf(
 			"cannot reach %q's ergo API: %v", host.ws.Name, err))
 	}
 
@@ -663,17 +694,21 @@ func attachError(err error, guestName, hostName string) error {
 			err, irc.BotAccountPrefix, hostName,
 		))
 	case errors.Is(err, share.ErrHostNotManaged):
-		return workspace.NewErrorPrerequisite(fmt.Sprintf(
+		return workspace.NewErrorPrerequisitePermanent(fmt.Sprintf(
 			"%q does not run its own IRC server, so it cannot host %q: "+
 				"attach to a managed workspace, or enable %q with --external",
 			hostName, guestName, guestName,
 		))
 	case errors.Is(err, share.ErrHostNotRunning):
-		return workspace.NewErrorPrerequisite(fmt.Sprintf(
+		return workspace.NewErrorPrerequisiteTransient(fmt.Sprintf(
 			"%q's IRC daemon is not running: run `wsm irc start %s` first",
 			hostName, hostName,
 		))
 	default:
+		// Unclassified: share.Attach's residual failures span a
+		// down host (transient) and a host that cannot host at all
+		// (permanent), and this branch is the one that did not
+		// identify which.
 		return workspace.NewErrorPrerequisite(err.Error())
 	}
 }
@@ -722,17 +757,17 @@ func resolveHostRuntime(ctx context.Context, app *appContext, ref string) (*host
 		StateDir: app.cfg.StateDir,
 	}, ws.ID)
 	if err != nil {
-		return nil, workspace.NewErrorPrerequisite(err.Error())
+		return nil, workspace.NewErrorNotConfigured(err.Error())
 	}
 	profile, err := irc.LoadProfile(paths.Profile)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return nil, workspace.NewErrorPrerequisite(fmt.Sprintf(
+			return nil, workspace.NewErrorNotConfigured(fmt.Sprintf(
 				"IRC is not enabled for %q, so it cannot host another "+
 					"workspace: run `wsm irc enable %s` first", ws.Name, ws.Name,
 			))
 		}
-		return nil, workspace.NewErrorPrerequisite(fmt.Sprintf("read irc profile: %v", err))
+		return nil, workspace.NewErrorBackend("read irc profile", err)
 	}
 	return &hostRuntime{ws: ws, paths: paths, profile: profile}, nil
 }
@@ -800,6 +835,9 @@ func detachFromHost(
 		}
 	}
 	if err != nil {
+		// Unclassified: detach failures reach here from both the host
+		// side (a reconcile the host refused, which a retry may clear)
+		// and the guest's own state, with no marker separating them.
 		return workspace.NewErrorPrerequisite(err.Error())
 	}
 	return nil
@@ -827,7 +865,7 @@ func provisionManaged(
 
 	if explicit, ok := flags.ports(); ok {
 		if !irc.PortsFree(explicit) {
-			return workspace.NewErrorPrerequisite(fmt.Sprintf(
+			return workspace.NewErrorPrerequisiteTransient(fmt.Sprintf(
 				"ports %d-%d are not all free: choose another --port base",
 				explicit.Plain, explicit.API,
 			))
@@ -836,6 +874,10 @@ func provisionManaged(
 	} else {
 		allocated, err := irc.AllocatePorts(cfg.PortRange, nil)
 		if err != nil {
+			// Unclassified on purpose: this fails either because
+			// irc.port_range is malformed (permanent) or because every
+			// block in a valid range is currently held (transient), and
+			// the two arrive as the same error value.
 			return workspace.NewErrorPrerequisite(err.Error())
 		}
 		profile.Ports = allocated
@@ -843,26 +885,28 @@ func provisionManaged(
 
 	secrets, err := irc.LoadSecrets(rt.paths.Secrets)
 	if err != nil {
-		return workspace.NewErrorPrerequisite(err.Error())
+		return workspace.NewErrorBackend("load irc secrets", err)
 	}
 	if _, held := secrets.Get(profile.BotAccount); !held {
 		passphrase, gerr := irc.GeneratePassphrase()
 		if gerr != nil {
-			return workspace.NewErrorPrerequisite(gerr.Error())
+			return workspace.NewErrorBackend("generate passphrase", gerr)
 		}
 		secrets.Set(profile.BotAccount, passphrase)
 	}
 	if err := secrets.Save(rt.paths.Secrets); err != nil {
-		return workspace.NewErrorPrerequisite(err.Error())
+		return workspace.NewErrorBackend("save irc secrets", err)
 	}
 
 	if _, err := irc.LoadAPIToken(rt.paths.APIToken); err != nil {
 		token, gerr := managed.GenToken(ctx)
 		if gerr != nil {
+			// Unclassified: like Mkcerts, a non-zero ergo exit here is
+			// either a wrong binary or an interrupted run.
 			return workspace.NewErrorPrerequisite(gerr.Error())
 		}
 		if serr := irc.SaveAPIToken(rt.paths.APIToken, token); serr != nil {
-			return workspace.NewErrorPrerequisite(serr.Error())
+			return workspace.NewErrorBackend("save irc api token", serr)
 		}
 	}
 
@@ -871,23 +915,30 @@ func provisionManaged(
 	// cert path means "generate", never "fail".
 	if profile.Remote && cfg.Remote.TLSCert == "" && cfg.Remote.TLSKey == "" {
 		if err := os.MkdirAll(rt.paths.TLSDir, 0o700); err != nil {
-			return workspace.NewErrorPrerequisite(err.Error())
+			return workspace.NewErrorBackend("create irc tls dir", err)
 		}
 		if err := managed.Mkcerts(ctx, rt.paths.TLSDir); err != nil {
+			// Unclassified: `ergo mkcerts` fails either because the
+			// binary is wrong for this version (permanent) or because
+			// the run was interrupted (transient), and it reports both
+			// as a non-zero exit.
 			return workspace.NewErrorPrerequisite(err.Error())
 		}
 	}
 
 	rendered, err := managed.Renderer{Paths: rt.paths}.RenderConfig(cfg, *profile, secrets)
 	if err != nil {
-		return workspace.NewErrorPrerequisite(err.Error())
+		return workspace.NewErrorBackend("render ergo config", err)
 	}
 	if err := os.WriteFile(rt.paths.ErgoYAML, rendered, 0o600); err != nil {
-		return workspace.NewErrorPrerequisite(fmt.Sprintf("write ergo config: %v", err))
+		return workspace.NewErrorBackend("write ergo config", err)
 	}
 
 	if _, err := os.Stat(rt.paths.DB); errors.Is(err, os.ErrNotExist) {
 		if ierr := managed.Initdb(ctx, rt.paths.ErgoYAML); ierr != nil {
+			// Unclassified: initdb fails on a config ergo rejects
+			// (permanent) and on a database file briefly locked by
+			// another run (transient), reported identically.
 			return workspace.NewErrorPrerequisite(ierr.Error())
 		}
 	}
@@ -908,7 +959,7 @@ func provisionExternal(
 
 	secrets, err := irc.LoadSecrets(rt.paths.Secrets)
 	if err != nil {
-		return workspace.NewErrorPrerequisite(err.Error())
+		return workspace.NewErrorBackend("load irc secrets", err)
 	}
 
 	if flags.BotStdin {
@@ -918,7 +969,7 @@ func provisionExternal(
 		}
 		secrets.Set(cfg.Bot.Account, password)
 		if serr := secrets.Save(rt.paths.Secrets); serr != nil {
-			return workspace.NewErrorPrerequisite(serr.Error())
+			return workspace.NewErrorBackend("save irc secrets", serr)
 		}
 	}
 
@@ -929,11 +980,14 @@ func provisionExternal(
 	// secret_ref) is still in the operator's hands.
 	if _, err := irc.ReadBotPassword(cfg, secrets); err != nil {
 		if errors.Is(err, irc.ErrNoBotSecret) {
-			return workspace.NewErrorPrerequisite(fmt.Sprintf(
+			return workspace.NewErrorNotConfigured(fmt.Sprintf(
 				"no password for bot account %q: pass --bot-password-stdin, "+
 					"or set irc.bot.secret_ref to an aps secret", cfg.Bot.Account,
 			))
 		}
+		// Unclassified: a secret_ref that does not resolve may be a
+		// missing aps entry (permanent) or a store that is temporarily
+		// unavailable (transient).
 		return workspace.NewErrorPrerequisite(err.Error())
 	}
 	return nil
@@ -948,11 +1002,11 @@ func provisionExternal(
 func readBotPasswordStdin() (string, error) {
 	raw, err := io.ReadAll(os.Stdin)
 	if err != nil {
-		return "", workspace.NewErrorPrerequisite(fmt.Sprintf("read bot password from stdin: %v", err))
+		return "", workspace.NewErrorBackend("read bot password from stdin", err)
 	}
 	password := strings.TrimRight(string(raw), "\r\n")
 	if password == "" {
-		return "", workspace.NewErrorPrerequisite("bot password on stdin is empty")
+		return "", workspace.NewErrorNotConfigured("bot password on stdin is empty")
 	}
 	return password, nil
 }
@@ -1155,7 +1209,7 @@ func runIRCDisable(
 			return derr
 		}
 		if serr := irc.SaveProfile(rt.paths.Profile, profile); serr != nil {
-			return workspace.NewErrorPrerequisite(serr.Error())
+			return workspace.NewErrorBackend("save irc profile", serr)
 		}
 	}
 
@@ -1167,7 +1221,7 @@ func runIRCDisable(
 	if purge {
 		for _, dir := range []string{rt.paths.DataDir, rt.paths.StateDir} {
 			if rerr := os.RemoveAll(dir); rerr != nil {
-				return workspace.NewErrorPrerequisite(fmt.Sprintf("remove %s: %v", dir, rerr))
+				return workspace.NewErrorBackend(fmt.Sprintf("remove %s", dir), rerr)
 			}
 		}
 	}
@@ -1255,7 +1309,7 @@ func checkRecordedPorts(profile irc.Profile, paths irc.Paths) error {
 		return nil
 	}
 	if !irc.PortsFree(profile.Ports) {
-		return workspace.NewErrorPrerequisite(fmt.Sprintf(
+		return workspace.NewErrorPrerequisiteTransient(fmt.Sprintf(
 			"ports %d-%d recorded for this workspace are in use: "+
 				"free them, or re-enable the workspace to allocate a new triple",
 			profile.Ports.Plain, profile.Ports.API,

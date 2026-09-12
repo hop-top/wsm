@@ -113,7 +113,7 @@ func ircClientURL(rt *ircRuntime, profile irc.Profile, web bool) (ircURLDoc, err
 	switch profile.Mode {
 	case irc.ModeManaged:
 		if !profile.Ports.Valid() {
-			return ircURLDoc{}, workspace.NewErrorPrerequisite(
+			return ircURLDoc{}, workspace.NewErrorNotConfigured(
 				"this managed workspace has no port triple recorded: re-enable it")
 		}
 		if web {
@@ -144,7 +144,7 @@ func ircClientURL(rt *ircRuntime, profile irc.Profile, web bool) (ircURLDoc, err
 		}
 		host := strings.TrimSpace(rt.cfg.Server.Host)
 		if host == "" {
-			return ircURLDoc{}, workspace.NewErrorPrerequisite(
+			return ircURLDoc{}, workspace.NewErrorNotConfigured(
 				"irc.server.host is empty: set the server this workspace connects to")
 		}
 		doc.Host, doc.Port, doc.TLS = host, rt.cfg.Server.Port, rt.cfg.Server.TLSEnabled()

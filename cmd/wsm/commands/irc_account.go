@@ -271,14 +271,14 @@ func runIRCAccount(
 
 	secrets, err := irc.LoadSecrets(rt.paths.Secrets)
 	if err != nil {
-		return workspace.NewErrorPrerequisite(err.Error())
+		return workspace.NewErrorBackend("load irc secrets", err)
 	}
 
 	switch op {
 	case opCreate, opRotate:
 		passphrase, gerr := irc.GeneratePassphrase()
 		if gerr != nil {
-			return workspace.NewErrorPrerequisite(gerr.Error())
+			return workspace.NewErrorBackend("generate passphrase", gerr)
 		}
 
 		if op == opCreate {
@@ -310,7 +310,7 @@ func runIRCAccount(
 				// never holds a passphrase the server does not have.
 				secrets.Set(account, passphrase)
 				if serr := secrets.Save(rt.paths.Secrets); serr != nil {
-					return workspace.NewErrorPrerequisite(serr.Error())
+					return workspace.NewErrorBackend("save irc secrets", serr)
 				}
 				doc.Stored = true
 			}
@@ -365,7 +365,7 @@ func validateAccountTarget(member, raw string) error {
 // for. The message names both the provider and the operation, because
 // "unsupported" alone leaves the operator guessing which half to fix.
 func unsupportedByProvider(profile irc.Profile, op ircAccountOp, account string) error {
-	return workspace.NewErrorPrerequisite(fmt.Sprintf(
+	return workspace.NewErrorPrerequisitePermanent(fmt.Sprintf(
 		"provider %q does not support %s account (%s): "+
 			"configure the provider's account backend, or provision %q on the server directly",
 		profile.Provider, op, capabilityHint(op), account,
@@ -472,7 +472,7 @@ func openIRCSession(ctx context.Context, rt *ircRuntime, profile irc.Profile) (*
 
 	transport := bot.New(opts)
 	if cerr := transport.Connect(ctx); cerr != nil {
-		return nil, workspace.NewErrorPrerequisite(fmt.Sprintf(
+		return nil, workspace.NewErrorPrerequisiteTransient(fmt.Sprintf(
 			"connect to %s: %v", opts.Addr, cerr))
 	}
 
@@ -495,6 +495,9 @@ func openIRCSession(ctx context.Context, rt *ircRuntime, profile irc.Profile) (*
 	}
 	if err != nil {
 		transport.Close()
+		// Unclassified: opening a provider fails on a stale API token
+		// (permanent) as readily as on an API that is briefly down
+		// (transient), and the provider returns both the same way.
 		return nil, workspace.NewErrorPrerequisite(fmt.Sprintf(
 			"open provider %q: %v", profile.Provider, err))
 	}
@@ -512,16 +515,18 @@ func openIRCSession(ctx context.Context, rt *ircRuntime, profile irc.Profile) (*
 func ircTransportOptions(rt *ircRuntime, profile irc.Profile) (bot.Options, error) {
 	secrets, err := irc.LoadSecrets(rt.paths.Secrets)
 	if err != nil {
-		return bot.Options{}, workspace.NewErrorPrerequisite(err.Error())
+		return bot.Options{}, workspace.NewErrorBackend("load irc secrets", err)
 	}
 	password, err := irc.ReadBotPassword(rt.cfg, secrets)
 	if err != nil {
 		if errors.Is(err, irc.ErrNoBotSecret) {
-			return bot.Options{}, workspace.NewErrorPrerequisite(fmt.Sprintf(
+			return bot.Options{}, workspace.NewErrorNotConfigured(fmt.Sprintf(
 				"no password for bot account %q: re-enable the workspace with "+
 					"--bot-password-stdin, or set irc.bot.secret_ref",
 				rt.cfg.Bot.Account))
 		}
+		// Unclassified: as in provisionExternal, an unresolvable
+		// secret_ref may be a missing entry or an unavailable store.
 		return bot.Options{}, workspace.NewErrorPrerequisite(err.Error())
 	}
 
@@ -535,7 +540,7 @@ func ircTransportOptions(rt *ircRuntime, profile irc.Profile) (bot.Options, erro
 
 	if profile.Mode == irc.ModeManaged {
 		if !profile.Ports.Valid() {
-			return bot.Options{}, workspace.NewErrorPrerequisite(
+			return bot.Options{}, workspace.NewErrorNotConfigured(
 				"this managed workspace has no port triple recorded: re-enable it")
 		}
 		opts.Addr = net.JoinHostPort(irc.DefaultBind, strconv.Itoa(profile.Ports.Plain))
@@ -545,7 +550,7 @@ func ircTransportOptions(rt *ircRuntime, profile irc.Profile) (bot.Options, erro
 	}
 
 	if strings.TrimSpace(rt.cfg.Server.Host) == "" {
-		return bot.Options{}, workspace.NewErrorPrerequisite(
+		return bot.Options{}, workspace.NewErrorNotConfigured(
 			"irc.server.host is empty: set the server this workspace connects to")
 	}
 	opts.Addr = net.JoinHostPort(rt.cfg.Server.Host, strconv.Itoa(rt.cfg.Server.Port))

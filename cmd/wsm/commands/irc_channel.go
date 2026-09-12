@@ -618,7 +618,7 @@ func runIRCChannelPurge(
 		// runtime one: the operator fixes it by using a server that
 		// supports the operation, which is exactly what exit 7 means.
 		if reason == "" || reason == "unsupported" {
-			return workspace.NewErrorPrerequisite(fmt.Sprintf(
+			return workspace.NewErrorPrerequisitePermanent(fmt.Sprintf(
 				"provider %q cannot purge channel registrations: "+
 					"drop %s on the server directly",
 				profile.Provider, name))
@@ -788,13 +788,13 @@ func releaseChannelRequest(path, name string) error {
 func editIRCBlock(path string, edit func(ircNode *yaml.Node) error) error {
 	raw, err := os.ReadFile(path)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return workspace.NewErrorPrerequisite(fmt.Sprintf("read %s: %v", path, err))
+		return workspace.NewErrorBackend(fmt.Sprintf("read %s", path), err)
 	}
 
 	var doc yaml.Node
 	if len(raw) > 0 {
 		if uerr := yaml.Unmarshal(raw, &doc); uerr != nil {
-			return workspace.NewErrorPrerequisite(fmt.Sprintf("parse %s: %v", path, uerr))
+			return workspace.NewErrorBackend(fmt.Sprintf("parse %s", path), uerr)
 		}
 	}
 	root := documentRoot(&doc)
@@ -813,33 +813,33 @@ func editIRCBlock(path string, edit func(ircNode *yaml.Node) error) error {
 
 	out, err := yaml.Marshal(root)
 	if err != nil {
-		return workspace.NewErrorPrerequisite(fmt.Sprintf("encode %s: %v", path, err))
+		return workspace.NewErrorBackend(fmt.Sprintf("encode %s", path), err)
 	}
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return workspace.NewErrorPrerequisite(fmt.Sprintf("create %s: %v", dir, err))
+		return workspace.NewErrorBackend(fmt.Sprintf("create %s", dir), err)
 	}
 
 	tmp, err := os.CreateTemp(dir, ".config-*.yaml")
 	if err != nil {
-		return workspace.NewErrorPrerequisite(fmt.Sprintf("create temp file in %s: %v", dir, err))
+		return workspace.NewErrorBackend(fmt.Sprintf("create temp file in %s", dir), err)
 	}
 	tmpName := tmp.Name()
 	defer func() { _ = os.Remove(tmpName) }()
 
 	if err := tmp.Chmod(0o644); err != nil {
 		_ = tmp.Close()
-		return workspace.NewErrorPrerequisite(fmt.Sprintf("chmod temp file: %v", err))
+		return workspace.NewErrorBackend("chmod temp file", err)
 	}
 	if _, err := tmp.Write(out); err != nil {
 		_ = tmp.Close()
-		return workspace.NewErrorPrerequisite(fmt.Sprintf("write %s: %v", path, err))
+		return workspace.NewErrorBackend(fmt.Sprintf("write %s", path), err)
 	}
 	if err := tmp.Close(); err != nil {
-		return workspace.NewErrorPrerequisite(fmt.Sprintf("close temp file: %v", err))
+		return workspace.NewErrorBackend("close temp file", err)
 	}
 	if err := os.Rename(tmpName, path); err != nil {
-		return workspace.NewErrorPrerequisite(fmt.Sprintf("install %s: %v", path, err))
+		return workspace.NewErrorBackend(fmt.Sprintf("install %s", path), err)
 	}
 	return nil
 }
@@ -852,7 +852,7 @@ func readAdopted(ircNode *yaml.Node) ([]irc.AdoptedChannel, error) {
 	}
 	var out []irc.AdoptedChannel
 	if err := node.Decode(&out); err != nil {
-		return nil, workspace.NewErrorPrerequisite(fmt.Sprintf("parse irc.adopted: %v", err))
+		return nil, workspace.NewErrorBackend("parse irc.adopted", err)
 	}
 	return out, nil
 }
@@ -865,7 +865,7 @@ func readReleased(ircNode *yaml.Node) ([]string, error) {
 	}
 	var out []string
 	if err := node.Decode(&out); err != nil {
-		return nil, workspace.NewErrorPrerequisite(fmt.Sprintf("parse irc.released: %v", err))
+		return nil, workspace.NewErrorBackend("parse irc.released", err)
 	}
 	return out, nil
 }
@@ -897,7 +897,7 @@ func setReleased(ircNode *yaml.Node, entries []string) error {
 func setSequence(ircNode *yaml.Node, key string, value any) error {
 	var encoded yaml.Node
 	if err := encoded.Encode(value); err != nil {
-		return workspace.NewErrorPrerequisite(fmt.Sprintf("encode irc.%s: %v", key, err))
+		return workspace.NewErrorBackend(fmt.Sprintf("encode irc.%s", key), err)
 	}
 	if existing := mappingValue(ircNode, key); existing != nil {
 		*existing = encoded
@@ -1229,20 +1229,20 @@ func editChannelTemplates(
 ) error {
 	raw, err := os.ReadFile(path)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return workspace.NewErrorPrerequisite(fmt.Sprintf("read %s: %v", path, err))
+		return workspace.NewErrorBackend(fmt.Sprintf("read %s", path), err)
 	}
 
 	var doc yaml.Node
 	if len(raw) > 0 {
 		if uerr := yaml.Unmarshal(raw, &doc); uerr != nil {
-			return workspace.NewErrorPrerequisite(fmt.Sprintf("parse %s: %v", path, uerr))
+			return workspace.NewErrorBackend(fmt.Sprintf("parse %s", path), uerr)
 		}
 	}
 	root := documentRoot(&doc)
 
 	existing, err := readChannelTemplates(root)
 	if err != nil {
-		return workspace.NewErrorPrerequisite(fmt.Sprintf("parse %s: %v", path, err))
+		return workspace.NewErrorBackend(fmt.Sprintf("parse %s", path), err)
 	}
 
 	updated, err := edit(existing)
@@ -1251,18 +1251,18 @@ func editChannelTemplates(
 	}
 
 	if err := setChannelTemplates(root, updated); err != nil {
-		return workspace.NewErrorPrerequisite(err.Error())
+		return workspace.NewErrorBackend("set irc.channels", err)
 	}
 
 	out, err := yaml.Marshal(root)
 	if err != nil {
-		return workspace.NewErrorPrerequisite(fmt.Sprintf("encode %s: %v", path, err))
+		return workspace.NewErrorBackend(fmt.Sprintf("encode %s", path), err)
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return workspace.NewErrorPrerequisite(fmt.Sprintf("create %s: %v", filepath.Dir(path), err))
+		return workspace.NewErrorBackend(fmt.Sprintf("create %s", filepath.Dir(path)), err)
 	}
 	if err := os.WriteFile(path, out, 0o644); err != nil {
-		return workspace.NewErrorPrerequisite(fmt.Sprintf("write %s: %v", path, err))
+		return workspace.NewErrorBackend(fmt.Sprintf("write %s", path), err)
 	}
 	return nil
 }

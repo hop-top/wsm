@@ -50,7 +50,8 @@ func main() {
 //	4 = conflict (including policy denial)
 //	5 = backend / persistence failure   (scenario 5)
 //	6 = forbidden / capability denied   (scenario 7)
-//	7 = prerequisite not satisfied      (scenario 8)
+//	7 = prerequisite not satisfied      (scenario 8), and not-configured,
+//	    which shares the slot pending the exit-code renumber
 //
 // Must stay in lockstep with mapPolicyDenialError in
 // cmd/wsm/commands/policy.go: that one renders the envelope for errors
@@ -75,7 +76,8 @@ func exitCodeForError(err error) int {
 		return 5
 	case workspace.IsKind(err, workspace.ErrorKindForbidden):
 		return 6
-	case workspace.IsKind(err, workspace.ErrorKindPrerequisite):
+	case workspace.IsKind(err, workspace.ErrorKindPrerequisite),
+		workspace.IsKind(err, workspace.ErrorKindNotConfigured):
 		return 7
 	case isCobraUsageError(err):
 		return 2
