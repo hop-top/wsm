@@ -43,9 +43,13 @@ verify-no-ui-leak:
 	@mkdir -p .tmp/gocache
 	@if [ -d pkg ] && find pkg -name '*.go' | grep -q .; then \
 		deps="$$(GOCACHE=$$(pwd)/.tmp/gocache go list -deps ./pkg/...)" || exit 1; \
-		echo "$$deps" | grep -q 'charmbracelet' && \
-		(echo 'error: charmbracelet dependency leaked into pkg/*' && exit 1) || \
-		echo 'ok: pkg/* is free of charmbracelet dependencies'; \
+		leaked="$$(echo "$$deps" | grep -E 'charmbracelet|charm\.land' || true)"; \
+		if [ -n "$$leaked" ]; then \
+			echo 'error: terminal-UI dependency leaked into pkg/*'; \
+			echo "$$leaked" | sed 's/^/  /'; \
+			exit 1; \
+		fi; \
+		echo 'ok: pkg/* is free of terminal-UI dependencies'; \
 	else \
 		echo 'pkg/* has no Go files yet; dependency boundary check skipped'; \
 	fi
