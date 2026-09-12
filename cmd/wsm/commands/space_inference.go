@@ -34,6 +34,7 @@ type inferenceReport struct {
 	Type         string                             `json:"type"                   yaml:"type"`
 	TrustLevel   string                             `json:"trust_level"            yaml:"trust_level"`
 	Capabilities []string                           `json:"capabilities,omitempty" yaml:"capabilities,omitempty"`
+	Matches      []detector.DetectorMatch           `json:"matches,omitempty"      yaml:"matches,omitempty"`
 	Determined   bool                               `json:"determined"             yaml:"determined"`
 	Applied      bool                               `json:"applied"                yaml:"applied"`
 	Fields       map[string]detector.FieldInference `json:"fields"                 yaml:"fields"`
@@ -52,6 +53,7 @@ func withInference(s workspace.Space, inf *detector.SpaceInference) any {
 			Type:         string(inf.Type),
 			TrustLevel:   string(inf.TrustLevel),
 			Capabilities: inf.Capabilities,
+			Matches:      inf.Matches,
 			Determined:   inf.Determined(),
 			Applied:      false,
 			Fields:       inf.Inferred,
@@ -89,5 +91,21 @@ func reportInference(w io.Writer, inf detector.SpaceInference) {
 			value = fmt.Sprintf("%v", inf.Capabilities)
 		}
 		fmt.Fprintf(w, "  %s: %s (%s — %s)\n", name, value, verdict, f.Reason)
+	}
+
+	// Per-detector detail. The field provenance above names which
+	// detectors fired but not what each classified the boundary as;
+	// Kind is that signal and has no other outlet.
+	//
+	// Confidence is deliberately not printed. Every detector reachable
+	// here is a fileExistsDetector, which hardcodes 1.0 on a match, so
+	// the number was constant across every line it ever appeared on
+	// and carried no information.
+	for _, m := range inf.Matches {
+		if m.Path != "" {
+			fmt.Fprintf(w, "  detected %s (%s): %s\n", m.Name, m.Kind, m.Path)
+			continue
+		}
+		fmt.Fprintf(w, "  detected %s (%s)\n", m.Name, m.Kind)
 	}
 }

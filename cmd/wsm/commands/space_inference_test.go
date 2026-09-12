@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -164,6 +166,64 @@ func TestReportInference_DistinguishesDeterminedFromDefaulted(t *testing.T) {
 	}
 	if strings.Contains(determined.String(), "defaulted") {
 		t.Errorf("scheme-match report wrongly says defaulted:\n%s", determined.String())
+	}
+}
+
+// TestReportInference_StderrContract pins the --auto stderr contract.
+// It exists because the per-detector detail was once dropped silently
+// when this output was rewritten: the old code printed one line per
+// detected result naming the detector and its Kind, and a rewrite that
+// only reported inferred fields removed it without anyone noticing.
+//
+// This pins a REQUIREMENT, not current formatting: every detector that
+// fired must be named on stderr together with the kind it assigned.
+// The assertions deliberately do not pin punctuation or column order,
+// so the wording stays free to change while the signal cannot vanish.
+func TestReportInference_StderrContract(t *testing.T) {
+	dir := t.TempDir()
+	// One "build"-kind detector and one "runtime"-kind detector, so a
+	// dropped Kind cannot pass by coincidence of a single value.
+	for _, f := range []string{"Makefile", "package.json"} {
+		if err := os.WriteFile(filepath.Join(dir, f), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	inf := detector.InferSpaceFromBoundary(context.Background(), dir)
+	var buf bytes.Buffer
+	reportInference(&buf, inf)
+	got := buf.String()
+
+	// Every detector that fired is named, with its kind.
+	for _, want := range []string{"makefile", "package-json"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("stderr omits detector %q:\n%s", want, got)
+		}
+	}
+	for _, want := range []string{"build", "runtime"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("stderr omits detector kind %q:\n%s", want, got)
+		}
+	}
+	// The inferred fields keep their determined/defaulted verdict.
+	if !strings.Contains(got, "type:") || !strings.Contains(got, "trust_level:") {
+		t.Errorf("stderr omits inferred fields:\n%s", got)
+	}
+	// Disclosure must not imply the space was modified.
+	if !strings.Contains(got, "not applied") {
+		t.Errorf("stderr does not say the inference was not applied:\n%s", got)
+	}
+}
+
+// TestReportInference_NoDetectionsReportsNoMatches pins that the
+// per-detector section is absent rather than empty when nothing fired:
+// wsm says less, truthfully.
+func TestReportInference_NoDetectionsReportsNoMatches(t *testing.T) {
+	var buf bytes.Buffer
+	reportInference(&buf,
+		detector.InferSpaceFromBoundary(context.Background(), t.TempDir()))
+	if strings.Contains(buf.String(), "detected ") {
+		t.Errorf("reported a detection when none fired:\n%s", buf.String())
 	}
 }
 

@@ -273,7 +273,7 @@ wsm space add <workspace> <id> [--type ...] [--path ...] [--cap ...] \
 | `--cap`         | -           | Space capability OASF URI (repeatable)                          |
 | `--trust`       | local       | Trust level: `local`, `verified`, `external`, `untrusted`       |
 | `--startup-cmd` | ""          | Default command rux runs when connecting (empty = `$SHELL`)     |
-| `--auto`        | false       | Auto-detect space attributes from `--path`                      |
+| `--auto`        | false       | Detect space attributes from `--path` and disclose them (reported, not applied) |
 
 If the rux `projects.yaml` write fails, wsm warns to stderr and the wsm DB
 write still succeeds; recover with `wsm space sync`.

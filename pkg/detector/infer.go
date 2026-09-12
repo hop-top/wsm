@@ -49,6 +49,19 @@ func (f FieldInference) Determined() bool {
 	return f.Source != SourceDefault
 }
 
+// DetectorMatch is one detector that positively matched, with the
+// classification it assigned and the file it matched.
+//
+// Kind is the detector's own classification ("build", "runtime", …).
+// It is per-detector signal that the field-level provenance does not
+// carry: the capabilities entry names which detectors fired, but not
+// what each one considered the boundary to be.
+type DetectorMatch struct {
+	Name string `json:"name"`
+	Kind string `json:"kind"`
+	Path string `json:"path,omitempty"`
+}
+
 // SpaceInference holds inferred Space fields from detector results,
 // together with the per-field provenance of how each was obtained.
 //
@@ -56,10 +69,14 @@ func (f FieldInference) Determined() bool {
 // "trust_level", "capabilities"). Only fields the inference actually
 // produced appear; wsm does not emit provenance entries it has no
 // real source for.
+//
+// Matches lists every detector that fired, in registry order. It is
+// empty for scheme-matched boundaries, which run no detectors.
 type SpaceInference struct {
 	Type         model.SpaceType           `json:"type"`
 	TrustLevel   model.TrustLevel          `json:"trust_level"`
 	Capabilities []string                  `json:"capabilities,omitempty"`
+	Matches      []DetectorMatch           `json:"matches,omitempty"`
 	Inferred     map[string]FieldInference `json:"_inferred,omitempty"`
 }
 
@@ -166,6 +183,11 @@ func InferSpaceFromBoundary(ctx context.Context, boundary string) SpaceInference
 			containerPath = r.Details["path"]
 		}
 		inf.Capabilities = append(inf.Capabilities, r.DetectorName)
+		inf.Matches = append(inf.Matches, DetectorMatch{
+			Name: r.DetectorName,
+			Kind: r.Kind,
+			Path: r.Details["path"],
+		})
 		if p := r.Details["path"]; p != "" {
 			capPaths = append(capPaths, p)
 		}
