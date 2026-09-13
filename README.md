@@ -2,15 +2,13 @@
 
 Workspace & Session Manager (wsm) for IDE-agnostic session storage.
 
-Status: pre-1.0 (`0.1.0-alpha`); commands and flags can change between minor
-versions, and `main` history may be rewritten while the repository is
-restructured, so pin a commit rather than track the branch.
-
 [![ci](https://github.com/hop-top/wsm/actions/workflows/ci.yml/badge.svg)](https://github.com/hop-top/wsm/actions/workflows/ci.yml)
 [![12-factor AI-CLI](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/hop-top/wsm/main/.12fc.json)](https://github.com/hop-top/wsm/actions/workflows/12fcc.yaml)
 [![release](https://img.shields.io/github/v/release/hop-top/wsm?include_prereleases)](https://github.com/hop-top/wsm/releases)
 [![Go Reference](https://pkg.go.dev/badge/hop.top/wsm.svg)](https://pkg.go.dev/hop.top/wsm)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
+> **Status:** Active development. Usable today, with some rough edges as features evolve.
 
 ## Table of contents
 
@@ -436,8 +434,7 @@ make test && make test-e2e && make verify-no-ui-leak
 The 12-factor AI-CLI badge is refreshed locally with `make 12fcc-record`,
 `make 12fcc-grade`, and `make 12fcc-badge` (`KIT_BIN` must point at a kit
 binary); CI checks conformance but never rewrites the badge. Releases are cut
-by release-please from Conventional Commits on `main`, with prerelease
-versioning (`0.1.0-alpha.N`, minor bumps for breaking changes before 1.0).
+by release-please from Conventional Commits on `main`.
 
 ## Security
 
