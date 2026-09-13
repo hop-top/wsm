@@ -111,6 +111,7 @@ is what you actually want.`,
 
 	cli.SetSideEffect(cmd, cli.SideEffectWriteLocal)
 	cli.SetIdempotency(cmd, cli.IdempotencyConditional)
+	setExitCodes(cmd, ClassOK, ClassUsage, ClassNotFound, ClassConflict, ClassUnauthorized, ClassNotConfigured, ClassBackend)
 	return cmd
 }
 
@@ -155,6 +156,7 @@ destructive operation.`,
 
 	cli.SetSideEffect(cmd, cli.SideEffectWriteLocal)
 	cli.SetIdempotency(cmd, cli.IdempotencyConditional)
+	setExitCodes(cmd, ClassOK, ClassUsage, ClassNotFound, ClassUnauthorized, ClassNotConfigured, ClassBackend)
 	return cmd
 }
 
@@ -183,6 +185,7 @@ maintains.`,
 	}
 	cli.SetSideEffect(cmd, cli.SideEffectRead)
 	cli.SetIdempotency(cmd, cli.IdempotencyYes)
+	setExitCodes(cmd, ClassOK, ClassUsage, ClassNotFound, ClassNotConfigured, ClassBackend)
 	return cmd
 }
 
@@ -219,6 +222,7 @@ is an error rather than a deferred write.`,
 
 	cli.SetSideEffect(cmd, cli.SideEffectWriteLocal)
 	cli.SetIdempotency(cmd, cli.IdempotencyYes)
+	setExitCodes(cmd, ClassOK, ClassUsage, ClassNotFound, ClassConflict, ClassUnauthorized, ClassNotConfigured, ClassBackend)
 	return cmd
 }
 
@@ -248,6 +252,7 @@ The daemon must be running, for the same reason adopt requires it.`,
 
 	cli.SetSideEffect(cmd, cli.SideEffectWriteLocal)
 	cli.SetIdempotency(cmd, cli.IdempotencyYes)
+	setExitCodes(cmd, ClassOK, ClassUsage, ClassNotFound, ClassUnauthorized, ClassNotConfigured, ClassBackend)
 	return cmd
 }
 
@@ -263,7 +268,7 @@ func newIRCChannelPurgeCmd(opts *globalOptions) *cobra.Command {
 This is a server operation, not a configuration edit: the registration
 is dropped and the channel emptied. On ergo that is CS PURGE, a two-step
 confirmation the provider completes on wsm's behalf. A provider without
-the capability reports the operation as unsupported (exit 7) rather than
+the capability reports the operation as unsupported (exit 70) rather than
 appearing to succeed.
 
 There is no unpurge. The purge is gated behind --confirm like every
@@ -283,6 +288,7 @@ other destructive verb, and --force stands in for --confirm=yes.`,
 
 	cli.SetSideEffect(cmd, cli.SideEffectDestructive)
 	cli.SetIdempotency(cmd, cli.IdempotencyNo)
+	setExitCodes(cmd, ClassOK, ClassUsage, ClassNotFound, ClassUnauthorized, ClassNotConfigured, ClassPrerequisite, ClassBackend)
 	return cmd
 }
 
@@ -616,7 +622,7 @@ func runIRCChannelPurge(
 	if !purged {
 		// A provider that cannot purge is a prerequisite failure, not a
 		// runtime one: the operator fixes it by using a server that
-		// supports the operation, which is exactly what exit 7 means.
+		// supports the operation, which is exactly what exit 70 means.
 		if reason == "" || reason == "unsupported" {
 			return workspace.NewErrorPrerequisitePermanent(fmt.Sprintf(
 				"provider %q cannot purge channel registrations: "+

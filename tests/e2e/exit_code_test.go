@@ -37,10 +37,10 @@ func TestExitCode_Conflict(t *testing.T) {
 }
 
 func TestExitCode_BackendError(t *testing.T) {
-	// Story 015 scenario 5: backend / persistence failures exit 5.
+	// Story 015 scenario 5: backend / persistence failures exit 8.
 	// Both real backend faults (unwriteable --data-dir) and
 	// unrecognized --backend values are semantically Backend errors and
-	// must land on 5, not the usage slot 2.
+	// must land on 8, not the usage slot 2.
 	t.Run("unwriteable_data_dir", func(t *testing.T) {
 		r := newRunner(t)
 		bad := filepath.Join(t.TempDir(), "not-a-dir")
@@ -48,12 +48,12 @@ func TestExitCode_BackendError(t *testing.T) {
 			t.Fatalf("create bad data dir path: %v", err)
 		}
 		res := r.runNoGlobal("--data-dir", bad, "workspace", "list")
-		requireExitCode(t, res, 5)
+		requireExitCode(t, res, 8)
 	})
 
 	t.Run("unrecognized_backend", func(t *testing.T) {
 		r := newRunner(t)
 		res := r.runNoGlobal("--backend", "nonexistent", "workspace", "list")
-		requireExitCode(t, res, 5)
+		requireExitCode(t, res, 8)
 	})
 }

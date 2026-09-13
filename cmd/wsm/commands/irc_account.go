@@ -102,6 +102,7 @@ the weakest link in someone else's credential.`,
 
 	cli.SetSideEffect(cmd, cli.SideEffectWriteShared)
 	cli.SetIdempotency(cmd, cli.IdempotencyConditional)
+	setExitCodes(cmd, ClassOK, ClassUsage, ClassNotFound, ClassConflict, ClassUnauthorized, ClassNotConfigured, ClassPrerequisite, ClassBackend)
 	return cmd
 }
 
@@ -132,6 +133,7 @@ applies to the next authentication.`,
 
 	cli.SetSideEffect(cmd, cli.SideEffectWriteShared)
 	cli.SetIdempotency(cmd, cli.IdempotencyNo)
+	setExitCodes(cmd, ClassOK, ClassUsage, ClassNotFound, ClassUnauthorized, ClassNotConfigured, ClassPrerequisite, ClassBackend)
 	return cmd
 }
 
@@ -159,6 +161,7 @@ account cannot authenticate and cannot be re-registered by anyone else.`,
 
 	cli.SetSideEffect(cmd, cli.SideEffectWriteShared)
 	cli.SetIdempotency(cmd, cli.IdempotencyConditional)
+	setExitCodes(cmd, ClassOK, ClassUsage, ClassNotFound, ClassUnauthorized, ClassNotConfigured, ClassPrerequisite, ClassBackend)
 	return cmd
 }
 

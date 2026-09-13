@@ -335,7 +335,7 @@ func TestIRCAccount_UnsupportedNamesProviderAndOperation(t *testing.T) {
 		t.Run(string(op), func(t *testing.T) {
 			err := unsupportedByProvider(profile, op, "noor")
 			if !workspace.IsKind(err, workspace.ErrorKindPrerequisite) {
-				t.Fatalf("expected a prerequisite error (exit 7), got %T: %v", err, err)
+				t.Fatalf("expected a prerequisite error (exit 70), got %T: %v", err, err)
 			}
 			msg := err.Error()
 			if !strings.Contains(msg, string(irc.ProviderPlain)) {

@@ -44,14 +44,28 @@ func main() {
 // exitCodeForError maps a wsm error to a CLI exit code per
 // docs/stories/015-exit-code-contract.md:
 //
-//	1 = generic error
-//	2 = usage error
-//	3 = not found
-//	4 = conflict (including policy denial)
-//	5 = backend / persistence failure   (scenario 5)
-//	6 = forbidden / capability denied   (scenario 7)
-//	7 = prerequisite not satisfied      (scenario 8), and not-configured,
-//	    which shares the slot pending the exit-code renumber
+//	 1 = generic error
+//	 2 = usage error
+//	 3 = not found
+//	 4 = conflict (including policy denial)
+//	 5 = forbidden / capability denied   (scenario 7)
+//	 8 = backend / persistence failure   (scenario 5)
+//	 9 = not configured                  (scenario 9)
+//	70 = prerequisite not satisfied      (scenario 8)
+//
+// The numbers above 4 are chosen against kit's standard table rather
+// than invented. kit defines 5 UNAUTHORIZED, 6 TRANSIENT and 7
+// CONSENT_REFUSED, so wsm's old 5/6/7 collided with three kit codes
+// that mean something else. Forbidden takes kit's own 5, prerequisite
+// takes kit's ExitPrerequisite (70), and the two kinds kit has no
+// class for take 8 and 9.
+//
+// 8 and 9 are deliberately low rather than 71+. kit reserves a
+// contiguous, already-full band at 64-70 (64 RATE_LIMITED, 65
+// PROVENANCE_MISSING, 66 LEAK_DETECTED, 67 CONFIG, 68 GRADE_FAIL, 69
+// GRADE_UNGRADABLE, 70 PREREQUISITE) and grows it upward, so the next
+// kit code claims 71 and would collide with anything wsm parked there.
+// 8-63 is free for adopters and keeps the contract readable.
 //
 // Must stay in lockstep with mapPolicyDenialError in
 // cmd/wsm/commands/policy.go: that one renders the envelope for errors
@@ -72,13 +86,14 @@ func exitCodeForError(err error) int {
 		return 3
 	case workspace.IsKind(err, workspace.ErrorKindConflict):
 		return 4
-	case workspace.IsKind(err, workspace.ErrorKindBackend):
-		return 5
 	case workspace.IsKind(err, workspace.ErrorKindForbidden):
-		return 6
-	case workspace.IsKind(err, workspace.ErrorKindPrerequisite),
-		workspace.IsKind(err, workspace.ErrorKindNotConfigured):
-		return 7
+		return commands.ExitForbidden
+	case workspace.IsKind(err, workspace.ErrorKindBackend):
+		return commands.ExitBackend
+	case workspace.IsKind(err, workspace.ErrorKindNotConfigured):
+		return commands.ExitNotConfigured
+	case workspace.IsKind(err, workspace.ErrorKindPrerequisite):
+		return output.ExitPrerequisite
 	case isCobraUsageError(err):
 		return 2
 	default:

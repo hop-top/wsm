@@ -77,6 +77,7 @@ reconfigure wsm itself.`,
 
 	cli.SetSideEffect(cmd, cli.SideEffectRead)
 	cli.SetIdempotency(cmd, cli.IdempotencyYes)
+	setExitCodes(cmd, ClassOK, ClassUsage, ClassNotFound, ClassUnauthorized, ClassNotConfigured, ClassPrerequisite, ClassBackend)
 	return cmd
 }
 

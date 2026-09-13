@@ -157,9 +157,9 @@ func TestIRCDisabledError(t *testing.T) {
 	}
 }
 
-// TestRequireCapability pins the 6-mapping input: a withheld capability
-// yields a Forbidden domain error, which mapPolicyDenialError turns
-// into exit 6.
+// TestRequireCapability pins the forbidden-mapping input: a withheld
+// capability yields a Forbidden domain error, which mapPolicyDenialError
+// turns into kit's UNAUTHORIZED exit 5.
 func TestRequireCapability(t *testing.T) {
 	t.Run("permitted", func(t *testing.T) {
 		app := &appContext{caps: workspace.AllCapabilities()}
@@ -168,7 +168,7 @@ func TestRequireCapability(t *testing.T) {
 		}
 	})
 
-	t.Run("withheld maps to exit 6", func(t *testing.T) {
+	t.Run("withheld maps to the forbidden slot", func(t *testing.T) {
 		app := &appContext{caps: workspace.DenyAll()}
 		err := requireCapability(app, workspace.CapIRCEnable)
 		if err == nil {
@@ -181,8 +181,8 @@ func TestRequireCapability(t *testing.T) {
 		if !ok {
 			t.Fatal("mapped error is not *output.Error")
 		}
-		if oe.ExitCode != 6 {
-			t.Fatalf("exit code = %d; want 6", oe.ExitCode)
+		if oe.ExitCode != ExitForbidden {
+			t.Fatalf("exit code = %d; want %d", oe.ExitCode, ExitForbidden)
 		}
 	})
 
@@ -335,8 +335,8 @@ func TestCheckRecordedPorts(t *testing.T) {
 		if !ok {
 			t.Fatal("mapped error is not *output.Error")
 		}
-		if oe.ExitCode != 7 {
-			t.Fatalf("exit code = %d; want 7", oe.ExitCode)
+		if oe.ExitCode != output.ExitPrerequisite {
+			t.Fatalf("exit code = %d; want %d", oe.ExitCode, output.ExitPrerequisite)
 		}
 	})
 }

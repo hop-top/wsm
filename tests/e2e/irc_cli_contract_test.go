@@ -18,7 +18,7 @@ import (
 // externalServerEnv names the server an external-mode workspace points
 // at. `url` and the endpoint half of `creds` read irc.server.* from the
 // config rather than from the profile, so a profile alone leaves them
-// with nothing to answer with (exit 7).
+// with nothing to answer with (exit 9).
 var externalServerEnv = map[string]string{
 	"WSM_IRC_SERVER_HOST": "irc.example.com",
 	"WSM_IRC_SERVER_PORT": "6697",
@@ -108,7 +108,7 @@ func TestIRC_MutatingVerbsRefuseWithoutCapability(t *testing.T) {
 			env["WSM_DENY_CAPABILITIES"] = tc.deny
 
 			args := append(append([]string{}, tc.args...), name)
-			requireExitCode(t, r.runWithEnv(env, args...), 6)
+			requireExitCode(t, r.runWithEnv(env, args...), 5)
 		})
 	}
 }
@@ -120,7 +120,7 @@ func TestIRC_MutatingVerbsRefuseWithoutCapability(t *testing.T) {
 // could still spawn a daemon, and asserted the daemon really came up
 // (state running, a live pid) so the hole could not be papered over
 // with a bare exit 0. The inversion keeps that rigour: the refusal must
-// be exit 6 AND nothing may have been spawned, because a gate that
+// be exit 5 AND nothing may have been spawned, because a gate that
 // refuses after starting the daemon would satisfy the exit code alone.
 func TestIRC_StartRefusedWithoutCapability(t *testing.T) {
 	r := newRunner(t)
@@ -130,7 +130,7 @@ func TestIRC_StartRefusedWithoutCapability(t *testing.T) {
 	env["WSM_DENY_CAPABILITIES"] = "irc.start"
 
 	res := r.runWithEnv(env, "irc", "start", "denied-start", "--format", "json")
-	requireExitCode(t, res, 6)
+	requireExitCode(t, res, 5)
 
 	// Nothing may have been spawned. status is ungated, so it answers
 	// even for a caller that was just refused, which is exactly what
@@ -190,18 +190,18 @@ func TestIRC_ForceDoesNotBypassCapability(t *testing.T) {
 			// mean --force had bypassed the gate entirely.
 			denied := mergeEnv(env, map[string]string{"WSM_DENY_CAPABILITIES": "irc.stop"})
 			res := r.runWithEnv(denied, "irc", verb, name, "--force")
-			requireExitCode(t, res, 6)
+			requireExitCode(t, res, 5)
 
 			// Denied WITHOUT --force, on the same guest-hosting
 			// workspace. Both refusals are live here and they disagree
 			// about the code, so this pins which one answers: a caller
-			// with no authority is told it is forbidden (6), not that it
+			// with no authority is told it is forbidden (5), not that it
 			// collided with someone else's guests (4). Nothing else in
 			// the suite pins that ordering — with the gate placed after
 			// the guard this case returns 4 while every other assertion
 			// in this test still passes.
 			unforced := r.runWithEnv(denied, "irc", verb, name)
-			requireExitCode(t, unforced, 6)
+			requireExitCode(t, unforced, 5)
 		})
 	}
 }
@@ -240,7 +240,12 @@ func TestIRC_ReadsStayUngated(t *testing.T) {
 
 			args := append(append([]string{}, tc.args...), name)
 			res := r.runWithEnv(env, args...)
-			if res.ExitCode == 6 {
+			// Inverted guard: this names the code a capability refusal
+			// WOULD produce, so it tracks the forbidden slot rather
+			// than staying on the number that slot used to hold.
+			// Leaving it on 6 would have made it vacuous — nothing
+			// exits 6 any more, so it could never fire again.
+			if res.ExitCode == 5 {
 				t.Fatalf("%s is a read and must not consult a capability:\n%s",
 					tc.name, res.Combined())
 			}
@@ -256,7 +261,7 @@ func TestIRC_ReadsStayUngated(t *testing.T) {
 // read of workspace state: it renders a stored passphrase, and --env
 // emits it as a shell assignment ready to be sourced. The refusal is
 // asserted to be silent about the secret as well as non-zero — a gate
-// that exits 6 after printing the credential would not be a gate.
+// that exits 5 after printing the credential would not be a gate.
 func TestIRC_CredsRefusesWithoutCapability(t *testing.T) {
 	r := newRunner(t)
 	id := r.mustCreateWorkspace("creds-denied")
@@ -266,7 +271,7 @@ func TestIRC_CredsRefusesWithoutCapability(t *testing.T) {
 
 	denied := mergeEnv(env, map[string]string{"WSM_DENY_CAPABILITIES": "irc.creds"})
 	res := r.runWithEnv(denied, "irc", "creds", "creds-denied", "alice")
-	requireExitCode(t, res, 6)
+	requireExitCode(t, res, 5)
 	if strings.Contains(res.Combined(), "alice-irc") {
 		t.Fatalf("a refused creds must not disclose the account it would have "+
 			"resolved, got:\n%s", res.Combined())
@@ -283,7 +288,7 @@ func TestIRC_CredsRefusesWithoutCapability(t *testing.T) {
 }
 
 // TestIRC_GatedVerbsStillRefuse is the other half of the split: the
-// verbs that DO consult capabilities must keep refusing with exit 6.
+// verbs that DO consult capabilities must keep refusing with exit 5.
 //
 // Without this, someone "fixing" the ungated pins above by deleting the
 // capability check entirely would leave every test green.
@@ -316,24 +321,25 @@ func TestIRC_GatedVerbsStillRefuse(t *testing.T) {
 			}
 
 			res := r.runWithEnv(env, args...)
-			requireExitCode(t, res, 6)
+			requireExitCode(t, res, 5)
 		})
 	}
 }
 
-// TestIRC_PurgeRefusedCollidesWithBackendCode pins the exit code a
-// declined purge produces, and names the collision it creates.
+// TestIRC_PurgeRefusedIsDistinctFromBackendCode pins the separation of
+// two outcomes that used to arrive as the same number.
 //
-// A refused --purge exits 5. wsm's own contract (docs/stories, and the
-// mapping in cmd/wsm/main.go) assigns 5 to backend/persistence failure,
-// so a script cannot distinguish "you declined a destructive operation,
-// nothing happened" from "the database failed". Both are exit 5 and both
-// arrive on stderr.
+// A refused --purge exits 5, kit's UNAUTHORIZED. Backend failures used
+// to exit 5 as well, so a script could not tell "you declined a
+// destructive operation, nothing happened" from "the database failed".
+// The predecessor of this test pinned that collision and called it a
+// defect rather than blessing it.
 //
-// The assertion pins today's behaviour because changing it is a contract
-// decision, not a test's call — but the collision is a defect, and this
-// test says so rather than quietly blessing it.
-func TestIRC_PurgeRefusedCollidesWithBackendCode(t *testing.T) {
+// The renumber resolves it: backend moved to 8, a slot kit assigns no
+// meaning, leaving 5 to mean only what kit says it means. The assertion
+// is now that the two differ — the same fact the old test recorded,
+// with the sign flipped.
+func TestIRC_PurgeRefusedIsDistinctFromBackendCode(t *testing.T) {
 	r := newRunner(t)
 	r.mustCreateWorkspace("purge-collide")
 	env := ircEnv(t, r, "external")
@@ -346,14 +352,18 @@ func TestIRC_PurgeRefusedCollidesWithBackendCode(t *testing.T) {
 		t.Fatalf("expected the refusal to name --purge, got:\n%s", refused.Combined())
 	}
 
-	// The collision, demonstrated rather than asserted from the source:
-	// an unwriteable data dir is a genuine backend failure and reaches
-	// the shell as the same 5.
+	// The separation, demonstrated rather than asserted from the source:
+	// an unwriteable data dir is a genuine backend failure and must now
+	// reach the shell as a different number.
 	backend := r.runNoGlobalWithEnv(env, "--data-dir", "/dev/null/nope", "irc", "status", "purge-collide")
-	if backend.ExitCode != refused.ExitCode {
-		t.Logf("backend failure exits %d while a declined purge exits %d; "+
-			"the codes no longer collide, which is an improvement worth "+
-			"folding into this test", backend.ExitCode, refused.ExitCode)
+	if backend.ExitCode == refused.ExitCode {
+		t.Fatalf("a backend failure and a declined purge both exit %d; "+
+			"a script cannot tell a refusal from a broken store:\n%s",
+			backend.ExitCode, backend.Combined())
+	}
+	if backend.ExitCode != 8 {
+		t.Fatalf("backend failure exits %d; want 8:\n%s",
+			backend.ExitCode, backend.Combined())
 	}
 }
 
@@ -362,8 +372,8 @@ func TestIRC_PurgeRefusedCollidesWithBackendCode(t *testing.T) {
 // precondition fails.
 //
 // disable is the verb that can produce both: an un-enabled workspace is
-// a prerequisite failure (7), and an enabled one with the capability
-// withheld is forbidden (6). A regression that collapsed the two kinds
+// a not-configured failure (9), and an enabled one with the capability
+// withheld is forbidden (5). A regression that collapsed the two kinds
 // into a single code would still satisfy each test that checks only one.
 func TestIRC_PrerequisiteAndForbiddenOnTheSameVerb(t *testing.T) {
 	r := newRunner(t)
@@ -372,7 +382,7 @@ func TestIRC_PrerequisiteAndForbiddenOnTheSameVerb(t *testing.T) {
 
 	// No profile written yet: IRC was never enabled here.
 	prereq := r.runWithEnv(env, "irc", "disable", "prereq-vs-forbidden")
-	requireExitCode(t, prereq, 7)
+	requireExitCode(t, prereq, 9)
 	if !strings.Contains(prereq.Combined(), "irc enable") {
 		t.Fatalf("a prerequisite failure must name the fix, got:\n%s", prereq.Combined())
 	}
@@ -383,7 +393,7 @@ func TestIRC_PrerequisiteAndForbiddenOnTheSameVerb(t *testing.T) {
 	denied := env
 	denied["WSM_DENY_CAPABILITIES"] = "irc.disable"
 	forbidden := r.runWithEnv(denied, "irc", "disable", "prereq-vs-forbidden")
-	requireExitCode(t, forbidden, 6)
+	requireExitCode(t, forbidden, 5)
 
 	if prereq.ExitCode == forbidden.ExitCode {
 		t.Fatal("a missing prerequisite and a withheld capability must stay " +
@@ -508,7 +518,7 @@ func TestIRC_NonTTYDefaultsToJSON(t *testing.T) {
 // They are not aliases. `channel rm --purge` removes the template and
 // reports the registration drop as a non-fatal reason:"unsupported",
 // because the removal it was asked for did happen. `channel purge` has
-// nothing else to do, so the same incapable provider is exit 7.
+// nothing else to do, so the same incapable provider is exit 70.
 //
 // Both are defensible alone; the divergence is what a caller has to
 // know, and nothing else pins the two against each other.
@@ -561,10 +571,10 @@ func TestIRC_ChannelPurgeDivergesFromChannelRmPurge(t *testing.T) {
 		// The exit code is deliberately not pinned to a single value. In
 		// this build the bot has no password, so the session fails (exit
 		// 1) before the provider can report the operation unsupported
-		// (exit 7); both are the same contract — non-zero — and pinning
+		// (exit 70); both are the same contract — non-zero — and pinning
 		// whichever one happens to arrive first would pin the fixture
 		// rather than the divergence. The integration suite, which has a
-		// live ergo, is where the 7 is reachable.
+		// live ergo, is where the 70 is reachable.
 		if res.ExitCode == 0 {
 			t.Fatalf("channel purge must not report success for a purge that "+
 				"did not happen:\n%s", res.Combined())

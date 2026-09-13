@@ -35,7 +35,7 @@ wsm irc status  <ws>
 
 Preflight runs in two stages: static checks before anything is generated, then readiness checks after allocation and certificate generation, before the process is spawned. Empty certificate paths mean "generate", never a failure.
 
-Exit 7 marks an unsatisfied prerequisite with the fix in the message: a missing or too-old binary, a busy port triple, an unreachable external server, or a provider lacking a capability. Ports recorded for a workspace that are busy on restart exit 7 rather than being silently reallocated.
+Exit 70 marks an unsatisfied prerequisite with the fix in the message: a missing or too-old binary, a busy port triple, an unreachable external server, or a provider lacking a capability. Ports recorded for a workspace that are busy on restart exit 70 rather than being silently reallocated.
 
 The feature flag is deliberately **not** a prerequisite: with `irc.enabled` false, every `wsm irc` command exits **2**, because a disabled feature is a configuration choice rather than a broken environment.
 
@@ -63,11 +63,11 @@ Teardown is guarded: a host still serving guests refuses to stop, archive, or de
 1. **Given** `irc.enabled` is false, **When** I run any `wsm irc` command, **Then** it exits 2 and says the feature is disabled.
 2. **Given** a workspace that does not exist, **When** I run `wsm irc status`, **Then** it exits 3.
 3. **Given** a directory that is not a workspace root, **When** I run `wsm irc enable --dir` against it, **Then** it exits 2 and names the expected layout.
-4. **Given** a caller without the enable capability, **When** I run `wsm irc enable`, **Then** it exits 6.
-5. **Given** managed mode and a busy port triple, **When** I run `wsm irc enable`, **Then** it exits 7 and names the ports and the flag to choose another base.
-6. **Given** a workspace whose recorded ports are now in use, **When** I run `wsm irc start`, **Then** it exits 7 rather than silently reallocating.
+4. **Given** a caller without the enable capability, **When** I run `wsm irc enable`, **Then** it exits 5.
+5. **Given** managed mode and a busy port triple, **When** I run `wsm irc enable`, **Then** it exits 70 and names the ports and the flag to choose another base.
+6. **Given** a workspace whose recorded ports are now in use, **When** I run `wsm irc start`, **Then** it exits 70 rather than silently reallocating.
 7. **Given** managed mode, **When** `wsm irc enable` succeeds, **Then** the daemon is running, the server is its child, and the profile records mode, provider, ports, and root.
-8. **Given** external mode with an unreachable server, **When** I run `wsm irc enable --external`, **Then** it exits 7.
+8. **Given** external mode with an unreachable server, **When** I run `wsm irc enable --external`, **Then** it exits 70.
 9. **Given** a running daemon, **When** I run `wsm irc sync`, **Then** reconcile is requested; **given** no daemon, **Then** it exits 1 with the start command as the fix.
 10. **Given** a running daemon, **When** I run `wsm irc stop`, **Then** it exits cleanly and the pidfile is removed; **and when** the process is already gone, **Then** a stale pidfile reads as stopped.
 11. **Given** the server exits unexpectedly, **When** the daemon notices, **Then** it restarts it with increasing backoff and, after exhausting attempts, reports degraded while staying up.

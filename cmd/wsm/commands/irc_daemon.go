@@ -55,6 +55,7 @@ hand only to watch a workspace's IRC session directly.`,
 	// idempotency tier is conditional.
 	cli.SetSideEffect(cmd, cli.SideEffectWriteLocal)
 	cli.SetIdempotency(cmd, cli.IdempotencyConditional)
+	setExitCodes(cmd, ClassOK, ClassUsage, ClassNotFound, ClassNotConfigured, ClassPrerequisite, ClassBackend)
 	return cmd
 }
 

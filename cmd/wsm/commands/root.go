@@ -227,7 +227,7 @@ func newAppContext(opts globalOptions) (*appContext, error) {
 	if cfg.Backend != "sqlite" {
 		// An unrecognized --backend value is semantically a Backend
 		// error, not a usage error. Routing through ErrorKindBackend
-		// yields exit 5 (story 015 scenario 5) instead of 2.
+		// yields exit 8 (story 015 scenario 5) instead of 2.
 		return nil, workspace.NewErrorBackend("unsupported backend "+cfg.Backend+" (only sqlite is currently implemented)", nil)
 	}
 
@@ -303,7 +303,7 @@ func newAppContext(opts globalOptions) (*appContext, error) {
 //
 // Capability denial is a library-level policy: the manager is
 // constructed with AllCapabilities in production and no flag exposes
-// anything else, which leaves the forbidden path (exit 6) unreachable
+// anything else, which leaves the forbidden path (exit 5) unreachable
 // from a real invocation and therefore untestable at the process
 // boundary. This seam closes that gap the same way WSM_POLICY_FILE
 // does for the policy engine — an environment variable a test sets,

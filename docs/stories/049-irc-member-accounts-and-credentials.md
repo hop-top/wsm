@@ -33,7 +33,7 @@ wsm irc creds <ws> <member> --env        # shell-exportable form
 
 `account create --raw <name>` provisions an arbitrary account, which is how a host operator provisions a cross-machine guest (story 054).
 
-A provider without the matching capability reports the operation unsupported and exits 7 rather than failing late or pretending to succeed. `creds` prints the resolved account name and server id for members whose password wsm does not own, and never invents a password it does not hold.
+A provider without the matching capability reports the operation unsupported and exits 70 rather than failing late or pretending to succeed. `creds` prints the resolved account name and server id for members whose password wsm does not own, and never invents a password it does not hold.
 
 ### Two silent-failure requirements this story pins
 
@@ -52,7 +52,7 @@ Both were observed against a live server, and both are the same shape: wsm sent 
 5. **Given** a member removed from `members.yaml`, **When** reconcile runs, **Then** the account is suspended rather than deleted, and a client can no longer authenticate as it.
 6. **Given** a suspended member, **When** I inspect event history, **Then** past attribution is unchanged, because suspension preserves the account.
 7. **Given** `secrets.yaml`, **When** I stat it, **Then** it is 0600, its directory is 0700, and no passphrase appears in any log or status output.
-8. **Given** a provider without account-creation capability, **When** I run `wsm irc account create`, **Then** the command exits 7 and names both the provider and the operation.
+8. **Given** a provider without account-creation capability, **When** I run `wsm irc account create`, **Then** the command exits 70 and names both the provider and the operation.
 9. **Given** external mode with a member whose account cannot be resolved, **When** reconcile runs, **Then** the member is reported unresolved and excluded from role application, and reconcile does not fail.
 10. **Given** a member whose password wsm does not own, **When** I run `wsm irc creds <ws> <member>`, **Then** the resolved account name and server id are printed and no password is fabricated.
 11. **Given** `wsm irc creds --env`, **When** the output is evaluated by a shell, **Then** values survive expansion intact and an absent password is omitted rather than emitted empty.

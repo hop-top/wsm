@@ -130,34 +130,43 @@ func resetPolicyForTest() {
 // Code + ExitCode (otherwise everything becomes CodeGeneric exit 1).
 //
 // Maps (per docs/stories/015-exit-code-contract.md):
-//   - policy denial        → CONFLICT     (exit 4)
-//   - ErrorKindUsage       → USAGE        (exit 2)
-//   - ErrorKindNotFound    → NOT_FOUND    (exit 3)
-//   - ErrorKindConflict    → CONFLICT     (exit 4)
-//   - ErrorKindBackend      → GENERIC      (exit 5, scenario 5)
-//   - ErrorKindForbidden    → UNAUTHORIZED (exit 6, scenario 7)
-//   - ErrorKindPrerequisite → GENERIC      (exit 7, scenario 8)
-//   - ErrorKindNotConfigured → GENERIC     (exit 7, borrowed)
+//   - policy denial          → CONFLICT     (exit 4)
+//   - ErrorKindUsage         → USAGE        (exit 2)
+//   - ErrorKindNotFound      → NOT_FOUND    (exit 3)
+//   - ErrorKindConflict      → CONFLICT     (exit 4)
+//   - ErrorKindForbidden     → UNAUTHORIZED (exit 5, scenario 7)
+//   - ErrorKindBackend       → GENERIC      (exit 8, scenario 5)
+//   - ErrorKindNotConfigured → GENERIC      (exit 9, scenario 9)
+//   - ErrorKindPrerequisite  → PREREQUISITE (exit 70, scenario 8)
 //
-// Exit 5 is the backend/persistence slot and 6 the capability-denial
-// slot. kit's own confirm gate emits UNAUTHORIZED exit 5 envelopes
-// directly; those short-circuit this function via the embedded
-// ExitCode and are unaffected.
+// Forbidden now exits 5, the slot kit and the 12fcc spec both give to
+// permission denial. It previously rendered UNAUTHORIZED while exiting
+// 6 — an envelope that contradicted its own exit code, and a code that
+// collided with kit's TRANSIENT. kit's own confirm gate already emits
+// UNAUTHORIZED exit 5 directly; those short-circuit this function via
+// the embedded ExitCode and now agree with it rather than diverging.
 //
-// NotConfigured borrows prerequisite's 7 rather than claiming a code of
-// its own. It is a distinct kind with a distinct fix, and it arguably
-// deserves a distinct number, but the exit-code table is being
-// renumbered separately and inventing a code here would collide with
-// that. The two are already told apart machine-readably by transience
-// plus Message; a follow-up can move NotConfigured onto its own slot
-// without touching a single call site.
+// Prerequisite emits kit's CodePrerequisite with kit's own
+// ExitPrerequisite (70) instead of a GENERIC envelope on a wsm-local
+// number. The old 7 was the sharpest collision in the table: kit's 7
+// is CONSENT_REFUSED, which TransienceForCode classifies transient,
+// while a wsm prerequisite is frequently permanent — an agent reading
+// the exit code per kit's taxonomy would have retried a missing binary
+// forever.
 //
-// Every envelope this function builds carries an explicit Transience.
-// kit's TransienceForCode classifies only kit's own standard codes, so
-// a GENERIC envelope left unstamped renders "unknown" — which for these
-// kinds is not ignorance, it is wsm declining to say what it knows. The
-// value comes from the *workspace.Error when it carries one, and falls
-// back to the kind's default when it does not.
+// NotConfigured no longer borrows prerequisite's slot. It is a
+// distinct kind with a distinct fix and it now has a distinct number.
+// Sharing was defensible only while the shared number was wsm-local;
+// prerequisite has moved onto kit's 70, and following it there would
+// have claimed kit's PREREQUISITE meaning for a kind that is not one.
+//
+// Every envelope this function builds still carries an explicit
+// Transience, including the prerequisite one. kit defaults an unset
+// Transience from the code, and CodePrerequisite defaults to
+// transient — which for an unclassified prerequisite would be a guess
+// wsm has deliberately refused to make. The explicit stamp wins over
+// the default, so adopting kit's code string costs none of the
+// per-kind honesty and adds no double-booking.
 //
 // The translation lives at the cmd layer because pkg/workspace cannot
 // import hop.top/kit/go/console/output without dragging charmbracelet
@@ -196,7 +205,7 @@ func mapPolicyDenialError(err error) error {
 		return &output.Error{
 			Code:       output.CodeUnauthorized,
 			Message:    err.Error(),
-			ExitCode:   6,
+			ExitCode:   ExitForbidden,
 			Transience: output.TransiencePermanent,
 		}
 	case workspace.IsKind(err, workspace.ErrorKindUsage):
@@ -212,7 +221,7 @@ func mapPolicyDenialError(err error) error {
 		return &output.Error{
 			Code:       output.CodeGeneric,
 			Message:    err.Error(),
-			ExitCode:   5,
+			ExitCode:   ExitBackend,
 			Transience: transienceFor(err, output.TransienceUnknown),
 		}
 	case workspace.IsKind(err, workspace.ErrorKindNotConfigured):
@@ -224,7 +233,7 @@ func mapPolicyDenialError(err error) error {
 		return &output.Error{
 			Code:       output.CodeGeneric,
 			Message:    err.Error(),
-			ExitCode:   7,
+			ExitCode:   ExitNotConfigured,
 			Transience: transienceFor(err, output.TransienceUnknown),
 		}
 	case workspace.IsKind(err, workspace.ErrorKindPrerequisite):
@@ -234,11 +243,13 @@ func mapPolicyDenialError(err error) error {
 		// The fallback is TransienceUnknown rather than a guess: a
 		// prerequisite built by the bare constructor is one nobody has
 		// classified, and reporting it as permanent would tell an agent
-		// to stop retrying something that may well clear.
+		// to stop retrying something that may well clear. Stamping it
+		// explicitly also overrides kit's transient default for
+		// CodePrerequisite, which would otherwise substitute that guess.
 		return &output.Error{
-			Code:       output.CodeGeneric,
+			Code:       output.CodePrerequisite,
 			Message:    err.Error(),
-			ExitCode:   7,
+			ExitCode:   output.ExitPrerequisite,
 			Transience: transienceFor(err, output.TransienceUnknown),
 		}
 	}

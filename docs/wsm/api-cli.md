@@ -511,11 +511,11 @@ Subcommands: `enable`, `disable`, `start`, `stop`, `restart`, `status`,
 
 Every verb below first requires `irc.enabled: true` in the resolved config;
 a disabled config exits 2. Every verb except `enable` also requires the
-workspace to have been enabled already — a missing profile exits 7 with
+workspace to have been enabled already — a missing profile exits 9 with
 `run \`wsm irc enable <ws>\` first`.
 
 Every verb that changes state, and the one that hands out a secret, checks a
-capability (exit 6 when it is withheld):
+capability (exit 5 when it is withheld):
 
 | Capability    | Checked by                                                                 |
 |---------------|----------------------------------------------------------------------------|
@@ -580,7 +580,7 @@ starting a second one.
 
 A root without `.wsm/` or `.hop/wsm/` exits 2, as does an invalid `irc` config
 block. `--shared-with` naming the workspace itself exits 2; a host that is
-already enabled exits 4, a host that is not managed or not running exits 7,
+already enabled exits 4, a host that is not managed or not running exits 9,
 and a bot-account name the host reserves exits 4.
 
 Examples:
@@ -619,7 +619,7 @@ leaving guests to fail on their next reconnect.
 Start the daemon for an already-enabled workspace.
 
 In managed mode the recorded port triple is re-checked before spawning: a port
-taken since `enable` is reported (exit 7) rather than silently reallocated.
+taken since `enable` is reported (exit 70) rather than silently reallocated.
 Starting a workspace whose daemon is already up reports it and starts nothing.
 
 Requires `irc.start`. The check sits at the one place a daemon is spawned, so
@@ -637,7 +637,7 @@ Stopping an already-stopped workspace succeeds and says so. A workspace
 hosting guests is refused with exit 4 unless `--force`.
 
 Requires `irc.stop`, checked before the guest refusal: `--force` overrides the
-guard, not the capability, and a withheld `irc.stop` is exit 6 either way.
+guard, not the capability, and a withheld `irc.stop` is exit 5 either way.
 
 ##### `wsm irc restart <workspace>`
 
@@ -648,12 +648,12 @@ Stop the daemon if running, then start it again.
 | `--force` | false   | Restart even while guest workspaces are hosted here  |
 
 Managed mode re-checks the port triple between the halves, after the old
-daemon released it, so a port taken meanwhile is reported (exit 7) rather than
+daemon released it, so a port taken meanwhile is reported (exit 70) rather than
 inherited. Restarting a stopped workspace simply starts it. Guests refuse with
 exit 4 unless `--force`.
 
 Requires both `irc.stop` and `irc.start`, asked for before the guest refusal.
-A caller holding only one of them is refused with exit 6 naming the half it
+A caller holding only one of them is refused with exit 5 naming the half it
 lacks — `irc.stop` first, since that is the half that drops the server.
 
 ##### `wsm irc status <workspace>`
@@ -710,7 +710,7 @@ without freeing the name.
 cross-machine guest access. That password is printed once and is **not**
 stored, because the account belongs to the guest rather than this workspace.
 
-A provider that does not support the operation exits 7, naming both the
+A provider that does not support the operation exits 70, naming both the
 provider and the setting to fix (`create`/`rotate` need the ergo HTTP API via
 `irc.server.ergo_api`; `suspend` needs the bot to hold oper). A server that
 rejects a well-formed request exits 1.
@@ -738,7 +738,7 @@ discloses, it renders a stored passphrase, and `--env` emits it ready to be
 sourced into a shell.
 
 Managed mode holds the passphrase and prints it; a member with none on file
-exits 7 naming the `account rotate` that fixes it. External mode resolves the
+exits 70 naming the `account rotate` that fixes it. External mode resolves the
 account through the daemon's chain (workspace profile, then aps, then
 `members.yaml`) and prints a password only when wsm actually holds one,
 otherwise reporting the aps `secret_ref` as a hint rather than a value.
@@ -761,7 +761,7 @@ answers with the remote WebSocket listener (`wss://`) and requires the
 workspace to have been enabled with `--remote` and `irc.remote.host` set —
 otherwise exit 2. External mode answers `ircs://` when TLS is on and `irc://`
 when it is off; `--web` is refused there with exit 2, and an empty
-`irc.server.host` exits 7.
+`irc.server.host` exits 9.
 
 The URL goes to stdout even under `--quiet`, since it is the whole answer.
 
@@ -811,7 +811,7 @@ registration and is gated by `--confirm` (`--force` stands in for
 Here a provider that cannot purge is **not** an error: the template removal —
 the part wsm owns — has already succeeded, so the run reports
 `purged: false` with `reason: "unsupported"` and exits 0. This is the
-opposite of standalone `channel purge`, where the same condition exits 7.
+opposite of standalone `channel purge`, where the same condition exits 70.
 
 ###### `wsm irc channel list <workspace>`
 
@@ -851,7 +851,7 @@ not a configuration edit. On ergo this is `CS PURGE`, a two-step confirmation
 the provider completes on wsm's behalf. There is no unpurge: the verb is
 tagged destructive, requires both `irc.enable` and `irc.purge`, and is gated
 by `--confirm` (`--force` stands in for `--confirm=yes`; refusal is exit 5). A
-provider without the capability exits 7 rather than appearing to succeed; other
+provider without the capability exits 70 rather than appearing to succeed; other
 server failures exit 1.
 
 The registration drop is the entire point of this leaf, so an unsupported
@@ -1098,14 +1098,26 @@ Per CLI conventions §8.1:
 | 2    | Usage error (bad flags/args)                                      |
 | 3    | Not found (workspace/space/snapshot)                              |
 | 4    | Conflict (already exists, in use) **or policy denied** — see [policies.md](policies.md) |
-| 5    | Backend / persistence failure; also kit's `--confirm` refusal    |
-| 6    | Forbidden (capability gate denied the operation)                  |
-| 7    | Prerequisite not satisfied (missing binary, busy port, unreachable server) |
+| 5    | Forbidden (capability gate denied the operation); also kit's `--confirm` refusal |
+| 8    | Backend / persistence failure                                     |
+| 9    | Not configured (wsm has not been told something yet)              |
+| 70   | Prerequisite not satisfied (missing binary, busy port, unreachable server) |
+
+Codes 0-5 and 70 come from `hop.top/kit`'s standard table; 8 and 9 are
+wsm-local, for the two classes kit defines no code for. They sit below
+kit's reserved 64-70 band rather than above it, because kit grows that
+band upward.
 
 wsm error helpers (`workspace.NewErrorUsage`, `NewErrorNotFound`,
-`NewErrorBackend`, `NewErrorForbidden`, `NewErrorPrerequisite`) map to
-these codes via `kit/cli` error rendering. Exit `7` messages state the
-corrective action.
+`NewErrorBackend`, `NewErrorForbidden`, `NewErrorNotConfigured`,
+`NewErrorPrerequisite`) map to these codes via `kit/cli` error
+rendering. Exit `70` messages state the corrective action, and so do
+exit `9` messages — the difference is that `70` names something to fix
+in the environment and `9` names a wsm command to run or a config key
+to set. Under `--format json` each carries a `transience` field
+(`transient` | `permanent` | `unknown`) that answers whether a bare
+retry can clear the failure; branch on that rather than inferring
+retryability from the code.
 
 Policy denials produced by the runtime policy engine are routed
 through `*output.Error` with `CodeConflict` (exit 4); message is

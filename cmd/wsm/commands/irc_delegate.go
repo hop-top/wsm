@@ -95,6 +95,7 @@ workspace declares.`,
 
 	cli.SetSideEffect(cmd, cli.SideEffectWriteLocal)
 	cli.SetIdempotency(cmd, cli.IdempotencyConditional)
+	setExitCodes(cmd, ClassOK, ClassUsage, ClassNotFound, ClassConflict, ClassUnauthorized, ClassNotConfigured, ClassBackend)
 	return cmd
 }
 
@@ -128,6 +129,7 @@ Without --channel the delegation is revoked on every channel.`,
 
 	cli.SetSideEffect(cmd, cli.SideEffectWriteLocal)
 	cli.SetIdempotency(cmd, cli.IdempotencyConditional)
+	setExitCodes(cmd, ClassOK, ClassUsage, ClassNotFound, ClassUnauthorized, ClassNotConfigured, ClassBackend)
 	return cmd
 }
 
@@ -152,6 +154,7 @@ side, and it is the figure a revoke sweep would have to account for.`,
 	}
 	cli.SetSideEffect(cmd, cli.SideEffectRead)
 	cli.SetIdempotency(cmd, cli.IdempotencyYes)
+	setExitCodes(cmd, ClassOK, ClassUsage, ClassNotFound, ClassNotConfigured, ClassBackend)
 	return cmd
 }
 

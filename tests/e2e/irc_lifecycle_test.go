@@ -222,7 +222,7 @@ func TestIRC_UnknownWorkspace(t *testing.T) {
 	}
 }
 
-// TestIRC_CapabilityDenied locks exit 6. The capability gate is
+// TestIRC_CapabilityDenied locks exit 5. The capability gate is
 // library-level policy with no flag behind it, so the seam is an
 // environment variable — the same shape the policy engine uses.
 func TestIRC_CapabilityDenied(t *testing.T) {
@@ -234,14 +234,14 @@ func TestIRC_CapabilityDenied(t *testing.T) {
 		env := ircEnv(t, r, "managed")
 		env["WSM_DENY_CAPABILITIES"] = "all"
 		res := r.runWithEnv(env, "irc", "enable", "irc-denied", "--dir", root)
-		requireExitCode(t, res, 6)
+		requireExitCode(t, res, 5)
 	})
 
 	t.Run("deny only irc.enable", func(t *testing.T) {
 		env := ircEnv(t, r, "managed")
 		env["WSM_DENY_CAPABILITIES"] = "irc.enable"
 		res := r.runWithEnv(env, "irc", "enable", "irc-denied", "--dir", root)
-		requireExitCode(t, res, 6)
+		requireExitCode(t, res, 5)
 	})
 }
 
@@ -278,14 +278,14 @@ func TestIRC_SharedWithRefusals(t *testing.T) {
 		requireExitCode(t, res, 3)
 	})
 
-	t.Run("host without irc enabled exits 7", func(t *testing.T) {
+	t.Run("host without irc enabled exits 9", func(t *testing.T) {
 		r := newRunner(t)
 		r.mustCreateWorkspace("irc-guest")
 		r.mustCreateWorkspace("irc-host")
 
 		res := r.runWithEnv(ircEnv(t, r, "managed"), "irc", "enable", "irc-guest",
 			"--shared-with", "irc-host", "--dir", mustWorkspaceRoot(t))
-		requireExitCode(t, res, 7)
+		requireExitCode(t, res, 9)
 		if !strings.Contains(res.Combined(), "irc enable") {
 			t.Fatalf("expected the remedy to name enable, got:\n%s", res.Combined())
 		}
@@ -363,15 +363,15 @@ func TestIRC_SyncWithoutDaemon(t *testing.T) {
 	}
 }
 
-// TestIRC_StatusBeforeEnable locks exit 7: status on a workspace that
-// was never enabled is a prerequisite failure naming the fix, not a
+// TestIRC_StatusBeforeEnable locks exit 9: status on a workspace that
+// was never enabled is a not-configured failure naming the fix, not a
 // crash and not a fabricated "stopped".
 func TestIRC_StatusBeforeEnable(t *testing.T) {
 	r := newRunner(t)
 	r.mustCreateWorkspace("irc-unenabled")
 
 	res := r.runWithEnv(ircEnv(t, r, "managed"), "irc", "status", "irc-unenabled")
-	requireExitCode(t, res, 7)
+	requireExitCode(t, res, 9)
 	if !strings.Contains(res.Combined(), "irc enable") {
 		t.Fatalf("expected the remedy to name enable, got:\n%s", res.Combined())
 	}

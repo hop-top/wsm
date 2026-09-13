@@ -148,7 +148,7 @@ func (rt *ircRuntime) loadEnabledProfile() (irc.Profile, error) {
 }
 
 // enforcePrereqs runs a prerequisite set and reports the first required
-// failure as exit 7, carrying that check's fix text verbatim and its
+// failure as exit 70, carrying that check's fix text verbatim and its
 // transience class alongside it.
 //
 // Message rather than the underlying error is surfaced because the
@@ -365,6 +365,7 @@ daemon rather than starting a second one.`,
 	// daemon is a no-op, but the first one provisions ports, secrets
 	// and a database that did not exist before.
 	cli.SetIdempotency(cmd, cli.IdempotencyConditional)
+	setExitCodes(cmd, ClassOK, ClassUsage, ClassNotFound, ClassConflict, ClassUnauthorized, ClassNotConfigured, ClassPrerequisite, ClassBackend)
 	return cmd
 }
 
@@ -683,7 +684,7 @@ func runIRCAttach(
 // The reserved bot account is a conflict (exit 4) rather than a
 // prerequisite: nothing about the environment is broken, the operation
 // collides with a name the host has already given out. An unsuitable
-// host is a prerequisite (exit 7), because the fix is to change the
+// host is a prerequisite (exit 70), because the fix is to change the
 // host's state and retry.
 func attachError(err error, guestName, hostName string) error {
 	switch {
@@ -1062,6 +1063,7 @@ that, leaving the guests to fail on their next reconnect.`,
 	// below instead, where --purge is actually known.
 	cli.SetSideEffect(cmd, cli.SideEffectWriteLocal)
 	cli.SetIdempotency(cmd, cli.IdempotencyConditional)
+	setExitCodes(cmd, ClassOK, ClassUsage, ClassNotFound, ClassUnauthorized, ClassNotConfigured, ClassPrerequisite, ClassBackend)
 	return cmd
 }
 
@@ -1107,7 +1109,7 @@ func purgeRefused(cmd *cobra.Command) error {
 		Message: "destructive command " + cmd.CommandPath() +
 			" --purge refused: --confirm=no (or non-TTY default)",
 		SuggestedFix: "pass --confirm=yes to remove the workspace's IRC data and state",
-		ExitCode:     5,
+		ExitCode:     ExitForbidden,
 	}
 }
 
@@ -1273,6 +1275,7 @@ starts nothing.`,
 	}
 	cli.SetSideEffect(cmd, cli.SideEffectWriteLocal)
 	cli.SetIdempotency(cmd, cli.IdempotencyConditional)
+	setExitCodes(cmd, ClassOK, ClassUsage, ClassNotFound, ClassConflict, ClassUnauthorized, ClassNotConfigured, ClassPrerequisite, ClassBackend)
 	return cmd
 }
 
@@ -1345,6 +1348,7 @@ leaving the guests to fail on their next reconnect.`,
 	cmd.Flags().BoolVar(&force, "force", false, "Stop even while guest workspaces are hosted here")
 	cli.SetSideEffect(cmd, cli.SideEffectWriteLocal)
 	cli.SetIdempotency(cmd, cli.IdempotencyYes)
+	setExitCodes(cmd, ClassOK, ClassUsage, ClassNotFound, ClassConflict, ClassUnauthorized, ClassNotConfigured, ClassPrerequisite, ClassBackend)
 	return cmd
 }
 
@@ -1424,6 +1428,7 @@ follows cannot promise they reconnect. --force overrides that.`,
 	cmd.Flags().BoolVar(&force, "force", false, "Restart even while guest workspaces are hosted here")
 	cli.SetSideEffect(cmd, cli.SideEffectWriteLocal)
 	cli.SetIdempotency(cmd, cli.IdempotencyConditional)
+	setExitCodes(cmd, ClassOK, ClassUsage, ClassNotFound, ClassConflict, ClassUnauthorized, ClassNotConfigured, ClassPrerequisite, ClassBackend)
 	return cmd
 }
 
@@ -1493,6 +1498,7 @@ have reconciled.`,
 	}
 	cli.SetSideEffect(cmd, cli.SideEffectWriteShared)
 	cli.SetIdempotency(cmd, cli.IdempotencyYes)
+	setExitCodes(cmd, ClassOK, ClassUsage, ClassNotFound, ClassUnauthorized, ClassNotConfigured, ClassPrerequisite, ClassBackend)
 	return cmd
 }
 
@@ -1567,6 +1573,7 @@ A workspace whose daemon is not running reports state "stopped" and exits
 	}
 	cli.SetSideEffect(cmd, cli.SideEffectRead)
 	cli.SetIdempotency(cmd, cli.IdempotencyYes)
+	setExitCodes(cmd, ClassOK, ClassUsage, ClassNotFound, ClassNotConfigured, ClassPrerequisite, ClassBackend)
 	return cmd
 }
 

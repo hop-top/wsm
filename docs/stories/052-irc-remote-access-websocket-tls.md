@@ -41,8 +41,8 @@ wsm irc url <ws> --web           # the browser WebSocket URL
 6. **Given** the remote listener is on, **When** I run `wsm irc url --web`, **Then** a WebSocket URL is printed.
 7. **Given** no remote listener, **When** I run `wsm irc url --web`, **Then** it exits 2 and says there is no endpoint to name.
 8. **Given** external mode, **When** I run `wsm irc url --web`, **Then** it exits 2 and says wsm does not own that endpoint.
-9. **Given** external mode with no server host configured, **When** I run `wsm irc url`, **Then** it exits 7.
-10. **Given** a managed workspace with no recorded port triple, **When** I run `wsm irc url`, **Then** it exits 7 and says to re-enable the workspace.
+9. **Given** external mode with no server host configured, **When** I run `wsm irc url`, **Then** it exits 9.
+10. **Given** a managed workspace with no recorded port triple, **When** I run `wsm irc url`, **Then** it exits 9 and says to re-enable the workspace.
 11. **Given** `--quiet`, **When** I run `wsm irc url`, **Then** the URL is still printed.
 12. **Given** the rendered server configuration, **When** it is inspected, **Then** registration is closed, authentication is required, the administrative endpoint is on loopback, and the generated document parses.
 13. **Given** external mode with certificate verification disabled, **When** I read status, **Then** a warning is surfaced rather than the setting passing silently.

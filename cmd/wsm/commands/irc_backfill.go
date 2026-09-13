@@ -73,6 +73,7 @@ capture starts it rather than a backfill.`,
 
 	cli.SetSideEffect(cmd, cli.SideEffectWriteShared)
 	cli.SetIdempotency(cmd, cli.IdempotencyYes)
+	setExitCodes(cmd, ClassOK, ClassUsage, ClassNotFound, ClassUnauthorized, ClassNotConfigured, ClassPrerequisite, ClassBackend)
 	return cmd
 }
 

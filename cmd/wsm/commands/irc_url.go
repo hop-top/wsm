@@ -47,6 +47,7 @@ own is not wsm's to advertise.`,
 
 	cli.SetSideEffect(cmd, cli.SideEffectRead)
 	cli.SetIdempotency(cmd, cli.IdempotencyYes)
+	setExitCodes(cmd, ClassOK, ClassUsage, ClassNotFound, ClassNotConfigured, ClassBackend)
 	return cmd
 }
 

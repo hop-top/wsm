@@ -224,7 +224,7 @@ Two modes:
 
 - **Managed** -- wsm runs an [ergo](https://github.com/ergochat/ergo) server
   per workspace and administers it fully. Requires ergo 2.19 or later on
-  `PATH` (`brew install ergo`); a missing or too-old binary exits 7.
+  `PATH` (`brew install ergo`); a missing or too-old binary exits 70.
 - **External** -- wsm attaches to a server that already exists and
   administers whatever the configured provider supports. Accounts are
   bring-your-own. No server binary is needed.
@@ -337,10 +337,16 @@ From `cmd/wsm/main.go`:
 | 2 | Usage error: unknown command or flag, invalid `--format`, missing argument |
 | 3 | Not found: workspace, space, snapshot |
 | 4 | Conflict: already exists, or a policy denied the change |
-| 5 | Backend or persistence failure; also a destructive command refused by `--confirm` |
-| 6 | Forbidden: blocked by a capability gate |
-| 7 | Prerequisite not satisfied: missing binary, busy port, unreachable server |
+| 5 | Forbidden: blocked by a capability gate, or a destructive command refused by `--confirm` |
+| 8 | Backend or persistence failure |
+| 9 | Not configured: wsm has not been told something yet (run the named command, or set the named key) |
+| 70 | Prerequisite not satisfied: missing binary, busy port, unreachable server |
 | 130 | Interrupted |
+
+Codes 0-5 and 70 are `hop.top/kit`'s standard table, so an agent that
+already understands kit understands wsm. 8 and 9 are wsm-local, for the
+two classes kit defines no code for; they sit below kit's reserved
+64-70 band rather than above it, because kit grows that band upward.
 
 ## Agent usage
 

@@ -23,9 +23,10 @@ func TestExitCodeForError_Story015(t *testing.T) {
 		{"usage", workspace.NewErrorUsage("missing name"), 2},
 		{"not_found", workspace.NewErrorNotFound("no such workspace"), 3},
 		{"conflict", workspace.NewErrorConflict("already exists"), 4},
-		{"backend", workspace.NewErrorBackend("open sqlite backend", errors.New("disk fault")), 5},
-		{"forbidden", workspace.NewErrorForbidden("not permitted"), 6},
-		{"prerequisite", workspace.NewErrorPrerequisite("ergo not installed: brew install ergo"), 7},
+		{"forbidden", workspace.NewErrorForbidden("not permitted"), 5},
+		{"backend", workspace.NewErrorBackend("open sqlite backend", errors.New("disk fault")), 8},
+		{"not_configured", workspace.NewErrorNotConfigured("run `wsm irc enable demo` first"), 9},
+		{"prerequisite", workspace.NewErrorPrerequisite("ergo not installed: brew install ergo"), 70},
 		{"generic", errors.New("boom"), 1},
 	}
 

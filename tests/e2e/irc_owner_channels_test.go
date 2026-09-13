@@ -320,11 +320,18 @@ func TestIRCOwner_PurgeIsGatedAndUnsupported(t *testing.T) {
 
 	// Confirmed, the purge reaches the provider. No server is listening,
 	// so it cannot complete: either the session fails (exit 1) or the
-	// provider reports the operation unsupported (exit 7). Both are
+	// provider reports the operation unsupported (exit 70). Both are
 	// honest reports; exit 0 would not be.
+	//
+	// The two values are not interchangeable and only one of them
+	// moved. Exit 1 is the generic session failure and is untouched by
+	// the renumber. The second was the unsupported-provider branch,
+	// which raises ErrorKindPrerequisite (see purgeChannel in
+	// cmd/wsm/commands/irc_channel.go) and so follows prerequisite onto
+	// kit's ExitPrerequisite, 70 — not onto not-configured's 9.
 	confirmed := r.runWithEnv(env, "irc", "channel", "purge", "owner-purge", "#doomed",
 		"--confirm", "yes")
-	if confirmed.ExitCode != 1 && confirmed.ExitCode != 7 {
+	if confirmed.ExitCode != 1 && confirmed.ExitCode != 70 {
 		t.Fatalf("a purge that cannot reach the server must fail, got exit %d:\n%s",
 			confirmed.ExitCode, confirmed.Combined())
 	}
