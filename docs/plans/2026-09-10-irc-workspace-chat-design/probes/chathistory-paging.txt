@@ -1,0 +1,28 @@
+# CHATHISTORY AFTER paging, ergo 2.19.1. 7 user messages in #hist, limit 3.
+# Command: CHATHISTORY AFTER #hist timestamp=<ts> 3   (sent via labeled-response)
+# ISUPPORT: CHATHISTORY=1000  draft/CHATHISTORY=1000
+#
+# KEY FINDING: when the returned batch size EQUALS the limit, that is NOT a
+# signal that the history is exhausted. Paging terminates only on a SHORT or
+# EMPTY batch. Here pages of 3,3,2 were followed by an explicit empty page.
+#
+# KEY FINDING 2: HistServ synthesises non-user events (join lines) INTO the
+# history batch. The capture path must skip non-PRIVMSG/NOTICE and HistServ
+# sources, or it will record "joined the channel" as a member message.
+
+# --- PAGE 1 (3 items == limit) ---
+@batch=1;msgid=_jjvbe5xaqwzx7bz4jrh94ydmww;time=2026-09-11T10:22:15.367Z :HistServ!HistServ@localhost PRIVMSG #hist :alice [account: alice] joined the channel
+@time=2026-09-11T10:22:16.570Z;batch=1;account=alice;msgid=tzh4zj7fxnxamv9yndgbiwi2re :alice!~u@gwfgs6htdzzrg.irc PRIVMSG #hist msg-1
+@batch=1;account=alice;msgid=968gw4cx385ptzg5dzwiq9mpbe;time=2026-09-11T10:22:16.722Z :alice!~u@gwfgs6htdzzrg.irc PRIVMSG #hist msg-2
+
+# --- PAGE 2 (3 items == limit) ---
+@time=2026-09-11T10:22:16.875Z;batch=2;account=alice;msgid=n2rfhn7nehefssfhve2qnjd4hw :alice!~u@gwfgs6htdzzrg.irc PRIVMSG #hist msg-3
+@account=alice;msgid=vgfn4cx66sggtew22zc2naapvi;time=2026-09-11T10:22:17.031Z;batch=2 :alice!~u@gwfgs6htdzzrg.irc PRIVMSG #hist msg-4
+@msgid=vsfsaqr68rch6uu5isqjzrkfwi;time=2026-09-11T10:22:17.537Z;batch=2;account=alice :alice!~u@gwfgs6htdzzrg.irc PRIVMSG #hist msg-5
+
+# --- PAGE 3 (2 items < limit) ---
+@batch=3;account=alice;msgid=dzmdjs4ejpq5xjvp4atcf49nv2;time=2026-09-11T10:22:18.047Z :alice!~u@gwfgs6htdzzrg.irc PRIVMSG #hist msg-6
+@batch=3;account=alice;msgid=kjizceb6nkav638wpmt5k5ngen;time=2026-09-11T10:22:18.548Z :alice!~u@gwfgs6htdzzrg.irc PRIVMSG #hist msg-7
+
+# --- PAGE 4: 0 items. Batch opened and closed empty. ---
+# batch params observed per page: BATCH [+N chathistory #hist]

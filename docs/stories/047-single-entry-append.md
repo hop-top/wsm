@@ -63,6 +63,6 @@ err = manager.AppendEntry(sess.ID, entry)
 - `pkg/session/manager_test.go` -- `TestSessionManager_AppendEntry_RecordsWorkspaceEvent`
 
 ### E2E
-- `tests/e2e/session_test.go` -- `TestSessionAppend_CLI`
-- `tests/e2e/session_test.go` -- `TestSessionAppend_Stdin`
-- `tests/e2e/session_test.go` -- `TestSessionAppend_JSONOutput`
+None. This story is not implemented yet -- neither the unit tests listed
+above nor any end-to-end test exist. Coverage must be added alongside the
+implementation.

@@ -15,7 +15,7 @@ As an external client, I want wsm to auto-detect non-TTY and suppress color/styl
 2. **Given** non-TTY stdout, **When** I run `wsm create my-project`, **Then** output is JSON (same as --json).
 3. **Given** `wsm list -q` piped to xargs, **When** I pipe the output, **Then** each line is a bare workspace ID suitable for scripting.
 4. **Given** NO_COLOR=1 env var set, **When** I run `wsm list` in a TTY, **Then** output has no color codes.
-5. **Given** non-TTY and `wsm delete` without `--force`, **When** I run it, **Then** it fails with exit code 2 (cannot prompt in non-TTY).
+5. **Given** non-TTY and `wsm delete` without `--confirm=yes` (or the legacy `--force`), **When** I run it, **Then** it fails with exit code 5 (kit's UNAUTHORIZED confirm gate; it cannot prompt in non-TTY).
 
 ## Tests
 

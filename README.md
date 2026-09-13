@@ -204,12 +204,63 @@ commands are hidden until `wsm --help-all` or `wsm --help-management`.
 | `capabilities` | Emit the command surface (path, side effect, idempotency, flags) as a table or `--format json` |
 | `alias` | User-defined command aliases stored in `$XDG_CONFIG_HOME/wsm/aliases.yaml` |
 | `completion` | Shell completion scripts for bash, zsh, fish, and powershell |
+| `irc` | Per-workspace IRC: `enable`, `disable`, `start`, `stop`, `restart`, `status`, `sync`, plus `account`, `creds`, `url`, `channel`, `delegate`, `backfill` ([IRC](#irc)) |
 | `status` | Runtime status: profile, env, workspace, auth, effective config |
 | `upgrade` | Check GitHub releases and install a newer binary; `preamble` prints a skill-file fragment |
 | `version` | Version, commit, Go version, OS, and architecture (`--short` for the bare version) |
 | `tui` | Interactive workspace browser; hidden from help and not for batch or agent use |
 
 Every subcommand with its flags: [docs/wsm/api-cli.md](docs/wsm/api-cli.md).
+
+## IRC
+
+Every workspace can have a chat presence: channels from a template, one
+account per member where the server allows it, per-channel roles from member
+capacity, and every channel message recorded as an `interaction.message`
+event. Any standard IRC client connects. The feature is off by default; set
+`irc.enabled: true` to use it, or every `wsm irc` command exits 2.
+
+Two modes:
+
+- **Managed** -- wsm runs an [ergo](https://github.com/ergochat/ergo) server
+  per workspace and administers it fully. Requires ergo 2.19 or later on
+  `PATH` (`brew install ergo`); a missing or too-old binary exits 70.
+- **External** -- wsm attaches to a server that already exists and
+  administers whatever the configured provider supports. Accounts are
+  bring-your-own. No server binary is needed.
+
+```sh
+wsm irc enable my-project                  # managed: provision and start
+wsm irc enable my-project --external       # attach to an existing server
+wsm irc status my-project                  # daemon state, channels, accounts
+wsm irc url my-project                     # the URL a client connects to
+wsm irc creds my-project alice             # what wsm holds for a member
+wsm irc sync my-project                    # reconcile now
+wsm irc disable my-project [--purge]       # stop; --purge removes its data
+```
+
+A hidden daemon per workspace owns the server process in managed mode, runs
+the bot, reconciles on start and on `sync`, and captures messages. Managed
+workspaces take three consecutive ports from `irc.port_range`; `--port` names
+the base of that triple. `wsm irc enable --remote` adds a TLS and WebSocket
+listener for access from off the loopback interface, and `wsm irc url --web`
+prints the browser URL -- managed mode only, since wsm does not own an
+external server's WebSocket endpoint.
+
+Exit 7 means a prerequisite is not satisfied and the message states the fix:
+a missing binary, a busy port triple, an unreachable external server, or a
+provider lacking the capability an operation needs.
+
+**Automatic provisioning does not perform the first enable.** With
+`irc.auto_provision` on, managed workspaces are started when unarchived,
+stopped when archived, and purged when deleted. Enabling IRC for a workspace
+the first time stays an explicit `wsm irc enable` run from the workspace
+directory, because the daemon reads the member list from the root recorded at
+that moment and a background handler has no reliable way to know it. The
+handler declines with the command to run rather than guessing a root.
+
+Full reference: [docs/wsm/api-cli.md](docs/wsm/api-cli.md); stories
+[048-055](docs/stories/README.md).
 
 ## Flags
 
@@ -286,9 +337,16 @@ From `cmd/wsm/main.go`:
 | 2 | Usage error: unknown command or flag, invalid `--format`, missing argument |
 | 3 | Not found: workspace, space, snapshot |
 | 4 | Conflict: already exists, or a policy denied the change |
-| 5 | Unauthorized or forbidden, including a destructive command refused by `--confirm` |
-| 64 | Backend or persistence failure |
+| 5 | Forbidden: blocked by a capability gate, or a destructive command refused by `--confirm` |
+| 8 | Backend or persistence failure |
+| 9 | Not configured: wsm has not been told something yet (run the named command, or set the named key) |
+| 70 | Prerequisite not satisfied: missing binary, busy port, unreachable server |
 | 130 | Interrupted |
+
+Codes 0-5 and 70 are `hop.top/kit`'s standard table, so an agent that
+already understands kit understands wsm. 8 and 9 are wsm-local, for the
+two classes kit defines no code for; they sit below kit's reserved
+64-70 band rather than above it, because kit grows that band upward.
 
 ## Agent usage
 
@@ -342,7 +400,7 @@ Conventions for coding agents working in this repository: [AGENTS.md](AGENTS.md)
 - [docs/ecosystem.md](docs/ecosystem.md): what wsm owns and what ash, usp, and aps own; who it is for
 - [docs/integration/go-module.md](docs/integration/go-module.md): embedding `hop.top/wsm` as a Go module; package layout
 - [docs/integration/aps-wsm-integration.md](docs/integration/aps-wsm-integration.md) and [hop-clis-comparison.md](docs/integration/hop-clis-comparison.md): aps as a vendored dependency, hop as an orchestrator; [decision-guide.md](docs/integration/decision-guide.md) weighs the two
-- [docs/stories/](docs/stories/README.md): 47 stories across 4 personas, with acceptance criteria
+- [docs/stories/](docs/stories/README.md): 55 stories across 4 personas, with acceptance criteria
 - [docs/personas/](docs/personas/README.md): User, Maintainer, External Client, Integrator
 - [docs/diagrams/session-management-sequences.md](docs/diagrams/session-management-sequences.md): sequence diagrams
 - [e2e/conformance/README.md](e2e/conformance/README.md): the 12-factor AI-CLI conformance grading behind the badge

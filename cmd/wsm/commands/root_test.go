@@ -139,17 +139,42 @@ func TestLayerAAnnotationsPresent(t *testing.T) {
 	})
 }
 
+// TestTopLevelVerbOnlyOnDepthOne asserts kit/top-level-verb appears
+// only where it is true: on depth-1 verbs. The annotation is an
+// assertion about a command's position in the tree, so carrying it
+// deeper states something false — kit's shape validator reads it only
+// under `case 1:`, and the toolspec projector copies it onto every
+// manifest entry it walks.
+//
+// TestTopLevelVerbCountLock cannot catch this: it counts
+// root.Commands() and never inspects an annotation, so a stray tag at
+// depth 2 leaves its total untouched. Nothing else pins the negative
+// case, which is how `irc daemon` carried one unnoticed from the days
+// when it was the only child of a placeholder `irc` parent.
+func TestTopLevelVerbOnlyOnDepthOne(t *testing.T) {
+	root := NewRootCmd()
+
+	walkDepth(root, 0, func(cmd *cobra.Command, depth int) {
+		if cmd == root || isCobraBuiltin(cmd) {
+			return
+		}
+		if depth > 1 && cli.IsTopLevelVerb(cmd) {
+			t.Errorf("depth-%d command %q carries kit/top-level-verb; "+
+				"the annotation belongs only on depth-1 verbs",
+				depth, cmd.CommandPath())
+		}
+	})
+}
+
 // TestTopLevelVerbCountLock pins the depth-1 runnable verb count at
 // its steady-state value. kit's shape validator caps depth-1 verbs at
 // MaxTopLevelVerbs=10 but excludes reserved subcommands (`status`,
-// future kit-shipped reserved verbs) from the count — see
-// kit's shape validator, but excludes reserved subcommands (`status`,
 // future kit-shipped reserved verbs) from the count. Locking the count
 // here prevents an unintended verb sneaking in unobserved.
 //
-// The steady-state count is 12, two over kit's default cap of 10, so
-// NewRootCmd raises Config.MaxTopLevelVerbs to match. Both additions
-// are deliberate:
+// The steady-state count is 13, three over kit's default cap of 10, so
+// NewRootCmd raises Config.MaxTopLevelVerbs to match. All three
+// additions are deliberate:
 //
 //   - capabilities: the machine-readable command surface agents read
 //     instead of scraping help text. Must be a depth-1 verb — it
@@ -158,11 +183,14 @@ func TestLayerAAnnotationsPresent(t *testing.T) {
 //     positional is a usage error (exit 2) instead of cobra's
 //     help-and-exit-0. Runnability is what makes it count; the verb
 //     itself is not new surface.
+//   - irc: workspace chat. A noun of its own with its own lifecycle
+//     (enable, start, status, sync, channels, accounts), so it fits
+//     under no existing group without misfiling every verb beneath it.
 //
 // Update this constant when intentionally adding or removing a
 // top-level verb.
 func TestTopLevelVerbCountLock(t *testing.T) {
-	const want = 12
+	const want = 13
 
 	root := NewRootCmd()
 	// kitRootInstance is populated by NewRootCmd. Use its IsReserved

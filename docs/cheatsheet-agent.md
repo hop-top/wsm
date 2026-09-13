@@ -188,7 +188,10 @@ for direct injection into agent context.
 | 2    | Usage error   | Fix flags/args; check `--help`         |
 | 3    | Not found     | Verify workspace name with `list`     |
 | 4    | Conflict      | Already exists or already archived    |
-| 5    | Backend error | Check data dir; verify binary version |
+| 5    | Forbidden     | Capability withheld, or pass `--confirm=yes` |
+| 8    | Backend error | Check data dir; verify binary version |
+| 9    | Not configured | Run the command the message names      |
+| 70   | Prerequisite  | Fix the environment the message names |
 
 ---
 
@@ -230,5 +233,5 @@ for direct injection into agent context.
 | Conflict on create (exit 4)           | Use existing or rename; check `list` output    |
 | Non-TTY delete without `--force`      | Always pass `--force` in scripts               |
 | Ambiguous device reference            | Use longer ID prefix; `device list --json`     |
-| Backend error (exit 5)               | Check `wsm workspace config show --json`       |
+| Backend error (exit 8)                | Check `wsm workspace config show --json`       |
 | Snapshot stale after events recorded  | `wsm snapshot generate <ws>` before handoff    |

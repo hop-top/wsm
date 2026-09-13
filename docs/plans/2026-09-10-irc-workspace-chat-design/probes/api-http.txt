@@ -1,0 +1,45 @@
+# ergo 2.19.1 HTTP API responses, verbatim. api.enabled: true,
+# api.listener: "127.0.0.1:8089", one static bearer token.
+# All endpoints are POST. Request bodies are JSON; several ignore the body.
+
+# --- POST /v1/status ---
+# NOTE: an undocumented "commit" field is present alongside the documented ones.
+{"success":true,"version":"2.19.1","go_version":"go1.26.5","commit":"63c743a70644f0f19109508ade8580bf37f7d23d","start_time":"2026-09-11T10:21:10.860Z","users":{"total":0,"invisible":0,"operators":0,"unknown":0,"max":0},"channels":0,"servers":1}
+
+# --- POST /v1/list, no channels ---
+{"success":true,"channels":[]}
+
+# --- POST /v1/list, populated.
+# The registered-owner field is named "owner", NOT "founder".
+# "topicSetAt" is ABSENT when no topic has ever been set -> treat as optional.
+# "userCount" is LIVE occupancy, not membership: a registered channel with
+# persistent AMODEs but nobody currently joined reports userCount 0.
+{"success":true,"channels":[{"name":"#probe","hasKey":false,"inviteOnly":false,"secret":false,"userCount":0,"topic":"","createdAt":"2026-09-11T10:22:37.621Z","registered":true,"owner":"botty","registeredAt":"2026-09-11T10:22:38.832Z"},{"name":"#deleg","hasKey":false,"inviteOnly":false,"secret":false,"userCount":0,"topic":"","createdAt":"2026-09-11T10:22:54.149Z","registered":true,"owner":"botty","registeredAt":"2026-09-11T10:22:55.359Z"},{"name":"#purgeme","hasKey":false,"inviteOnly":false,"secret":false,"userCount":0,"topic":"","createdAt":"2026-09-11T10:23:31.745Z","registered":true,"owner":"botty","registeredAt":"2026-09-11T10:23:32.956Z"}]}
+
+# --- POST /v1/ns/saregister, FRESH account. HTTP 200 ---
+{"success":true}
+
+# --- POST /v1/ns/saregister, EXISTING account. HTTP 200 (NOT 4xx!) ---
+# The adapter MUST branch on the JSON body, never on the HTTP status.
+{"success":false,"error":"Name reserved due to a prior registration","errorCode":"ACCOUNT_EXISTS"}
+
+# --- POST /v1/ns/info: returns the channels an account owns.
+# Cheaper founder lookup than one CS INFO per channel.
+{"success":true,"accountName":"botty","registeredAt":"2026-09-11T10:21:30.897Z","channels":["#deleg","#purgeme","#probe"]}
+
+# --- auth failures are PLAIN TEXT, not JSON. Decoders must tolerate that. ---
+# bad token      -> HTTP 401, body:
+Unauthorized
+# missing header -> HTTP 401, body:
+Unauthorized
+# GET not POST   -> HTTP 405, body:
+Method Not Allowed
+
+# --- api.listener with a UNIX SOCKET path: REFUSED, host:port only.
+# The server logs the error and KEEPS RUNNING WITHOUT THE API (soft failure,
+# not a startup abort). No socket file is created. Preflight must check this.
+2026-09-11T10:19:26.963Z : error : server     : Couldn't create API listener : /tmp/sockprobe/api.sock : listen tcp: address /tmp/sockprobe/api.sock: missing port in address
+2026-09-11T10:19:26.999Z : info  : server     : Server running
+
+# --- normal API startup line ---
+2026-09-11T10:21:10.867Z : info  : server     : Started API listener : 127.0.0.1:8089

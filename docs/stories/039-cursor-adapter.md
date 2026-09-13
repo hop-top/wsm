@@ -27,4 +27,6 @@ As a user, I want to push Cursor sessions into wsm so that my Cursor conversatio
 - `pkg/format/cursor/adapter_test.go` -- `TestMetadataPassthrough`
 
 ### E2E
-- `tests/e2e/sessions_push_test.go` -- `TestSessionsPush_Cursor`
+None. This story is not implemented yet -- neither the unit tests listed
+above nor any end-to-end test exist. Coverage must be added alongside the
+implementation.

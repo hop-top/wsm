@@ -31,4 +31,6 @@ As a user, I want to push OpenCode sessions into wsm so that my OpenCode TUI con
 - `pkg/format/opencode/adapter_test.go` -- `TestMalformedInput`
 
 ### E2E
-- `tests/e2e/sessions_push_test.go` -- `TestSessionsPush_OpenCode`
+None. This story is not implemented yet -- neither the unit tests listed
+above nor any end-to-end test exist. Coverage must be added alongside the
+implementation.

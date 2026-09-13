@@ -38,6 +38,11 @@ The format is based on Keep a Changelog, and this project aims to follow Semanti
   for migration guidance.
 
 ### Breaking
+- Exit codes realigned with story 015. Capability denials now exit `6`
+  (was `5`); backend / persistence failures now exit `5` (was `64`). A
+  new exit `7` marks an unsatisfied prerequisite (missing binary, busy
+  port, unreachable server) with the fix in the message. Scripts
+  branching on `5` or `64` must be updated.
 - Removed `--json` flag. Use `--format json` instead.
 - Renamed `event add --format` (payload format) to `--content-format` to free
   the `--format` name for the global output selector provided by kit/cli.

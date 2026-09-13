@@ -41,17 +41,36 @@ func main() {
 	}
 }
 
-// exitCodeForError maps a wsm error to a CLI exit code per CLI conv §8.1:
+// exitCodeForError maps a wsm error to a CLI exit code per
+// docs/stories/015-exit-code-contract.md:
 //
-//	1   = generic error
-//	2   = usage error
-//	3   = not found
-//	4   = conflict
-//	5   = unauthorized / forbidden
-//	64+ = tool-specific (we use 64 for backend / persistence failures)
+//	 1 = generic error
+//	 2 = usage error
+//	 3 = not found
+//	 4 = conflict (including policy denial)
+//	 5 = forbidden / capability denied   (scenario 7)
+//	 8 = backend / persistence failure   (scenario 5)
+//	 9 = not configured                  (scenario 9)
+//	70 = prerequisite not satisfied      (scenario 8)
 //
-// Historically Backend mapped to 5, colliding with the §8.1 reserved
-// slot for unauthorized. Forbidden now claims 5; Backend moved to 64.
+// The numbers above 4 are chosen against kit's standard table rather
+// than invented. kit defines 5 UNAUTHORIZED, 6 TRANSIENT and 7
+// CONSENT_REFUSED, so wsm's old 5/6/7 collided with three kit codes
+// that mean something else. Forbidden takes kit's own 5, prerequisite
+// takes kit's ExitPrerequisite (70), and the two kinds kit has no
+// class for take 8 and 9.
+//
+// 8 and 9 are deliberately low rather than 71+. kit reserves a
+// contiguous, already-full band at 64-70 (64 RATE_LIMITED, 65
+// PROVENANCE_MISSING, 66 LEAK_DETECTED, 67 CONFIG, 68 GRADE_FAIL, 69
+// GRADE_UNGRADABLE, 70 PREREQUISITE) and grows it upward, so the next
+// kit code claims 71 and would collide with anything wsm parked there.
+// 8-63 is free for adopters and keeps the contract readable.
+//
+// Must stay in lockstep with mapPolicyDenialError in
+// cmd/wsm/commands/policy.go: that one renders the envelope for errors
+// reaching kit's RunE wrapper, this one is the fallback for errors
+// that arrive unwrapped (PersistentPreRunE, framework paths).
 func exitCodeForError(err error) int {
 	// kit/runtime/policy vetoes (T-1288) are surfaced via the kit cli
 	// RunE middleware as *output.Error envelopes. Honour the embedded
@@ -68,9 +87,13 @@ func exitCodeForError(err error) int {
 	case workspace.IsKind(err, workspace.ErrorKindConflict):
 		return 4
 	case workspace.IsKind(err, workspace.ErrorKindForbidden):
-		return 5
+		return commands.ExitForbidden
 	case workspace.IsKind(err, workspace.ErrorKindBackend):
-		return 64
+		return commands.ExitBackend
+	case workspace.IsKind(err, workspace.ErrorKindNotConfigured):
+		return commands.ExitNotConfigured
+	case workspace.IsKind(err, workspace.ErrorKindPrerequisite):
+		return output.ExitPrerequisite
 	case isCobraUsageError(err):
 		return 2
 	default:

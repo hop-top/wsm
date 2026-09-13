@@ -198,7 +198,10 @@ wsm workspace config show --json
 | 2    | Usage error    |
 | 3    | Not found      |
 | 4    | Conflict       |
-| 5    | Backend error  |
+| 5    | Forbidden      |
+| 8    | Backend error  |
+| 9    | Not configured |
+| 70   | Prerequisite   |
 
 ---
 

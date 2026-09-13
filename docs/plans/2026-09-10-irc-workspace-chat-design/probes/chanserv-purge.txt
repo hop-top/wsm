@@ -1,0 +1,80 @@
+# ChanServ PURGE, ergo 2.19.1, verbatim.
+#
+# THERE IS NO "CS UNPURGE" COMMAND. CS HELP lists PURGE only; UNPURGE returns
+# "Unknown command". Un-purging is PURGE DEL.
+#
+# Syntax (from CS HELP PURGE):
+#   PURGE <ADD | DEL | LIST> #channel [code] [reason]
+#
+# PURGE ADD is a TWO-STEP CONFIRMATION. The first call returns a per-request
+# code that must be echoed back. The code must be the SOLE trailing argument:
+# appending a reason after the code RESTARTS the confirmation instead of
+# completing it. An automated Purge() must therefore parse the code out of the
+# NOTICE and re-issue -- it cannot be one fire-and-forget command.
+
+# --- CS HELP: the full ChanServ command list (no UNPURGE) ---
+:ChanServ!ChanServ@localhost NOTICE botty :    AMODE modifies persistent mode settings for channel members.
+:ChanServ!ChanServ@localhost NOTICE botty :    CLEAR removes users or settings from a channel.
+:ChanServ!ChanServ@localhost NOTICE botty :    DEOP removes the given user (or yourself) from a channel admin.
+:ChanServ!ChanServ@localhost NOTICE botty :    GET queries the current values of a channel's settings
+:ChanServ!ChanServ@localhost NOTICE botty :    HELP shows in-depth information about commands.
+:ChanServ!ChanServ@localhost NOTICE botty :    HOWTOBAN suggests the best available way of banning a user
+:ChanServ!ChanServ@localhost NOTICE botty :    INFO displays info about a registered channel.
+:ChanServ!ChanServ@localhost NOTICE botty :    LIST searches the list of registered channels.
+:ChanServ!ChanServ@localhost NOTICE botty :    OP makes the given user (or yourself) a channel admin.
+:ChanServ!ChanServ@localhost NOTICE botty :    PURGE blacklists a channel from the server.
+:ChanServ!ChanServ@localhost NOTICE botty :    REGISTER lets you own a given channel.
+:ChanServ!ChanServ@localhost NOTICE botty :    SET modifies a channel's settings
+:ChanServ!ChanServ@localhost NOTICE botty :    TRANSFER transfers ownership of a channel to another user.
+:ChanServ!ChanServ@localhost NOTICE botty :    UNREGISTER deletes a channel registration.
+
+# --- CS HELP PURGE ---
+:ChanServ!ChanServ@localhost NOTICE botty :Syntax: PURGE <ADD | DEL | LIST> #channel [code] [reason]
+:ChanServ!ChanServ@localhost NOTICE botty :PURGE ADD blacklists a channel from the server, making it impossible to join
+:ChanServ!ChanServ@localhost NOTICE botty :or otherwise interact with the channel. If the channel currently has members,
+:ChanServ!ChanServ@localhost NOTICE botty :they will be kicked from it. PURGE may also be applied preemptively to
+:ChanServ!ChanServ@localhost NOTICE botty :channels that do not currently have members. A purge can be undone with
+:ChanServ!ChanServ@localhost NOTICE botty :PURGE DEL. To list purged channels, use PURGE LIST.
+
+# --- CS UNPURGE: not a command ---
+@time=2026-09-11T10:25:33.039Z :ChanServ!ChanServ@localhost NOTICE botty :Unknown command. To see available commands, run: /CS HELP
+
+# --- bare "CS PURGE #channel" (the subcommand is mandatory) ---
+@time=2026-09-11T10:25:28.211Z :ChanServ!ChanServ@localhost NOTICE botty :Invalid parameters
+
+# --- PURGE ADD step 1: warning + confirmation code ---
+@time=2026-09-11T10:34:25.769Z :ChanServ!ChanServ@localhost NOTICE botty :Warning: you are about to empty this channel and remove it from the server.
+@time=2026-09-11T10:34:25.769Z :ChanServ!ChanServ@localhost NOTICE botty :To confirm, run this command: /CS PURGE ADD #purge5 dmjqy
+
+# --- PURGE ADD step 2, code as the SOLE extra arg: occupants kicked, then ok ---
+@msgid=2nf6bd6e8dhsx3k9pfs3m2c682;time=2026-09-11T10:34:26.961Z :ergo.test KICK #purge5 botty :This channel has been purged by the server administrators and cannot be used
+@time=2026-09-11T10:34:26.971Z :ChanServ!ChanServ@localhost NOTICE botty :Successfully purged channel #purge5 from the server
+
+# --- PURGE ADD step 2 WITH a reason after the code: restarts confirmation ---
+@time=2026-09-11T10:31:35.949Z :ChanServ!ChanServ@localhost NOTICE botty :Warning: you are about to empty this channel and remove it from the server.
+@time=2026-09-11T10:31:35.949Z :ChanServ!ChanServ@localhost NOTICE botty :To confirm, run this command: /CS PURGE ADD #purge4 ggwik
+
+# --- PURGE LIST: header line then one numbered line per channel ---
+@time=2026-09-11T10:34:28.169Z :ChanServ!ChanServ@localhost NOTICE botty :There are 1 purged channel(s).
+@time=2026-09-11T10:34:28.169Z :ChanServ!ChanServ@localhost NOTICE botty :1: #purge5
+# empty case:
+@time=2026-09-11T10:34:31.777Z :ChanServ!ChanServ@localhost NOTICE botty :There are 0 purged channel(s).
+
+# --- JOIN while purged: numeric 403, not a NOTICE ---
+@time=2026-09-11T10:34:29.371Z :ergo.test 403 botty #purge5 :This channel was purged by the server operators and cannot be used
+
+# --- PURGE DEL: no confirmation code needed. Response says "unpurged". ---
+@time=2026-09-11T10:34:30.575Z :ChanServ!ChanServ@localhost NOTICE botty :Successfully unpurged channel #purge5 from the server
+# PURGE DEL on a channel that was not purged:
+@time=2026-09-11T10:31:40.770Z :ChanServ!ChanServ@localhost NOTICE botty :Channel #purge4 wasn't previously purged from the server
+
+# --- JOIN after PURGE DEL: succeeds ---
+@account=botty;msgid=njwz75ysmpefukrjnyfmw7mjj2;time=2026-09-11T10:34:32.981Z :botty!~u@gwfgs6htdzzrg.irc JOIN #purge5
+
+# --- CS INFO is UNAFFECTED by a purge: still reports "is registered". ---
+# Purge state is NOT visible through CS INFO; use PURGE LIST.
+@time=2026-09-11T10:31:39.568Z :ChanServ!ChanServ@localhost NOTICE botty :Channel #purge4 is registered
+@time=2026-09-11T10:31:39.568Z :ChanServ!ChanServ@localhost NOTICE botty :Founder: botty
+
+# --- CS REGISTER on an already-registered channel ---
+@time=2026-09-11T10:28:12.825Z :ChanServ!ChanServ@localhost NOTICE botty :Channel is already registered

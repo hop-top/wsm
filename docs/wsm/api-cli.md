@@ -27,7 +27,7 @@ default. Use `--help-all` to see everything, or one of the group-scoped flags.
 |---------------|------------------------------------------------------------|
 | ORGANIZE      | `workspace`, `space`, `device`                             |
 | CAPTURE       | `event`, `snapshot`                                        |
-| INTERACT      | `init`, `tui` (hidden)                                     |
+| INTERACT      | `init`, `irc`, `tui` (hidden)                              |
 | MANAGEMENT    | `config`, `alias`, `upgrade`, `version`, `completion`      |
 
 Group filters: `--help-organize`, `--help-capture`, `--help-interact`,
@@ -80,10 +80,26 @@ Provided by `kit/cli` plus wsm-specific globals registered on the root command.
 | `--offline`           | bool   | false   | Disable all network (skip sync, upgrade check, plugin downloads)  |
 | `--profile`           | string | ""      | Named profile (credentials/config)                                |
 | `--instance`          | string | ""      | Backend instance discriminator                                    |
+| `--dry-run`           | bool   | false   | Preview side effects without applying them (command must support) |
+| `--confirm`           | string | ""      | Confirmation policy for destructive commands (`auto`, `yes`, `no`, `prompt`); empty means prompt on a TTY, `no` otherwise |
+| `--max-ops`           | int    | 0       | Cap mutating operations per invocation (`0` = unlimited)          |
+| `--policy`            | string | ""      | Named delegation policy, loaded from `$XDG_CONFIG_HOME/wsm/policies/<name>.yaml` |
+| `--api-version`       | string | ""      | Request a CLI schema version (`MAJOR.MINOR`) for compatibility-mode filtering |
+| `--progress-format`   | string | human   | Progress output format (`human`, `json`); defaults to `json` when `--format=json` unless set explicitly |
 
 `--format json|yaml` is the canonical machine-readable selector. The previous
 top-level `--json` flag was removed in this release; see
 [CHANGELOG](../../CHANGELOG.md).
+
+The last six rows above are registered by `kit/cli`, not by wsm, and are
+hidden from plain `wsm --help`. They appear in `wsm --help-all` and in the
+GLOBAL FLAGS section of each subcommand's help.
+
+`--idempotency-key <key>` is kit-provided but is **not** a global: kit
+installs it per-leaf, on every leaf tagged idempotency `conditional` with a
+`write-local`, `write-shared` or `destructive` side effect. Replaying a key
+against the same tool replays the recorded output. Run
+`wsm capabilities --format json` for the authoritative per-leaf flag list.
 
 ## Commands
 
@@ -257,7 +273,7 @@ wsm space add <workspace> <id> [--type ...] [--path ...] [--cap ...] \
 | `--cap`         | -           | Space capability OASF URI (repeatable)                          |
 | `--trust`       | local       | Trust level: `local`, `verified`, `external`, `untrusted`       |
 | `--startup-cmd` | ""          | Default command rux runs when connecting (empty = `$SHELL`)     |
-| `--auto`        | false       | Auto-detect space attributes from `--path`                      |
+| `--auto`        | false       | Detect space attributes from `--path` and disclose them (reported, not applied) |
 
 If the rux `projects.yaml` write fails, wsm warns to stderr and the wsm DB
 write still succeeds; recover with `wsm space sync`.
@@ -477,6 +493,451 @@ wsm init --hop
 wsm init --force
 ```
 
+#### `wsm irc`
+
+Run and inspect a workspace's IRC presence. wsm either manages its own ergo
+server for a workspace (managed mode) or connects to one it does not own
+(external mode). Either way a per-workspace daemon runs the bot, keeps
+channels and roles in line with the workspace's members, and captures channel
+traffic into the event log.
+
+```
+wsm irc [command] [--flags]
+```
+
+Subcommands: `enable`, `disable`, `start`, `stop`, `restart`, `status`,
+`sync`, `account`, `creds`, `url`, `channel`, `delegate`, `backfill`,
+`daemon` (hidden).
+
+Every verb below first requires `irc.enabled: true` in the resolved config;
+a disabled config exits 2. Every verb except `enable` also requires the
+workspace to have been enabled already — a missing profile exits 9 with
+`run \`wsm irc enable <ws>\` first`.
+
+Every verb that changes state, and the one that hands out a secret, checks a
+capability (exit 5 when it is withheld):
+
+| Capability    | Checked by                                                                 |
+|---------------|----------------------------------------------------------------------------|
+| `irc.enable`  | `enable` (both the managed and `--shared-with` paths), `account create\|rotate\|suspend`, `channel add\|rm\|adopt\|release\|purge`, `delegate add\|rm` |
+| `irc.disable` | `disable`                                                                  |
+| `irc.purge`   | `disable --purge`, `channel rm --purge`, `channel purge` (in addition to `irc.enable`) |
+| `irc.start`   | `start`, `restart` (with `irc.stop`), and the daemon `enable` spawns        |
+| `irc.stop`    | `stop`, `restart` (with `irc.start`), `disable`'s teardown                  |
+| `irc.sync`    | `sync`, `backfill`                                                         |
+| `irc.creds`   | `creds`                                                                    |
+
+The checks live in `pkg/irc` rather than in the command layer, so the daemon
+and the auto-provisioner that drives IRC off workspace lifecycle events are
+gated by the same code the CLI is.
+
+`--force` overrides the shared-host guard, never a capability: a caller
+without `irc.stop` cannot take a server down from under its guests by adding
+the flag, and is refused with 6 rather than the guard's 4.
+
+`status`, `url`, `channel list`, `delegate list` and the hidden `daemon` check
+nothing. The first four report state that anyone able to read the workspace
+root can already read from its profile and config, so a gate there would be
+theatre; `daemon` is spawned by `start`, which is gated.
+
+`--dry-run`, `--confirm` and `--idempotency-key` are kit-provided rather
+than wsm-authored; every mutating irc verb honors them. The destructive
+paths (`disable --purge`, `channel rm --purge`, `channel purge`) refuse
+under `--confirm=no`, or off a TTY, with exit 5.
+
+No irc command registers a `--json` flag. Structured output comes from the
+global `--format json|yaml`, and a command whose stdout is not a TTY emits
+JSON automatically even when no format was named.
+
+`--quiet` suppresses the result of every irc command except `url`, which
+still prints the URL to stdout because the URL is the whole answer.
+
+##### `wsm irc enable <workspace>`
+
+Provision a workspace's IRC presence and start its daemon.
+
+```
+wsm irc enable <workspace> [--external] [--remote] [--shared-with <ws>] \
+  [--port N] [--dir <root>] [--bot-password-stdin]
+```
+
+| Flag                   | Default | Description                                              |
+|------------------------|---------|----------------------------------------------------------|
+| `--external`           | false   | Connect to a server wsm does not own                     |
+| `--remote`             | false   | Managed: enable the remote TLS/WebSocket listener        |
+| `--shared-with`        | ""      | Attach to another workspace's server as a guest          |
+| `--port`               | 0       | Managed: base port of the triple (0 scans)               |
+| `--dir`                | ""      | Workspace root holding `.wsm/` (default: cwd)            |
+| `--bot-password-stdin` | false   | External: read the bot password from stdin               |
+
+Managed mode allocates a consecutive port triple, generates the bot secrets
+and server API token, renders ergo's config, creates its database, and starts
+the supervising daemon. External mode verifies the configured server is
+reachable and starts the bot against it; the bot password comes from stdin
+with `--bot-password-stdin` or from the aps secret named by
+`irc.bot.secret_ref`. Re-running against a live daemon reports it rather than
+starting a second one.
+
+A root without `.wsm/` or `.hop/wsm/` exits 2, as does an invalid `irc` config
+block. `--shared-with` naming the workspace itself exits 2; a host that is
+already enabled exits 4, a host that is not managed or not running exits 9,
+and a bot-account name the host reserves exits 4.
+
+Examples:
+
+```
+wsm irc enable my-project
+wsm irc enable my-project --remote --port 6700
+wsm irc enable api --external --bot-password-stdin < bot.pass
+wsm irc enable guest-ws --shared-with my-project
+```
+
+##### `wsm irc disable <workspace>`
+
+Stop a workspace's IRC daemon, optionally removing what it owns.
+
+```
+wsm irc disable <workspace> [--purge] [--force]
+```
+
+| Flag        | Default | Description                                                  |
+|-------------|---------|--------------------------------------------------------------|
+| `--purge`   | false   | Also remove the workspace's IRC data and state directories   |
+| `--force`   | false   | Disable even while guest workspaces are hosted here          |
+
+Without `--purge` the data and state directories survive, so `start` brings
+the workspace back with the same ports, accounts and history. `--purge`
+destroys the server database, generated certificates and every secret wsm
+holds for the workspace; it is gated by `--confirm` (`--force` stands in for
+`--confirm=yes`) and refuses with exit 5 under `--confirm=no` or off a TTY.
+
+A workspace hosting guests is refused with exit 4; `--force` overrides,
+leaving guests to fail on their next reconnect.
+
+##### `wsm irc start <workspace>`
+
+Start the daemon for an already-enabled workspace.
+
+In managed mode the recorded port triple is re-checked before spawning: a port
+taken since `enable` is reported (exit 70) rather than silently reallocated.
+Starting a workspace whose daemon is already up reports it and starts nothing.
+
+Requires `irc.start`. The check sits at the one place a daemon is spawned, so
+it covers `restart` and `enable`'s initial start as well.
+
+##### `wsm irc stop <workspace>`
+
+Stop the daemon, leaving everything it owns in place.
+
+| Flag      | Default | Description                                       |
+|-----------|---------|---------------------------------------------------|
+| `--force` | false   | Stop even while guest workspaces are hosted here  |
+
+Stopping an already-stopped workspace succeeds and says so. A workspace
+hosting guests is refused with exit 4 unless `--force`.
+
+Requires `irc.stop`, checked before the guest refusal: `--force` overrides the
+guard, not the capability, and a withheld `irc.stop` is exit 5 either way.
+
+##### `wsm irc restart <workspace>`
+
+Stop the daemon if running, then start it again.
+
+| Flag      | Default | Description                                          |
+|-----------|---------|------------------------------------------------------|
+| `--force` | false   | Restart even while guest workspaces are hosted here  |
+
+Managed mode re-checks the port triple between the halves, after the old
+daemon released it, so a port taken meanwhile is reported (exit 70) rather than
+inherited. Restarting a stopped workspace simply starts it. Guests refuse with
+exit 4 unless `--force`.
+
+Requires both `irc.stop` and `irc.start`, asked for before the guest refusal.
+A caller holding only one of them is refused with exit 5 naming the half it
+lacks — `irc.stop` first, since that is the half that drops the server.
+
+##### `wsm irc status <workspace>`
+
+Report what the workspace's IRC presence is doing.
+
+The daemon supplies state, pids, negotiated capabilities and the last
+reconcile; this command adds the workspace name, configuration warnings, and —
+when an ergo HTTP API is reachable — live channel occupancy. Discovery results
+(adopted, peer and unmanaged channels) come from the daemon's last status
+document and are reported even when stopped.
+
+A workspace whose daemon is not running reports state `stopped` and exits 0:
+"not running" is an answer, not a failure.
+
+##### `wsm irc sync <workspace>`
+
+Ask the running daemon to reconcile immediately.
+
+Reconciliation creates missing accounts, registers missing channels and brings
+roles in line with the workspace's members. The daemon does this on start and
+whenever `members.yaml` changes; `sync` makes it happen now. Because the
+request is a signal, a stopped daemon is an error (exit 1) rather than a
+silent no-op.
+
+Requires `irc.sync`: a reconcile rewrites accounts, roles and registrations on
+the server, so it is a mutation asked of the daemon rather than a read of it.
+
+##### `wsm irc account`
+
+Manage member accounts on a workspace's IRC server.
+
+```
+wsm irc account [create|rotate|suspend] <workspace> [member] [--raw <name>]
+```
+
+Subcommands: `create`, `rotate`, `suspend`. Each takes a workspace and either
+a member argument or `--raw <name>`; naming neither, or both, exits 2.
+
+| Flag    | Default | Description                                       |
+|---------|---------|---------------------------------------------------|
+| `--raw` | ""      | Operate on this account name instead of a member's |
+
+Accounts are never deleted, only suspended: event attribution is keyed by
+account name, so deletion would orphan that member's message history.
+
+`create` generates the passphrase, records it in the workspace secrets file
+and applies it to the server in one run. An account that already exists keeps
+its credential. `rotate` records the new passphrase only after the server
+accepts it; existing sessions stay connected. `suspend` disables an account
+without freeing the name.
+
+`--raw` provisions an arbitrary account — how a host operator grants a
+cross-machine guest access. That password is printed once and is **not**
+stored, because the account belongs to the guest rather than this workspace.
+
+A provider that does not support the operation exits 70, naming both the
+provider and the setting to fix (`create`/`rotate` need the ergo HTTP API via
+`irc.server.ergo_api`; `suspend` needs the bot to hold oper). A server that
+rejects a well-formed request exits 1.
+
+Examples:
+
+```
+wsm irc account create my-project alice
+wsm irc account rotate my-project alice
+wsm irc account create my-project --raw guest-bot
+wsm irc account suspend my-project bob
+```
+
+##### `wsm irc creds <workspace> <member>`
+
+Show the IRC credentials wsm holds for a member.
+
+| Flag    | Default | Description                                      |
+|---------|---------|--------------------------------------------------|
+| `--env` | false   | Render as `WSM_IRC_CLIENT_*` shell assignments   |
+
+Requires `irc.creds`, checked before the account is resolved. It is the only
+read-shaped verb that is gated: it does not report state the workspace already
+discloses, it renders a stored passphrase, and `--env` emits it ready to be
+sourced into a shell.
+
+Managed mode holds the passphrase and prints it; a member with none on file
+exits 70 naming the `account rotate` that fixes it. External mode resolves the
+account through the daemon's chain (workspace profile, then aps, then
+`members.yaml`) and prints a password only when wsm actually holds one,
+otherwise reporting the aps `secret_ref` as a hint rather than a value.
+
+`--env` emits `WSM_IRC_CLIENT_SERVER`, `_PORT`, `_TLS`, `_ACCOUNT` and — only
+when wsm holds one — `_PASSWORD`. The `CLIENT` infix is deliberate: these
+configure an IRC client, and must never reconfigure wsm itself the way the
+`WSM_IRC_*` config names would.
+
+##### `wsm irc url <workspace>`
+
+Print the URL a client uses to reach this workspace's IRC server.
+
+| Flag    | Default | Description                                  |
+|---------|---------|----------------------------------------------|
+| `--web` | false   | Print the WebSocket URL for a browser client |
+
+Managed mode answers with the loopback plaintext listener (`irc://`); `--web`
+answers with the remote WebSocket listener (`wss://`) and requires the
+workspace to have been enabled with `--remote` and `irc.remote.host` set —
+otherwise exit 2. External mode answers `ircs://` when TLS is on and `irc://`
+when it is off; `--web` is refused there with exit 2, and an empty
+`irc.server.host` exits 9.
+
+The URL goes to stdout even under `--quiet`, since it is the whole answer.
+
+##### `wsm irc channel`
+
+Manage a workspace's IRC channels.
+
+Subcommands: `add`, `rm`, `list`, `adopt`, `release`, `purge`.
+
+`add` and `rm` edit the workspace-local `irc.channels` override and signal the
+daemon to reconcile; the daemon is the only thing that ever joins or parts a
+channel. Other keys and comments in that config file are preserved
+byte-for-byte. A channel name that is empty, or lacks a `#`/`&` prefix, or
+contains a space, comma or BEL, exits 2.
+
+###### `wsm irc channel add <workspace> <#channel>`
+
+| Flag            | Default | Description                                             |
+|-----------------|---------|---------------------------------------------------------|
+| `--members`     | ""      | Membership rule: `all`, `principals`, `list`            |
+| `--member-list` | -       | Profile ids when `--members list` (comma-separated)     |
+| `--owner`       | ""      | Profile id given `+o` for an owner-managed channel      |
+| `--modes`       | ""      | Channel modes applied on ensure, e.g. `+ntR`            |
+| `--topic`       | ""      | Channel topic                                           |
+| `--guest`       | -       | Guest allow-list entry `<profile>[:voice\|op]` (repeatable) |
+| `--borrowed`    | ""      | Borrow a hosted channel: `<host-ws>:<#channel>`         |
+| `--force`       | false   | Add even inside a creator namespace or discovered set   |
+
+A name inside a channel creator's namespace, or one the daemon already adopted
+through discovery, is refused with exit 4: those channels belong to a member's
+own bot, and declaring one here would make wsm seize it on the next reconcile.
+`--force` performs the seizure deliberately.
+
+###### `wsm irc channel rm <workspace> <#channel>`
+
+| Flag      | Default | Description                                            |
+|-----------|---------|--------------------------------------------------------|
+| `--purge` | false   | Also drop the channel registration on the server       |
+| `--force` | false   | Proceed without the destructive confirmation           |
+
+The template is dropped from the override and the daemon reconciles, clearing
+the roles wsm authored and, where supported, making the channel invite-only. A
+channel that is not declared exits 3. `--purge` additionally drops the server
+registration and is gated by `--confirm` (`--force` stands in for
+`--confirm=yes`; refusal is exit 5).
+
+Here a provider that cannot purge is **not** an error: the template removal —
+the part wsm owns — has already succeeded, so the run reports
+`purged: false` with `reason: "unsupported"` and exits 0. This is the
+opposite of standalone `channel purge`, where the same condition exits 70.
+
+###### `wsm irc channel list <workspace>`
+
+Show the channels this workspace maintains and what became of them. The list
+merges configured templates with the daemon's last status, so a channel that
+is declared but not yet registered appears with `registered=false` rather than
+being omitted. Adopted, peer and unmanaged channels are listed with their
+source.
+
+###### `wsm irc channel adopt <workspace> <#channel>`
+
+| Flag      | Default | Description                        |
+|-----------|---------|------------------------------------|
+| `--owner` | ""      | Account credited with the channel  |
+
+Records a channel the daemon should join and capture, writing to `irc.adopted`
+and signalling the daemon — whose discovery pass performs the join. Adopting a
+previously released channel drops it from `irc.released`. The daemon must be
+running (exit 1 otherwise): adoption that only reached a config file would look
+identical to adoption that took effect.
+
+###### `wsm irc channel release <workspace> <#channel>`
+
+Writes the name to `irc.released`, drops any matching `irc.adopted` entry, and
+signals the daemon to part the channel. Releasing never touches the channel
+itself — wsm never owned it, so only wsm's participation ends. The daemon must
+be running (exit 1 otherwise).
+
+###### `wsm irc channel purge <workspace> <#channel>`
+
+| Flag      | Default | Description                                  |
+|-----------|---------|----------------------------------------------|
+| `--force` | false   | Proceed without the destructive confirmation |
+
+Drops a channel's registration entirely and empties it — a server operation,
+not a configuration edit. On ergo this is `CS PURGE`, a two-step confirmation
+the provider completes on wsm's behalf. There is no unpurge: the verb is
+tagged destructive, requires both `irc.enable` and `irc.purge`, and is gated
+by `--confirm` (`--force` stands in for `--confirm=yes`; refusal is exit 5). A
+provider without the capability exits 70 rather than appearing to succeed; other
+server failures exit 1.
+
+The registration drop is the entire point of this leaf, so an unsupported
+provider is fatal here — unlike `channel rm --purge`, where the same
+condition is reported as `reason: "unsupported"` alongside a successful
+template removal.
+
+##### `wsm irc delegate`
+
+Let another workspace's bot hand out roles on this one's channels.
+
+Subcommands: `add`, `rm`, `list`. Delegation is a managed-mode arrangement: it
+rests on server-side privilege ceilings, which only hold on a server wsm
+controls.
+
+###### `wsm irc delegate add <host-workspace> <guest>`
+
+| Flag         | Default | Description                                                       |
+|--------------|---------|-------------------------------------------------------------------|
+| `--channel`  | ""      | Channel to grant on; every declared channel when omitted           |
+| `--max-role` | voice   | Ceiling the delegate may hand out: `voice`, `op`                   |
+| `--bot`      | ""      | Guest bot account on this server, for a guest not sharing locally  |
+
+`--max-role voice` grants the guest bot halfop (a non-founder halfop may set a
+persistent `+v` but is refused `+o`); `--max-role op` grants chanop. The cap is
+enforced by IRC privilege rules, not by wsm — a delegate at `--max-role op` is
+a channel operator and can op others.
+
+The guest must already share the host's server, or `--bot` must name an account
+the host provisioned with `wsm irc account create <host> --raw <name>`;
+otherwise exit 4. A workspace that declares no channels, or a `--channel` that
+is not declared, exits 3.
+
+###### `wsm irc delegate rm <host-workspace> <guest>`
+
+| Flag        | Default | Description                                               |
+|-------------|---------|-----------------------------------------------------------|
+| `--channel` | ""      | Channel to revoke on; every declared channel when omitted  |
+
+Drops the entry from the override. The host's next reconcile revokes the bot's
+privilege and sweeps the roles it can prove that bot handed out; a role wsm
+cannot attribute to the departing bot is reported as unverified and left in
+place rather than stripped on suspicion.
+
+###### `wsm irc delegate list <host-workspace>`
+
+Reports every delegation this workspace authored: the configured ceiling, the
+role the daemon actually authored, and the count of roles in the channel that
+wsm neither authored nor desires. A non-zero foreign count is not a fault — it
+is what a delegate bot handing out roles looks like from the host's side.
+
+##### `wsm irc backfill <workspace>`
+
+Replay channel history into the event log.
+
+| Flag        | Default | Description                            |
+|-------------|---------|----------------------------------------|
+| `--channel` | -       | Replay only this channel (repeatable)  |
+
+This never opens a second IRC session beside the daemon. With a daemon running
+the request is filed and signalled, and the daemon executes it, reporting
+through `status.json` (`mode: daemon`); with the daemon stopped this command
+takes the same exclusive lock and runs the backfill itself (`mode: offline`).
+Either way exactly one process writes cursors, which is what keeps a replay
+from recording the same messages twice.
+
+Without `--channel` every channel with a cursor is replayed. A channel never
+captured has no position to resume from, so live capture starts it rather than
+a backfill.
+
+Requires `irc.sync`, the same capability `sync` checks: a replay writes
+messages into the workspace's event log, which is the shared state a reconcile
+also touches.
+
+##### `wsm irc daemon <workspace>`
+
+Run the workspace's IRC daemon in the foreground. Hidden: `wsm irc start`
+spawns it detached, and running it by hand is a debugging affordance rather
+than an operator-facing verb.
+
+Managed mode supervises an ergo child; both modes run the bot, reconcile on
+start and on `SIGHUP`, capture channel traffic into the event log, and
+maintain `status.json`. `SIGUSR1` runs a backfill; `SIGTERM` and `SIGINT` quit
+the bot, stop the child, and exit. One daemon may hold a workspace at a time,
+enforced by an exclusive lock held for the daemon's lifetime.
+
 #### `wsm tui`
 
 Launch the terminal UI (Charmbracelet bubbletea v2). Hidden by default;
@@ -637,12 +1098,26 @@ Per CLI conventions §8.1:
 | 2    | Usage error (bad flags/args)                                      |
 | 3    | Not found (workspace/space/snapshot)                              |
 | 4    | Conflict (already exists, in use) **or policy denied** — see [policies.md](policies.md) |
-| 5    | Unauthorized / forbidden (capability)                             |
-| 64   | Backend / persistence failure (wsm)                               |
+| 5    | Forbidden (capability gate denied the operation); also kit's `--confirm` refusal |
+| 8    | Backend / persistence failure                                     |
+| 9    | Not configured (wsm has not been told something yet)              |
+| 70   | Prerequisite not satisfied (missing binary, busy port, unreachable server) |
 
-Codes 64+ are tool-specific. wsm error helpers
-(`workspace.NewErrorUsage`, `NewErrorNotFound`, `NewErrorBackend`,
-`NewErrorForbidden`) map to these codes via `kit/cli` error rendering.
+Codes 0-5 and 70 come from `hop.top/kit`'s standard table; 8 and 9 are
+wsm-local, for the two classes kit defines no code for. They sit below
+kit's reserved 64-70 band rather than above it, because kit grows that
+band upward.
+
+wsm error helpers (`workspace.NewErrorUsage`, `NewErrorNotFound`,
+`NewErrorBackend`, `NewErrorForbidden`, `NewErrorNotConfigured`,
+`NewErrorPrerequisite`) map to these codes via `kit/cli` error
+rendering. Exit `70` messages state the corrective action, and so do
+exit `9` messages — the difference is that `70` names something to fix
+in the environment and `9` names a wsm command to run or a config key
+to set. Under `--format json` each carries a `transience` field
+(`transient` | `permanent` | `unknown`) that answers whether a bare
+retry can clear the failure; branch on that rather than inferring
+retryability from the code.
 
 Policy denials produced by the runtime policy engine are routed
 through `*output.Error` with `CodeConflict` (exit 4); message is

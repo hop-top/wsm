@@ -1,0 +1,25 @@
+# PRIVMSG message tags as the capture path sees them, ergo 2.19.1.
+# Caps negotiated: message-tags account-tag server-time echo-message batch
+#                  draft/chathistory labeled-response multi-prefix sasl
+#
+# IMPORTANT: tag ORDER is not stable across lines. Parse by tag name.
+
+# --- channel PRIVMSG from a logged-in user, observed by another client ---
+@time=2026-09-11T10:22:10.885Z;account=alice;msgid=pxsdgspzmwt5w9wgb3netamua2 :alice!~u@gwfgs6htdzzrg.irc PRIVMSG #tags :hello from alice
+
+# --- RELAYMSG as OTHER clients see it: nick/service form + server-set tag.
+# draft/relaymsg carries the ACCOUNT of the privileged sender (botty),
+# NOT the relayed nick. The nick shape is a claim; the tag is the truth.
+@draft/relaymsg=botty;msgid=sn3f83npt75td3cf6jrs6wud5w;time=2026-09-11T10:23:20.402Z :slackuser/slack!~u@ne8kpbr53qbra.irc PRIVMSG #relay :relayed hello
+
+# --- same message echoed to the sender (echo-message), tag order differs ---
+@msgid=sn3f83npt75td3cf6jrs6wud5w;time=2026-09-11T10:23:20.402Z;draft/relaymsg=botty :slackuser/slack!~u@ne8kpbr53qbra.irc PRIVMSG #relay :relayed hello
+
+# --- RELAYMSG with a nick lacking a separator is refused ---
+:ergo.test FAIL RELAYMSG INVALID_NICK :Relayed nicknames MUST contain a relaymsg separator from this set: /
+
+# --- an ordinary NICK containing "/" is refused (separators reserved) ---
+:ergo.test 432 plainguy bad/nick :Erroneous nickname
+
+# --- CAP LS advertises the separator set ---
+# (excerpt) draft/relaymsg=/

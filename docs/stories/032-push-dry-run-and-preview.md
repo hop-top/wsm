@@ -39,5 +39,6 @@ Displays a summary without writing anything to the backend:
 - `pkg/format/dryrun_test.go` -- `TestDryRun_EmptyFile`
 
 ### E2E
-- `tests/e2e/sessions_push_test.go` -- `TestSessionsPush_DryRun`
-- `tests/e2e/sessions_push_test.go` -- `TestSessionsPush_DryRun_JSON`
+None. This story is not implemented yet -- neither the unit tests listed
+above nor any end-to-end test exist. Coverage must be added alongside the
+implementation.

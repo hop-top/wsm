@@ -27,4 +27,6 @@ As a user, I want to push VS Code Copilot sessions into wsm so that my Copilot c
 - `pkg/format/vscode/adapter_test.go` -- `TestCodexFormatOverlap`
 
 ### E2E
-- `tests/e2e/sessions_push_test.go` -- `TestSessionsPush_VSCodeCopilot`
+None. This story is not implemented yet -- neither the unit tests listed
+above nor any end-to-end test exist. Coverage must be added alongside the
+implementation.

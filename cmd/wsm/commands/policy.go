@@ -129,13 +129,44 @@ func resetPolicyForTest() {
 // *output.Error envelope so kit's RunE wrapper surfaces the right
 // Code + ExitCode (otherwise everything becomes CodeGeneric exit 1).
 //
-// Maps:
-//   - policy denial   → CONFLICT  (exit 4)
-//   - ErrorKindNotFound → NOT_FOUND (exit 3)
-//   - ErrorKindConflict → CONFLICT  (exit 4)
-//   - ErrorKindForbidden → UNAUTHORIZED (exit 5)
-//   - ErrorKindUsage  → USAGE   (exit 2)
-//   - ErrorKindBackend → tool-specific 64
+// Maps (per docs/stories/015-exit-code-contract.md):
+//   - policy denial          → CONFLICT     (exit 4)
+//   - ErrorKindUsage         → USAGE        (exit 2)
+//   - ErrorKindNotFound      → NOT_FOUND    (exit 3)
+//   - ErrorKindConflict      → CONFLICT     (exit 4)
+//   - ErrorKindForbidden     → UNAUTHORIZED (exit 5, scenario 7)
+//   - ErrorKindBackend       → GENERIC      (exit 8, scenario 5)
+//   - ErrorKindNotConfigured → GENERIC      (exit 9, scenario 9)
+//   - ErrorKindPrerequisite  → PREREQUISITE (exit 70, scenario 8)
+//
+// Forbidden now exits 5, the slot kit and the 12fcc spec both give to
+// permission denial. It previously rendered UNAUTHORIZED while exiting
+// 6 — an envelope that contradicted its own exit code, and a code that
+// collided with kit's TRANSIENT. kit's own confirm gate already emits
+// UNAUTHORIZED exit 5 directly; those short-circuit this function via
+// the embedded ExitCode and now agree with it rather than diverging.
+//
+// Prerequisite emits kit's CodePrerequisite with kit's own
+// ExitPrerequisite (70) instead of a GENERIC envelope on a wsm-local
+// number. The old 7 was the sharpest collision in the table: kit's 7
+// is CONSENT_REFUSED, which TransienceForCode classifies transient,
+// while a wsm prerequisite is frequently permanent — an agent reading
+// the exit code per kit's taxonomy would have retried a missing binary
+// forever.
+//
+// NotConfigured no longer borrows prerequisite's slot. It is a
+// distinct kind with a distinct fix and it now has a distinct number.
+// Sharing was defensible only while the shared number was wsm-local;
+// prerequisite has moved onto kit's 70, and following it there would
+// have claimed kit's PREREQUISITE meaning for a kind that is not one.
+//
+// Every envelope this function builds still carries an explicit
+// Transience, including the prerequisite one. kit defaults an unset
+// Transience from the code, and CodePrerequisite defaults to
+// transient — which for an unclassified prerequisite would be a guess
+// wsm has deliberately refused to make. The explicit stamp wins over
+// the default, so adopting kit's code string costs none of the
+// per-kind honesty and adds no double-booking.
 //
 // The translation lives at the cmd layer because pkg/workspace cannot
 // import hop.top/kit/go/console/output without dragging charmbracelet
@@ -148,9 +179,10 @@ func mapPolicyDenialError(err error) error {
 	}
 	if workspace.IsPolicyDenial(err) {
 		return &output.Error{
-			Code:     output.CodeConflict,
-			Message:  err.Error(),
-			ExitCode: 4,
+			Code:       output.CodeConflict,
+			Message:    err.Error(),
+			ExitCode:   4,
+			Transience: output.TransiencePermanent,
 		}
 	}
 	switch {
@@ -160,31 +192,75 @@ func mapPolicyDenialError(err error) error {
 			Message:      err.Error(),
 			ExitCode:     3,
 			SuggestedFix: "Run 'wsm workspace list' to see available workspaces.",
+			Transience:   output.TransiencePermanent,
 		}
 	case workspace.IsKind(err, workspace.ErrorKindConflict):
 		return &output.Error{
-			Code:     output.CodeConflict,
-			Message:  err.Error(),
-			ExitCode: 4,
+			Code:       output.CodeConflict,
+			Message:    err.Error(),
+			ExitCode:   4,
+			Transience: output.TransiencePermanent,
 		}
 	case workspace.IsKind(err, workspace.ErrorKindForbidden):
 		return &output.Error{
-			Code:     output.CodeUnauthorized,
-			Message:  err.Error(),
-			ExitCode: 5,
+			Code:       output.CodeUnauthorized,
+			Message:    err.Error(),
+			ExitCode:   ExitForbidden,
+			Transience: output.TransiencePermanent,
 		}
 	case workspace.IsKind(err, workspace.ErrorKindUsage):
 		return &output.Error{
-			Code:     output.CodeUsage,
-			Message:  err.Error(),
-			ExitCode: 2,
+			Code:       output.CodeUsage,
+			Message:    err.Error(),
+			ExitCode:   2,
+			Transience: output.TransiencePermanent,
 		}
 	case workspace.IsKind(err, workspace.ErrorKindBackend):
+		// As with NotConfigured: the constructor owns the class, so no
+		// second default here to paper over its absence.
 		return &output.Error{
-			Code:     output.CodeGeneric,
-			Message:  err.Error(),
-			ExitCode: 64,
+			Code:       output.CodeGeneric,
+			Message:    err.Error(),
+			ExitCode:   ExitBackend,
+			Transience: transienceFor(err, output.TransienceUnknown),
+		}
+	case workspace.IsKind(err, workspace.ErrorKindNotConfigured):
+		// No fallback: NotConfigured is permanent by construction and
+		// its constructor is the single place that says so. Defaulting
+		// here as well would mean a constructor that stopped setting
+		// the class still rendered "permanent", and the duplicate
+		// would hide the omission rather than surface it.
+		return &output.Error{
+			Code:       output.CodeGeneric,
+			Message:    err.Error(),
+			ExitCode:   ExitNotConfigured,
+			Transience: transienceFor(err, output.TransienceUnknown),
+		}
+	case workspace.IsKind(err, workspace.ErrorKindPrerequisite):
+		// Message carries the corrective action; SuggestedFix would be
+		// dropped by the framework-level renderer (see root.go).
+		//
+		// The fallback is TransienceUnknown rather than a guess: a
+		// prerequisite built by the bare constructor is one nobody has
+		// classified, and reporting it as permanent would tell an agent
+		// to stop retrying something that may well clear. Stamping it
+		// explicitly also overrides kit's transient default for
+		// CodePrerequisite, which would otherwise substitute that guess.
+		return &output.Error{
+			Code:       output.CodePrerequisite,
+			Message:    err.Error(),
+			ExitCode:   output.ExitPrerequisite,
+			Transience: transienceFor(err, output.TransienceUnknown),
 		}
 	}
 	return err
+}
+
+// transienceFor returns the transience class err was constructed with,
+// or fallback when it carries none.
+func transienceFor(err error, fallback string) string {
+	if t := workspace.TransienceOf(err); t != "" {
+		return t
+	}
+	return fallback
 }

@@ -23,6 +23,7 @@ import (
 	"hop.top/wsm/pkg/backend"
 	backendsqlite "hop.top/wsm/pkg/backend/sqlite"
 	"hop.top/wsm/pkg/config"
+	"hop.top/wsm/pkg/irc"
 	"hop.top/wsm/pkg/workspace"
 )
 
@@ -79,6 +80,7 @@ var commandGroups = map[string]string{
 	"config":       "management",
 	"event":        "capture",
 	"snapshot":     "capture",
+	"irc":          "interact",
 	"completion":   "management",
 	"version":      "management",
 	"upgrade":      "management",
@@ -184,11 +186,16 @@ type appContext struct {
 	cfg          config.Config
 	backend      backend.Backend
 	manager      *workspace.Manager
+	caps         *workspace.Capabilities
 	bus          bus.Bus
 	policyUnwire func()
+	ircUnwire    func()
 }
 
 func (a *appContext) Close() error {
+	if a.ircUnwire != nil {
+		a.ircUnwire()
+	}
 	if a.policyUnwire != nil {
 		a.policyUnwire()
 	}
@@ -219,8 +226,8 @@ func newAppContext(opts globalOptions) (*appContext, error) {
 	}
 	if cfg.Backend != "sqlite" {
 		// An unrecognized --backend value is semantically a Backend
-		// error per CLI conv §8.1, not a usage error. Routing through
-		// ErrorKindBackend yields exit 64 instead of 2.
+		// error, not a usage error. Routing through ErrorKindBackend
+		// yields exit 8 (story 015 scenario 5) instead of 2.
 		return nil, workspace.NewErrorBackend("unsupported backend "+cfg.Backend+" (only sqlite is currently implemented)", nil)
 	}
 
@@ -250,10 +257,12 @@ func newAppContext(opts globalOptions) (*appContext, error) {
 	// fan-out is the bus adapter's job, not ours.
 	eventBus := bus.New()
 
+	caps := resolveCapabilities()
 	mgr, err := workspace.NewManager(b,
 		workspace.WithSessionID(opts.SessionID),
 		workspace.WithAgentID(opts.AgentID),
 		workspace.WithBus(eventBus),
+		workspace.WithCapabilities(caps),
 	)
 	if err != nil {
 		_ = b.Close()
@@ -270,7 +279,54 @@ func newAppContext(opts globalOptions) (*appContext, error) {
 		return nil, workspace.NewErrorBackend("wire policy engine", err)
 	}
 
-	return &appContext{cfg: cfg, backend: b, manager: mgr, bus: eventBus, policyUnwire: unwire}, nil
+	app := &appContext{cfg: cfg, backend: b, manager: mgr, caps: caps, bus: eventBus, policyUnwire: unwire}
+
+	// pkg/irc/provision: mirror workspace lifecycle onto IRC when the
+	// operator asked for it (managed mode + auto_provision). Subscribe
+	// decides that itself and returns a no-op unwire otherwise, so a
+	// config failure here must not fail the command: IRC is an optional
+	// feature and an unreadable irc block is not a reason to refuse
+	// `wsm workspace list`.
+	//
+	// Provisioning runs inline on the publishing goroutine, so
+	// `wsm workspace add` can block for up to the daemon readiness
+	// timeout (~15s) while the new workspace's daemon comes up.
+	if ircCfg, ircErr := irc.Load(cfg.ConfigFile); ircErr == nil && ircCfg.Enabled {
+		app.ircUnwire = wireIRCToBus(eventBus, ircCfg, app)
+	}
+
+	return app, nil
+}
+
+// EnvDenyCapabilities names the capabilities to withhold from this
+// invocation, comma-separated, or "all" to withhold every one.
+//
+// Capability denial is a library-level policy: the manager is
+// constructed with AllCapabilities in production and no flag exposes
+// anything else, which leaves the forbidden path (exit 5) unreachable
+// from a real invocation and therefore untestable at the process
+// boundary. This seam closes that gap the same way WSM_POLICY_FILE
+// does for the policy engine — an environment variable a test sets,
+// never a documented operator control.
+const EnvDenyCapabilities = "WSM_DENY_CAPABILITIES"
+
+// resolveCapabilities builds the capability policy for this process.
+// The default is AllCapabilities; EnvDenyCapabilities narrows it.
+func resolveCapabilities() *workspace.Capabilities {
+	raw := strings.TrimSpace(os.Getenv(EnvDenyCapabilities))
+	if raw == "" {
+		return workspace.AllCapabilities()
+	}
+	if strings.EqualFold(raw, "all") {
+		return workspace.DenyAll()
+	}
+	denied := map[string]bool{}
+	for _, name := range strings.Split(raw, ",") {
+		if name = strings.TrimSpace(name); name != "" {
+			denied[name] = true
+		}
+	}
+	return workspace.DenyCapabilities(denied)
 }
 
 // NewRootCmd creates the root command for wsm via kit/cli.
@@ -295,11 +351,13 @@ func NewRootCmd() *cobra.Command {
 		// (override XDG config file location); suppress the built-in so the
 		// custom global below remains the sole --config flag.
 		Disable: cli.Disable{Config: true},
-		// Two intentional additions over kit's default cap of 10:
-		// `capabilities` (machine-readable command surface, F5) and the
+		// Three intentional additions over kit's default cap of 10:
+		// `capabilities` (machine-readable command surface, F5), the
 		// hardened `config` group (usage-erroring RunE makes it a
-		// runnable depth-1 verb). Locked by TestTopLevelVerbCountLock.
-		MaxTopLevelVerbs: 12,
+		// runnable depth-1 verb), and `irc` (workspace chat: its own
+		// noun with a lifecycle of its own, so it groups under no
+		// existing verb). Locked by TestTopLevelVerbCountLock.
+		MaxTopLevelVerbs: 13,
 		Help: cli.HelpConfig{
 			Disclaimer: "Workspace & Session Manager (wsm) for IDE-agnostic session storage.",
 			// management is pre-registered + auto-hidden by cli.New;
@@ -323,8 +381,10 @@ func NewRootCmd() *cobra.Command {
 			{Name: "data-dir", Usage: "Data directory"},
 			{Name: "session-id", Usage: "Session ID for event tracking"},
 			{Name: "agent-id", Default: "user", Usage: "Agent ID for event tracking"},
-			// CLI conv §5 canonical globals.
-			{Name: "offline", Usage: "Disable all network (skip sync, upgrade check, plugin downloads)", BoolVar: &opts.Offline},
+			// CLI conv §5 canonical globals. --offline is registered by
+			// cli.New itself as a reserved session global; re-declaring it
+			// here panics pflag with a redefinition. Read it off the Root
+			// (r.Offline()) instead of a local binding.
 			{Name: "profile", Usage: "Named profile (credentials/config)", StringVar: &opts.Profile},
 			{Name: "instance", Usage: "Backend instance", StringVar: &opts.Instance},
 		},
@@ -465,6 +525,7 @@ func NewRootCmd() *cobra.Command {
 		newEventGroupCmd(&opts),
 		newDeviceGroupCmd(&opts),
 		newSnapshotGroupCmd(&opts),
+		newIRCGroupCmd(&opts),
 		newConfigCmd(&opts),
 		newCompletionCmd(root, &opts),
 		newTUICmd(&opts),

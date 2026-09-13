@@ -43,7 +43,10 @@
 | 2 | Usage error | Missing required argument |
 | 3 | Not found | `wsm inspect nonexistent` |
 | 4 | Conflict | `wsm create duplicate` or `wsm archive already-archived` |
-| 5 | Backend error | Corrupted database |
+| 5 | Forbidden | Capability gate denied the operation |
+| 8 | Backend error | Corrupted database |
+| 9 | Not configured | IRC not enabled for the workspace |
+| 70 | Prerequisite | Missing binary, busy port, unreachable server |
 
 ## Configuration
 

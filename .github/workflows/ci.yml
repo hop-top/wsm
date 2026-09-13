@@ -23,6 +23,9 @@ jobs:
       - name: E2E (default build)
         run: make test-e2e
 
+      - name: Verify pkg/* UI dependency boundary
+        run: make verify-no-ui-leak
+
       - name: Verify required docs exist
         run: |
           test -f README.md
@@ -41,3 +44,44 @@ jobs:
 
       - name: Dockerized Ubuntu test matrix
         run: make test-ubuntu-docker
+
+  irc-ergo:
+    runs-on: ubuntu-latest
+    env:
+      # Pinned by version and checksum together: a release asset that changed
+      # under its tag must fail the job rather than silently alter what the
+      # integration suite is judged against. Same version and digest as
+      # .devcontainer/Dockerfile, so local and CI runs judge the same server.
+      ERGO_VERSION: '2.19.1'
+      ERGO_SHA256: 'c275f2de8e8eb074c38707136392290172400b5b78616cb9f660351527924b47'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Install pinned ergo
+        run: |
+          set -euo pipefail
+          curl -fsSL -o /tmp/ergo.tgz \
+            "https://github.com/ergochat/ergo/releases/download/v${ERGO_VERSION}/ergo-${ERGO_VERSION}-linux-x86_64.tar.gz"
+          echo "${ERGO_SHA256}  /tmp/ergo.tgz" | sha256sum -c -
+          # The archive nests everything under ergo-<ver>-linux-<arch>/, hence
+          # strip-1. Unpacking whole keeps the languages directory beside the
+          # binary, which is where the renderer resolves it from: ergo ships
+          # languages.path relative to its own release directory, and a config
+          # carrying that relative value fails every subcommand with "Could
+          # not load languages" before it reads anything else.
+          mkdir -p /opt/ergo
+          tar -C /opt/ergo --strip-components=1 -xzf /tmp/ergo.tgz
+          rm -f /tmp/ergo.tgz
+          ln -sf /opt/ergo/ergo /usr/local/bin/ergo
+          ergo --version
+
+      - name: IRC integration suite
+        env:
+          ERGO_BIN: /usr/local/bin/ergo
+        run: make test-irc

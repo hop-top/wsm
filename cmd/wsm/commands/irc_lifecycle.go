@@ -1,0 +1,1910 @@
+package commands
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"sort"
+	"strconv"
+	"strings"
+	"syscall"
+	"time"
+
+	"github.com/spf13/cobra"
+
+	"hop.top/kit/go/console/cli"
+	"hop.top/kit/go/console/output"
+	"hop.top/wsm/pkg/access"
+	"hop.top/wsm/pkg/irc"
+	ircdaemon "hop.top/wsm/pkg/irc/daemon"
+	"hop.top/wsm/pkg/irc/managed"
+	"hop.top/wsm/pkg/irc/provider"
+	"hop.top/wsm/pkg/irc/provider/ergo"
+	"hop.top/wsm/pkg/irc/provision"
+	"hop.top/wsm/pkg/irc/share"
+	"hop.top/wsm/pkg/model"
+	"hop.top/wsm/pkg/workspace"
+)
+
+// daemonReadyTimeout bounds how long enable, start and restart wait for
+// a freshly spawned daemon to report itself running.
+//
+// The daemon writes status.json once it has taken the workspace lock,
+// started the managed child (if any) and connected the bot. Fifteen
+// seconds covers an ergo cold start on a loaded machine; past that the
+// spawn is reported as a prerequisite failure naming the daemon log,
+// rather than left to hang a script forever.
+const daemonReadyTimeout = 15 * time.Second
+
+// daemonPollInterval is how often the readiness wait re-reads status.json.
+const daemonPollInterval = 100 * time.Millisecond
+
+// ircRuntime is everything the lifecycle verbs resolve before doing
+// any work: the workspace, its paths, and the config in force for it.
+//
+// Every verb needs the same four things and each of them can fail with
+// a different exit code, so resolving them in one place is what keeps
+// the exit-code contract identical across the whole group rather than
+// re-derived per verb.
+type ircRuntime struct {
+	ws    *model.Workspace
+	paths irc.Paths
+	cfg   irc.Config
+	app   *appContext
+	// gate is the capability policy this runtime's operations run
+	// under. It is built once here, in the one place every verb passes
+	// through, so no verb can reach the daemon helpers without one.
+	gate irc.Gate
+}
+
+// resolveIRCRuntime performs the checks every `wsm irc` verb shares:
+// the feature gate, the workspace lookup and the path layout.
+//
+// The gate is checked before the workspace lookup deliberately. With
+// the feature off, "which workspace?" is not yet a meaningful question,
+// and reporting a missing workspace (exit 3) to someone who has not
+// turned IRC on at all would send them looking in the wrong place.
+func resolveIRCRuntime(ctx context.Context, app *appContext, ref string) (*ircRuntime, error) {
+	cfg, err := irc.Load(app.cfg.ConfigFile)
+	if err != nil {
+		return nil, workspace.NewErrorBackend("load irc config", err)
+	}
+	if !cfg.Enabled {
+		return nil, ircDisabledError()
+	}
+
+	ws, err := app.manager.ResolveWorkspaceRef(ctx, ref)
+	if err != nil {
+		return nil, err
+	}
+
+	paths, err := irc.ResolvePaths(irc.PathsInput{
+		DataDir:  app.cfg.DataDir,
+		StateDir: app.cfg.StateDir,
+	}, ws.ID)
+	if err != nil {
+		return nil, workspace.NewErrorNotConfigured(err.Error())
+	}
+
+	// A workspace that has been enabled carries a Root, and the config
+	// in force for it is the global file merged with that root's
+	// override. Before enable there is no Root yet and the global file
+	// is the whole story.
+	if profile, perr := irc.LoadProfile(paths.Profile); perr == nil && profile.Root != "" {
+		merged, mErr := irc.LoadWorkspace(app.cfg.ConfigFile, profile.Root)
+		if mErr != nil {
+			return nil, workspace.NewErrorBackend("load irc config", mErr)
+		}
+		if !merged.Enabled {
+			return nil, ircDisabledError()
+		}
+		cfg = merged
+	}
+
+	return &ircRuntime{ws: ws, paths: paths, cfg: cfg, app: app, gate: irc.NewGate(app.caps)}, nil
+}
+
+// ircDisabledError is the feature-gate refusal shared by every verb.
+//
+// Exit 2 rather than 7: the fix is a config edit the operator makes
+// deliberately, not an environment problem to repair, and story 015
+// classes an invocation that is not valid for the current mode as
+// usage.
+func ircDisabledError() error {
+	const fix = "set irc.enabled: true"
+	return &output.Error{
+		Code:         output.CodeUsage,
+		Message:      "irc is disabled: " + fix,
+		SuggestedFix: fix,
+		ExitCode:     2,
+	}
+}
+
+// requireCapability refuses the verb when the capability is withheld.
+func requireCapability(app *appContext, capability string) error {
+	if app.caps != nil && !app.caps.Can(capability) {
+		return workspace.NewErrorForbidden(fmt.Sprintf("%s not permitted", capability))
+	}
+	return nil
+}
+
+// loadEnabledProfile reads the profile of a workspace that must already
+// be enabled.
+func (rt *ircRuntime) loadEnabledProfile() (irc.Profile, error) {
+	profile, err := irc.LoadProfile(rt.paths.Profile)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return irc.Profile{}, workspace.NewErrorNotConfigured(fmt.Sprintf(
+				"IRC is not enabled for %q: run `wsm irc enable %s` first",
+				rt.ws.Name, rt.ws.Name,
+			))
+		}
+		return irc.Profile{}, workspace.NewErrorBackend("read irc profile", err)
+	}
+	return profile, nil
+}
+
+// enforcePrereqs runs a prerequisite set and reports the first required
+// failure as exit 70, carrying that check's fix text verbatim and its
+// transience class alongside it.
+//
+// Message rather than the underlying error is surfaced because the
+// prerequisite authors wrote Message to be the corrective action; the
+// error beneath it names what was observed, which is the wrong half to
+// show someone who needs to know what to do next.
+//
+// The transience comes from the failing check rather than from this
+// function, because the failures this one gate produces do not share an
+// answer: a missing ergo binary is permanent and a busy port is
+// transient, and both arrive here as "a required prerequisite failed".
+// Collapsing them onto one class here is exactly the defect that made
+// the old single message unhelpful.
+func enforcePrereqs(prereqs []access.Prerequisite) error {
+	results, err := access.Enforce(prereqs)
+	if err == nil {
+		return nil
+	}
+	for _, r := range results {
+		if !r.Passed && r.Prerequisite.Level == access.LevelRequired {
+			return prerequisiteFor(r.Prerequisite.Transience, r.Prerequisite.Message)
+		}
+	}
+	// No individual required failure to point at: Enforce found one but
+	// the results do not name it, so there is nothing to classify.
+	return workspace.NewErrorPrerequisite(err.Error())
+}
+
+// prerequisiteFor builds the workspace error matching a check's
+// declared transience. An unclassified check yields an unclassified
+// error, which reports as "unknown" rather than as a guess.
+func prerequisiteFor(t access.Transience, msg string) error {
+	switch t {
+	case access.TransiencePermanent:
+		return workspace.NewErrorPrerequisitePermanent(msg)
+	case access.TransienceTransient:
+		return workspace.NewErrorPrerequisiteTransient(msg)
+	default:
+		return workspace.NewErrorPrerequisite(msg)
+	}
+}
+
+// daemonState reports the live daemon's status and whether one is running.
+//
+// A pidfile is evidence a daemon was started, never that one still
+// runs, so the recorded pid is probed before its status is trusted.
+// A stale file therefore reads as stopped, which is what the operator
+// means by "is it up?" and what start needs in order to be idempotent
+// without racing the lock.
+func daemonState(paths irc.Paths) (ircdaemon.Status, bool) {
+	status, err := ircdaemon.ReadStatus(paths.Status)
+	if err != nil {
+		return ircdaemon.Status{State: ircdaemon.StateStopped}, false
+	}
+	if !processAlive(status.PID) {
+		status.State = ircdaemon.StateStopped
+		return status, false
+	}
+	return status, true
+}
+
+// awaitDaemon waits for a spawned daemon to report itself running.
+func awaitDaemon(paths irc.Paths, pid int) (ircdaemon.Status, error) {
+	deadline := time.Now().Add(daemonReadyTimeout)
+	for {
+		status, err := ircdaemon.ReadStatus(paths.Status)
+		if err == nil && status.PID == pid && status.State != ircdaemon.StateStopped {
+			return status, nil
+		}
+		// A child that has already exited will never write a status,
+		// so waiting out the full timeout would only delay the report.
+		if !processAlive(pid) {
+			return ircdaemon.Status{}, workspace.NewErrorPrerequisiteTransient(fmt.Sprintf(
+				"irc daemon exited before reporting ready: see %s", paths.DaemonLog,
+			))
+		}
+		if time.Now().After(deadline) {
+			return ircdaemon.Status{}, workspace.NewErrorPrerequisiteTransient(fmt.Sprintf(
+				"irc daemon did not report ready within %s: see %s",
+				daemonReadyTimeout, paths.DaemonLog,
+			))
+		}
+		time.Sleep(daemonPollInterval)
+	}
+}
+
+// startDaemon spawns the daemon unless one already holds the workspace.
+//
+// Idempotence is the point: the daemon takes an exclusive lock for its
+// lifetime, so a second one would exit 1 on the lock rather than
+// serving anything. Reporting the running daemon's status is both the
+// honest answer to "start it" and what makes the verb safe to re-run
+// from a script or a lifecycle hook.
+//
+// The capability is checked here rather than in each calling verb: this
+// is the single place a daemon is spawned, so gating it covers start,
+// restart, enable and the bus-driven auto-provisioner at once, and a
+// verb added later cannot forget to ask.
+func startDaemon(rt *ircRuntime) (ircdaemon.Status, bool, error) {
+	if err := rt.gate.Require(workspace.CapIRCStart); err != nil {
+		return ircdaemon.Status{}, false, err
+	}
+	if status, running := daemonState(rt.paths); running {
+		return status, false, nil
+	}
+	pid, err := spawnDaemon(rt.paths, rt.ws.ID, nil)
+	if err != nil {
+		// Unclassified: spawning the daemon fails either on a resource
+		// ceiling the system may relieve (transient) or on an argv the
+		// kernel will keep rejecting (permanent).
+		return ircdaemon.Status{}, false, workspace.NewErrorPrerequisite(err.Error())
+	}
+	status, err := awaitDaemon(rt.paths, pid)
+	if err != nil {
+		return ircdaemon.Status{}, false, err
+	}
+	return status, true, nil
+}
+
+// stopDaemon terminates a running daemon and waits for it to leave.
+//
+// The capability is checked before the "is it even running?" shortcut,
+// so a denied caller is refused whether or not a daemon happens to be
+// up. Refusing only when there is something to stop would leak the
+// workspace's daemon state to a caller with no authority over it, and
+// would make the refusal depend on a race.
+//
+// This gate is also what closes the --force hole: --force overrides the
+// shared-host guard further up, never this. A caller without irc.stop
+// cannot take a server down from under its guests by adding a flag.
+func stopDaemon(rt *ircRuntime) (bool, error) {
+	if err := rt.gate.Require(workspace.CapIRCStop); err != nil {
+		return false, err
+	}
+	paths := rt.paths
+	status, running := daemonState(paths)
+	if !running {
+		return false, nil
+	}
+	if err := signalDaemon(status.PID, syscall.SIGTERM); err != nil {
+		// Deliberately unclassified: a signal that fails after the
+		// liveness probe passed is either a daemon that exited in the
+		// gap (a retry clears it) or a permission refusal (it never
+		// will), and the errno alone does not reliably separate them.
+		return false, workspace.NewErrorPrerequisite(fmt.Sprintf("signal irc daemon: %v", err))
+	}
+	deadline := time.Now().Add(daemonReadyTimeout)
+	for processAlive(status.PID) {
+		if time.Now().After(deadline) {
+			return false, &output.Error{
+				Code: output.CodeGeneric,
+				Message: fmt.Sprintf(
+					"irc daemon %d did not exit within %s", status.PID, daemonReadyTimeout),
+				ExitCode: 1,
+			}
+		}
+		time.Sleep(daemonPollInterval)
+	}
+	return true, nil
+}
+
+// newIRCEnableCmd builds `wsm irc enable`.
+func newIRCEnableCmd(opts *globalOptions) *cobra.Command {
+	var (
+		external   bool
+		remote     bool
+		sharedWith string
+		port       int
+		dir        string
+		botStdin   bool
+	)
+
+	cmd := &cobra.Command{
+		Use:   "enable <workspace>",
+		Short: "Enable IRC for a workspace and start its daemon",
+		Long: `Provision a workspace's IRC presence and start its daemon.
+
+Managed mode (the default) checks prerequisites, allocates a consecutive
+port triple, generates the bot account's secrets and the server's API
+token, renders ergo's configuration, creates its database, and starts the
+daemon that supervises it.
+
+External mode (--external) verifies the configured server is reachable and
+starts the bot against it; wsm never owns that server. The bot's password
+is read from stdin with --bot-password-stdin, or resolved from the aps
+secret named by irc.bot.secret_ref.
+
+Re-running against a workspace whose daemon is already up reports that
+daemon rather than starting a second one.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return withApp(opts, func(ctx context.Context, app *appContext) error {
+				return runIRCEnable(ctx, cmd, app, opts, args[0], ircEnableFlags{
+					External:   external,
+					Remote:     remote,
+					SharedWith: sharedWith,
+					Port:       port,
+					Dir:        dir,
+					BotStdin:   botStdin,
+				})
+			})
+		},
+	}
+
+	cmd.Flags().BoolVar(&external, "external", false, "Connect to a server wsm does not own")
+	cmd.Flags().BoolVar(&remote, "remote", false, "Managed: enable the remote TLS/WebSocket listener")
+	cmd.Flags().StringVar(&sharedWith, "shared-with", "", "Attach to another workspace's server as a guest")
+	cmd.Flags().IntVar(&port, "port", 0, "Managed: base port of the triple to use instead of scanning")
+	cmd.Flags().StringVar(&dir, "dir", "", "Workspace root holding .wsm/ (default: current directory)")
+	cmd.Flags().BoolVar(&botStdin, "bot-password-stdin", false, "External: read the bot password from stdin")
+
+	cli.SetSideEffect(cmd, cli.SideEffectWriteLocal)
+	// Conditional rather than yes: a second enable against a running
+	// daemon is a no-op, but the first one provisions ports, secrets
+	// and a database that did not exist before.
+	cli.SetIdempotency(cmd, cli.IdempotencyConditional)
+	setExitCodes(cmd, ClassOK, ClassUsage, ClassNotFound, ClassConflict, ClassUnauthorized, ClassNotConfigured, ClassPrerequisite, ClassBackend)
+	return cmd
+}
+
+// ircEnableFlags is the flag surface of `wsm irc enable`, lifted into a
+// struct so the mapping from flags to behaviour is unit-testable
+// without constructing a cobra command.
+type ircEnableFlags struct {
+	External   bool
+	Remote     bool
+	SharedWith string
+	Port       int
+	Dir        string
+	BotStdin   bool
+}
+
+// mode reports the mode these flags select against a resolved config.
+//
+// --external is a one-way override: it can select external mode when
+// the config says managed, but there is no flag that forces managed,
+// because wsm taking ownership of a server is not something a flag
+// should decide behind the config's back.
+func (f ircEnableFlags) mode(cfg irc.Config) irc.Mode {
+	if f.External {
+		return irc.ModeExternal
+	}
+	return cfg.Mode
+}
+
+// ports reports the port triple these flags select, and whether they
+// select one at all. A --port value names the base of the triple; the
+// remaining two are consecutive, matching what allocation produces.
+func (f ircEnableFlags) ports() (irc.Ports, bool) {
+	if f.Port <= 0 {
+		return irc.Ports{}, false
+	}
+	return irc.Ports{Plain: f.Port, Remote: f.Port + 1, API: f.Port + 2}, true
+}
+
+// root reports the workspace root these flags select.
+func (f ircEnableFlags) root() (string, error) {
+	if f.Dir != "" {
+		return filepath.Abs(f.Dir)
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("resolve working directory: %w", err)
+	}
+	return cwd, nil
+}
+
+// wsmRootMarkers are the directories that mark a wsm workspace root.
+var wsmRootMarkers = []string{
+	filepath.Join(".wsm"),
+	filepath.Join(".hop", "wsm"),
+}
+
+// validateRoot refuses a root that is not a wsm workspace directory.
+//
+// The root is where members.yaml and the per-workspace config override
+// live, and the daemon reads both from the path recorded here long
+// after this command has exited. Accepting a directory with neither
+// marker would record a root that resolves to nothing, producing a
+// daemon that reconciles an empty member list rather than failing here
+// where the operator can still fix it.
+func validateRoot(root string) error {
+	for _, marker := range wsmRootMarkers {
+		if info, err := os.Stat(filepath.Join(root, marker)); err == nil && info.IsDir() {
+			return nil
+		}
+	}
+	return &output.Error{
+		Code: output.CodeUsage,
+		Message: fmt.Sprintf(
+			"%s is not a wsm workspace root: expected .wsm/ or .hop/wsm/", root),
+		SuggestedFix: "run this from the workspace directory, or pass --dir <root>",
+		ExitCode:     2,
+	}
+}
+
+// runIRCEnable provisions a workspace's IRC presence and starts its daemon.
+func runIRCEnable(
+	ctx context.Context,
+	cmd *cobra.Command,
+	app *appContext,
+	opts *globalOptions,
+	ref string,
+	flags ircEnableFlags,
+) error {
+	if flags.SharedWith != "" {
+		return runIRCAttach(ctx, cmd, app, opts, ref, flags)
+	}
+
+	rt, err := resolveIRCRuntime(ctx, app, ref)
+	if err != nil {
+		return err
+	}
+	if err := requireCapability(app, workspace.CapIRCEnable); err != nil {
+		return err
+	}
+
+	root, err := flags.root()
+	if err != nil {
+		return workspace.NewErrorBackend("resolve workspace root", err)
+	}
+	if err := validateRoot(root); err != nil {
+		return err
+	}
+
+	// The root's own override participates from here on: enable is
+	// where the root becomes known, so every later decision (mode,
+	// ports, channels) must see the merged config rather than the
+	// global one resolveIRCRuntime started with.
+	cfg, err := irc.LoadWorkspace(app.cfg.ConfigFile, root)
+	if err != nil {
+		return workspace.NewErrorBackend("load irc config", err)
+	}
+	if !cfg.Enabled {
+		return ircDisabledError()
+	}
+	rt.cfg = cfg
+
+	mode := flags.mode(cfg)
+	cfg.Mode = mode
+	if _, err := cfg.Validate(); err != nil {
+		return &output.Error{
+			Code:         output.CodeUsage,
+			Message:      err.Error(),
+			SuggestedFix: "correct the irc block in your wsm config",
+			ExitCode:     2,
+		}
+	}
+
+	if done, err := previewDryRun(cmd,
+		map[string]any{
+			"workspace": rt.ws.Name,
+			"mode":      string(mode),
+			"root":      root,
+			"remote":    flags.Remote,
+		},
+		cli.Effect{
+			Kind:       "create",
+			Target:     "irc:" + rt.ws.ID,
+			Reversible: true,
+			Detail: fmt.Sprintf("enable %s IRC for workspace %q and start its daemon",
+				mode, rt.ws.Name),
+		},
+	); done {
+		return err
+	}
+
+	// An existing profile means this workspace is already enabled. The
+	// daemon may or may not be up; startDaemon settles that, and the
+	// provisioning below is skipped rather than redone so a re-enable
+	// cannot reallocate ports or regenerate credentials under a live
+	// session.
+	if existing, lerr := irc.LoadProfile(rt.paths.Profile); lerr == nil {
+		status, _, serr := startDaemon(rt)
+		if serr != nil {
+			return serr
+		}
+		return renderIRCEnabled(rt, existing, status, opts)
+	}
+
+	profile := irc.Profile{
+		Mode:       mode,
+		Provider:   cfg.Provider,
+		ServerID:   irc.DefaultServerID(cfg),
+		Root:       root,
+		Remote:     flags.Remote,
+		Bind:       cfg.Bind,
+		BotAccount: cfg.Bot.Account,
+		CreatedAt:  time.Now().UTC(),
+	}
+	if mode == irc.ModeManaged {
+		profile.Provider = irc.ProviderErgo
+	}
+
+	if err := rt.paths.EnsureDirs(); err != nil {
+		return workspace.NewErrorBackend("create irc directories", err)
+	}
+
+	switch mode {
+	case irc.ModeManaged:
+		if err := provisionManaged(ctx, rt, &profile, cfg, flags); err != nil {
+			return err
+		}
+	case irc.ModeExternal:
+		if err := provisionExternal(rt, &profile, cfg, flags); err != nil {
+			return err
+		}
+	default:
+		return &output.Error{
+			Code:         output.CodeUsage,
+			Message:      fmt.Sprintf("irc.mode %q: must be managed|external", mode),
+			SuggestedFix: "set irc.mode to managed or external",
+			ExitCode:     2,
+		}
+	}
+
+	if err := irc.SaveProfile(rt.paths.Profile, profile); err != nil {
+		return workspace.NewErrorBackend("save irc profile", err)
+	}
+
+	status, _, err := startDaemon(rt)
+	if err != nil {
+		return err
+	}
+	return renderIRCEnabled(rt, profile, status, opts)
+}
+
+// runIRCAttach enables a workspace as a guest on another workspace's
+// managed server.
+//
+// The host is resolved through the same path as any other workspace
+// reference, so `--shared-with` accepts a name or an id exactly as the
+// positional argument does. Everything that can be refused is refused
+// before anything is written: the capability, the guest's root, an
+// already-enabled guest, and the host's own suitability.
+func runIRCAttach(
+	ctx context.Context,
+	cmd *cobra.Command,
+	app *appContext,
+	opts *globalOptions,
+	ref string,
+	flags ircEnableFlags,
+) error {
+	rt, err := resolveIRCRuntime(ctx, app, ref)
+	if err != nil {
+		return err
+	}
+	if err := requireCapability(app, workspace.CapIRCEnable); err != nil {
+		return err
+	}
+
+	root, err := flags.root()
+	if err != nil {
+		return workspace.NewErrorBackend("resolve workspace root", err)
+	}
+	if err := validateRoot(root); err != nil {
+		return err
+	}
+
+	// An already-enabled workspace is not attached behind its own back:
+	// re-pointing a live workspace at a different server would strand
+	// the accounts and channels it already has on the old one.
+	if _, lerr := irc.LoadProfile(rt.paths.Profile); lerr == nil {
+		return workspace.NewErrorConflict(fmt.Sprintf(
+			"IRC is already enabled for %q: disable it before attaching it "+
+				"to another workspace's server", rt.ws.Name,
+		))
+	}
+
+	// Checked against the reference before the host is resolved: a
+	// workspace naming itself is a usage mistake knowable from the two
+	// arguments alone, and resolving first would diagnose it as
+	// whatever else happens to be wrong with its own IRC state.
+	if sharesRef(rt.ws, flags.SharedWith) {
+		return selfHostError()
+	}
+
+	host, err := resolveHostRuntime(ctx, app, flags.SharedWith)
+	if err != nil {
+		return err
+	}
+	if host.ws.ID == rt.ws.ID {
+		return selfHostError()
+	}
+
+	if done, derr := previewDryRun(cmd,
+		map[string]any{
+			"workspace":   rt.ws.Name,
+			"shared_with": host.ws.Name,
+			"root":        root,
+		},
+		cli.Effect{
+			Kind:       "create",
+			Target:     "irc:" + rt.ws.ID,
+			Reversible: true,
+			Detail: fmt.Sprintf("attach %q to %q's IRC server as a guest",
+				rt.ws.Name, host.ws.Name),
+		},
+	); done {
+		return derr
+	}
+
+	accounts, err := share.NewHostAccounts(host.profile, host.paths)
+	if err != nil {
+		return workspace.NewErrorPrerequisiteTransient(fmt.Sprintf(
+			"cannot reach %q's ergo API: %v", host.ws.Name, err))
+	}
+
+	guest := &share.Profiles{
+		ID: rt.ws.ID, Name: rt.ws.Name, Paths: rt.paths, Root: root,
+	}
+	hostProfiles := &share.Profiles{
+		ID: host.ws.ID, Name: host.ws.Name, Paths: host.paths,
+		Profile: host.profile, Root: host.profile.Root,
+	}
+
+	if err := share.Attach(ctx, guest, hostProfiles, share.Config{
+		Accounts: accounts,
+		Running:  daemonRunning,
+	}); err != nil {
+		return attachError(err, rt.ws.Name, host.ws.Name)
+	}
+
+	status, _, err := startDaemon(rt)
+	if err != nil {
+		return err
+	}
+	return renderIRCEnabled(rt, guest.Profile, status, opts)
+}
+
+// attachError maps a share failure onto the exit-code contract.
+//
+// The reserved bot account is a conflict (exit 4) rather than a
+// prerequisite: nothing about the environment is broken, the operation
+// collides with a name the host has already given out. An unsuitable
+// host is a prerequisite (exit 70), because the fix is to change the
+// host's state and retry.
+func attachError(err error, guestName, hostName string) error {
+	switch {
+	case errors.Is(err, share.ErrBotAccountReserved):
+		return workspace.NewErrorConflict(fmt.Sprintf(
+			"%v: the host reserves the %s namespace; remove the stale account "+
+				"on %q, or rename this workspace",
+			err, irc.BotAccountPrefix, hostName,
+		))
+	case errors.Is(err, share.ErrHostNotManaged):
+		return workspace.NewErrorPrerequisitePermanent(fmt.Sprintf(
+			"%q does not run its own IRC server, so it cannot host %q: "+
+				"attach to a managed workspace, or enable %q with --external",
+			hostName, guestName, guestName,
+		))
+	case errors.Is(err, share.ErrHostNotRunning):
+		return workspace.NewErrorPrerequisiteTransient(fmt.Sprintf(
+			"%q's IRC daemon is not running: run `wsm irc start %s` first",
+			hostName, hostName,
+		))
+	default:
+		// Unclassified: share.Attach's residual failures span a
+		// down host (transient) and a host that cannot host at all
+		// (permanent), and this branch is the one that did not
+		// identify which.
+		return workspace.NewErrorPrerequisite(err.Error())
+	}
+}
+
+// sharesRef reports whether ref names ws itself, by id or by name.
+//
+// Compared before the host is resolved, so `--shared-with` naming the
+// workspace being enabled is diagnosed as the usage mistake it is
+// rather than as a fault in that workspace's own IRC state. The name
+// comparison is case-insensitive because workspace references resolve
+// that way everywhere else.
+func sharesRef(ws *model.Workspace, ref string) bool {
+	ref = strings.TrimSpace(ref)
+	if ref == "" || ws == nil {
+		return false
+	}
+	return ref == ws.ID || strings.EqualFold(ref, ws.Name)
+}
+
+// selfHostError is the refusal for a workspace named as its own host.
+func selfHostError() error {
+	return &output.Error{
+		Code:         output.CodeUsage,
+		Message:      "--shared-with names this same workspace",
+		SuggestedFix: "name the workspace whose server should host this one",
+		ExitCode:     2,
+	}
+}
+
+// hostRuntime is the resolved state of a workspace acting as a host.
+type hostRuntime struct {
+	ws      *model.Workspace
+	paths   irc.Paths
+	profile irc.Profile
+}
+
+// resolveHostRuntime resolves the workspace named by --shared-with and
+// loads the IRC state that decides whether it can host anything.
+func resolveHostRuntime(ctx context.Context, app *appContext, ref string) (*hostRuntime, error) {
+	ws, err := app.manager.ResolveWorkspaceRef(ctx, ref)
+	if err != nil {
+		return nil, err
+	}
+	paths, err := irc.ResolvePaths(irc.PathsInput{
+		DataDir:  app.cfg.DataDir,
+		StateDir: app.cfg.StateDir,
+	}, ws.ID)
+	if err != nil {
+		return nil, workspace.NewErrorNotConfigured(err.Error())
+	}
+	profile, err := irc.LoadProfile(paths.Profile)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, workspace.NewErrorNotConfigured(fmt.Sprintf(
+				"IRC is not enabled for %q, so it cannot host another "+
+					"workspace: run `wsm irc enable %s` first", ws.Name, ws.Name,
+			))
+		}
+		return nil, workspace.NewErrorBackend("read irc profile", err)
+	}
+	return &hostRuntime{ws: ws, paths: paths, profile: profile}, nil
+}
+
+// daemonRunning reports whether a workspace's daemon is live, which is
+// what share.Attach and share.Detach probe the host with.
+func daemonRunning(paths irc.Paths) bool {
+	_, running := daemonState(paths)
+	return running
+}
+
+// detachFromHost unwinds a guest's attachment before its daemon stops.
+//
+// Ordering is share.Detach's contract, not this function's: everything
+// here does is resolve the host and translate a failure. A host that is
+// stopped leaves the detach pending, which is exit 1 with the rerun
+// hint rather than a hard failure — the guest has already been excluded
+// on the host side, so the operator's next move is to start the host,
+// not to undo anything.
+func detachFromHost(
+	ctx context.Context,
+	app *appContext,
+	rt *ircRuntime,
+	profile *irc.Profile,
+) error {
+	guest := &share.Profiles{
+		ID: rt.ws.ID, Name: rt.ws.Name, Paths: rt.paths,
+		Profile: *profile, Root: profile.Root,
+	}
+
+	// The host may be gone entirely (purged with --force). That is not a
+	// failure: the guest still has to clear its own side, which Detach
+	// does when the host's state no longer exists.
+	var hostProfiles *share.Profiles
+	if host, err := resolveHostRuntime(ctx, app, profile.HostWorkspace); err == nil {
+		hostProfiles = &share.Profiles{
+			ID: host.ws.ID, Name: host.ws.Name, Paths: host.paths,
+			Profile: host.profile, Root: host.profile.Root,
+		}
+	} else if hostPaths, perr := irc.ResolvePaths(irc.PathsInput{
+		DataDir:  app.cfg.DataDir,
+		StateDir: app.cfg.StateDir,
+	}, profile.HostWorkspace); perr == nil {
+		hostProfiles = &share.Profiles{ID: profile.HostWorkspace, Paths: hostPaths}
+	}
+
+	err := share.Detach(ctx, guest, hostProfiles, share.Config{
+		Running: daemonRunning,
+		Signal: func(paths irc.Paths) error {
+			status, running := daemonState(paths)
+			if !running {
+				return nil
+			}
+			return signalDaemon(status.PID, syscall.SIGHUP)
+		},
+	})
+	*profile = guest.Profile
+
+	if errors.Is(err, share.ErrHostStoppedAtDetach) {
+		return &output.Error{
+			Code:         output.CodeGeneric,
+			Message:      err.Error(),
+			SuggestedFix: fmt.Sprintf("run `wsm irc disable %s` again once the host is up", rt.ws.Name),
+			ExitCode:     1,
+		}
+	}
+	if err != nil {
+		// Unclassified: detach failures reach here from both the host
+		// side (a reconcile the host refused, which a retry may clear)
+		// and the guest's own state, with no marker separating them.
+		return workspace.NewErrorPrerequisite(err.Error())
+	}
+	return nil
+}
+
+// provisionManaged prepares everything a wsm-owned ergo needs.
+//
+// The order is forced by ergo itself: the config names the certificate
+// files relatively, so mkcerts must run in the directory that holds
+// them before initdb parses the document, and initdb needs the
+// rendered config to exist before it can create the database the
+// config points at.
+func provisionManaged(
+	ctx context.Context,
+	rt *ircRuntime,
+	profile *irc.Profile,
+	cfg irc.Config,
+	flags ircEnableFlags,
+) error {
+	managed.Binary = cfg.Binary
+
+	if err := enforcePrereqs(managed.PreflightStatic(cfg)); err != nil {
+		return err
+	}
+
+	if explicit, ok := flags.ports(); ok {
+		if !irc.PortsFree(explicit) {
+			return workspace.NewErrorPrerequisiteTransient(fmt.Sprintf(
+				"ports %d-%d are not all free: choose another --port base",
+				explicit.Plain, explicit.API,
+			))
+		}
+		profile.Ports = explicit
+	} else {
+		allocated, err := irc.AllocatePorts(cfg.PortRange, nil)
+		if err != nil {
+			// Unclassified on purpose: this fails either because
+			// irc.port_range is malformed (permanent) or because every
+			// block in a valid range is currently held (transient), and
+			// the two arrive as the same error value.
+			return workspace.NewErrorPrerequisite(err.Error())
+		}
+		profile.Ports = allocated
+	}
+
+	secrets, err := irc.LoadSecrets(rt.paths.Secrets)
+	if err != nil {
+		return workspace.NewErrorBackend("load irc secrets", err)
+	}
+	if _, held := secrets.Get(profile.BotAccount); !held {
+		passphrase, gerr := irc.GeneratePassphrase()
+		if gerr != nil {
+			return workspace.NewErrorBackend("generate passphrase", gerr)
+		}
+		secrets.Set(profile.BotAccount, passphrase)
+	}
+	if err := secrets.Save(rt.paths.Secrets); err != nil {
+		return workspace.NewErrorBackend("save irc secrets", err)
+	}
+
+	if _, err := irc.LoadAPIToken(rt.paths.APIToken); err != nil {
+		token, gerr := managed.GenToken(ctx)
+		if gerr != nil {
+			// Unclassified: like Mkcerts, a non-zero ergo exit here is
+			// either a wrong binary or an interrupted run.
+			return workspace.NewErrorPrerequisite(gerr.Error())
+		}
+		if serr := irc.SaveAPIToken(rt.paths.APIToken, token); serr != nil {
+			return workspace.NewErrorBackend("save irc api token", serr)
+		}
+	}
+
+	// Self-signed material is generated only when the remote listener
+	// is on and the operator has not supplied a certificate: an empty
+	// cert path means "generate", never "fail".
+	if profile.Remote && cfg.Remote.TLSCert == "" && cfg.Remote.TLSKey == "" {
+		if err := os.MkdirAll(rt.paths.TLSDir, 0o700); err != nil {
+			return workspace.NewErrorBackend("create irc tls dir", err)
+		}
+		if err := managed.Mkcerts(ctx, rt.paths.TLSDir); err != nil {
+			// Unclassified: `ergo mkcerts` fails either because the
+			// binary is wrong for this version (permanent) or because
+			// the run was interrupted (transient), and it reports both
+			// as a non-zero exit.
+			return workspace.NewErrorPrerequisite(err.Error())
+		}
+	}
+
+	rendered, err := managed.Renderer{Paths: rt.paths}.RenderConfig(cfg, *profile, secrets)
+	if err != nil {
+		return workspace.NewErrorBackend("render ergo config", err)
+	}
+	if err := os.WriteFile(rt.paths.ErgoYAML, rendered, 0o600); err != nil {
+		return workspace.NewErrorBackend("write ergo config", err)
+	}
+
+	if _, err := os.Stat(rt.paths.DB); errors.Is(err, os.ErrNotExist) {
+		if ierr := managed.Initdb(ctx, rt.paths.ErgoYAML); ierr != nil {
+			// Unclassified: initdb fails on a config ergo rejects
+			// (permanent) and on a database file briefly locked by
+			// another run (transient), reported identically.
+			return workspace.NewErrorPrerequisite(ierr.Error())
+		}
+	}
+	return nil
+}
+
+// provisionExternal verifies a server wsm does not own and records the
+// bot's credential.
+func provisionExternal(
+	rt *ircRuntime,
+	profile *irc.Profile,
+	cfg irc.Config,
+	flags ircEnableFlags,
+) error {
+	if err := enforcePrereqs(irc.PreflightExternal(cfg)); err != nil {
+		return err
+	}
+
+	secrets, err := irc.LoadSecrets(rt.paths.Secrets)
+	if err != nil {
+		return workspace.NewErrorBackend("load irc secrets", err)
+	}
+
+	if flags.BotStdin {
+		password, rerr := readBotPasswordStdin()
+		if rerr != nil {
+			return rerr
+		}
+		secrets.Set(cfg.Bot.Account, password)
+		if serr := secrets.Save(rt.paths.Secrets); serr != nil {
+			return workspace.NewErrorBackend("save irc secrets", serr)
+		}
+	}
+
+	// The bot cannot authenticate without a password, and discovering
+	// that at connect time would leave a workspace enabled against a
+	// server it can never reach. Checking here keeps the failure at
+	// the point where the fix (--bot-password-stdin, or an aps
+	// secret_ref) is still in the operator's hands.
+	if _, err := irc.ReadBotPassword(cfg, secrets); err != nil {
+		if errors.Is(err, irc.ErrNoBotSecret) {
+			return workspace.NewErrorNotConfigured(fmt.Sprintf(
+				"no password for bot account %q: pass --bot-password-stdin, "+
+					"or set irc.bot.secret_ref to an aps secret", cfg.Bot.Account,
+			))
+		}
+		// Unclassified: a secret_ref that does not resolve may be a
+		// missing aps entry (permanent) or a store that is temporarily
+		// unavailable (transient).
+		return workspace.NewErrorPrerequisite(err.Error())
+	}
+	return nil
+}
+
+// readBotPasswordStdin reads one password from stdin.
+//
+// The inherited descriptor is read directly rather than reopened by
+// name: os.Stdin.Name() is the label "/dev/stdin", which on a pipe
+// either names nothing openable or, worse, resolves to a different
+// stream than the one the caller redirected.
+func readBotPasswordStdin() (string, error) {
+	raw, err := io.ReadAll(os.Stdin)
+	if err != nil {
+		return "", workspace.NewErrorBackend("read bot password from stdin", err)
+	}
+	password := strings.TrimRight(string(raw), "\r\n")
+	if password == "" {
+		return "", workspace.NewErrorNotConfigured("bot password on stdin is empty")
+	}
+	return password, nil
+}
+
+// newIRCDisableCmd builds `wsm irc disable`.
+func newIRCDisableCmd(opts *globalOptions) *cobra.Command {
+	var (
+		purge bool
+		force bool
+	)
+
+	cmd := &cobra.Command{
+		Use:   "disable <workspace>",
+		Short: "Stop a workspace's IRC daemon",
+		Long: `Stop the workspace's IRC daemon.
+
+The workspace's data and state directories are left in place so the
+daemon can be started again with everything it had. --purge removes
+them instead, which destroys the server's database, its generated
+certificates and every secret wsm holds for it; that is gated by the
+global --confirm flag like any other destructive verb.
+
+A workspace hosting guests is refused: disabling it takes the server
+out from under workspaces that are not this one. --force overrides
+that, leaving the guests to fail on their next reconnect.`,
+		Args: cobra.ExactArgs(1),
+		PreRunE: func(cmd *cobra.Command, _ []string) error {
+			// --force carries two meanings here and only one of them
+			// is kit's: it overrides the guest refusal (handled in the
+			// RunE) and, on a purge, stands in for --confirm=yes the
+			// way it does on every other destructive wsm verb.
+			if purge {
+				return bridgeForceToConfirm(cmd, force)
+			}
+			return nil
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return withApp(opts, func(ctx context.Context, app *appContext) error {
+				return runIRCDisable(ctx, cmd, app, opts, args[0], purge, force)
+			})
+		},
+	}
+
+	cmd.Flags().BoolVar(&purge, "purge", false, "Also remove the workspace's IRC data and state directories")
+	cmd.Flags().BoolVar(&force, "force", false, "Disable even while guest workspaces are hosted here")
+
+	// write-local rather than destructive, even though --purge destroys
+	// data. kit's confirm gate keys on the verb's tag and fires before
+	// this command's RunE, so a destructive tag would demand a
+	// confirmation for the bare stop as well — and would mask the
+	// feature gate, the workspace lookup and the shared-server refusal
+	// behind a blanket UNAUTHORIZED. The destructive half is gated
+	// below instead, where --purge is actually known.
+	cli.SetSideEffect(cmd, cli.SideEffectWriteLocal)
+	cli.SetIdempotency(cmd, cli.IdempotencyConditional)
+	setExitCodes(cmd, ClassOK, ClassUsage, ClassNotFound, ClassUnauthorized, ClassNotConfigured, ClassPrerequisite, ClassBackend)
+	return cmd
+}
+
+// gatePurge enforces the confirmation contract for `disable --purge`.
+//
+// This reproduces kit's --confirm matrix for one flag rather than the
+// whole verb: yes proceeds, no refuses, and auto resolves the way kit
+// resolves it — prompt on a terminal, refuse off one, so a script that
+// did not ask for destruction never gets it. The envelope matches
+// kit's own so the refusal is indistinguishable from the gate it
+// stands in for.
+func gatePurge(cmd *cobra.Command) error {
+	mode := strings.ToLower(strings.TrimSpace(confirmFlagValue(cmd)))
+	switch mode {
+	case "yes":
+		return nil
+	case "no":
+		return purgeRefused(cmd)
+	}
+	// auto, prompt, or unset.
+	if !stdoutIsTTY() {
+		return purgeRefused(cmd)
+	}
+	fmt.Fprintf(cmd.ErrOrStderr(),
+		"This permanently removes the workspace's IRC data and state (%s). Continue? [y/N] ",
+		cmd.CommandPath())
+	var answer string
+	if _, err := fmt.Fscanln(cmd.InOrStdin(), &answer); err != nil {
+		return purgeRefused(cmd)
+	}
+	switch strings.ToLower(strings.TrimSpace(answer)) {
+	case "y", "yes":
+		return nil
+	default:
+		return purgeRefused(cmd)
+	}
+}
+
+// purgeRefused is the envelope a declined purge produces.
+func purgeRefused(cmd *cobra.Command) error {
+	return &output.Error{
+		Code: output.CodeUnauthorized,
+		Message: "destructive command " + cmd.CommandPath() +
+			" --purge refused: --confirm=no (or non-TTY default)",
+		SuggestedFix: "pass --confirm=yes to remove the workspace's IRC data and state",
+		ExitCode:     ExitForbidden,
+	}
+}
+
+// confirmFlagValue reads the inherited --confirm flag.
+//
+// The flag is registered by kit on the root's persistent set, so it is
+// found by walking up the parent chain rather than on this command.
+func confirmFlagValue(cmd *cobra.Command) string {
+	for c := cmd; c != nil; c = c.Parent() {
+		if f := c.PersistentFlags().Lookup("confirm"); f != nil {
+			return f.Value.String()
+		}
+		if f := c.Flags().Lookup("confirm"); f != nil {
+			return f.Value.String()
+		}
+	}
+	return ""
+}
+
+// guardSharedHost refuses a teardown of a server other workspaces sit on.
+//
+// Guests are other workspaces whose channels and accounts live on this
+// server. Taking it down is not this workspace's decision alone, so the
+// refusal is a conflict rather than a prerequisite: nothing about the
+// environment is broken, the operation simply collides with someone
+// else's state. gerund names the half that does the damage ("disabling",
+// "stopping", "restarting") so every verb that stops a daemon refuses in
+// one shape rather than each inventing its own phrasing.
+func guardSharedHost(rt *ircRuntime, profile irc.Profile, gerund string, force bool) error {
+	if len(profile.SharedWith) == 0 || force {
+		return nil
+	}
+	return workspace.NewErrorConflict(fmt.Sprintf(
+		"workspace %q hosts %d guest workspace(s) on its IRC server (%s): "+
+			"%s it would cut them off; pass --force to proceed anyway",
+		rt.ws.Name, len(profile.SharedWith), strings.Join(profile.SharedWith, ", "),
+		gerund,
+	))
+}
+
+// runIRCDisable stops the daemon and optionally removes its directories.
+func runIRCDisable(
+	ctx context.Context,
+	cmd *cobra.Command,
+	app *appContext,
+	opts *globalOptions,
+	ref string,
+	purge bool,
+	force bool,
+) error {
+	rt, err := resolveIRCRuntime(ctx, app, ref)
+	if err != nil {
+		return err
+	}
+	if err := requireCapability(app, workspace.CapIRCDisable); err != nil {
+		return err
+	}
+	if purge {
+		if err := requireCapability(app, workspace.CapIRCPurge); err != nil {
+			return err
+		}
+	}
+
+	profile, err := rt.loadEnabledProfile()
+	if err != nil {
+		return err
+	}
+
+	if err := guardSharedHost(rt, profile, "disabling", force); err != nil {
+		return err
+	}
+
+	if purge {
+		if done, derr := previewDryRun(cmd,
+			map[string]any{"workspace": rt.ws.Name, "purge": true},
+			cli.Effect{
+				Kind:       "delete",
+				Target:     "irc:" + rt.ws.ID,
+				Reversible: false,
+				Detail: fmt.Sprintf("remove %s and %s",
+					rt.paths.DataDir, rt.paths.StateDir),
+			},
+		); done {
+			return derr
+		}
+		// Gated after the dry-run preview, which destroys nothing, and
+		// after the guest refusal above, so the operator is never asked
+		// to confirm an operation that is going to be refused anyway.
+		if gerr := gatePurge(cmd); gerr != nil {
+			return gerr
+		}
+	}
+
+	// A guest is detached before its daemon stops: the final reconcile
+	// that strips the roles it authored on the host needs a live bot,
+	// and stopping first would strand them there as roles nobody claims.
+	if profile.HostWorkspace != "" {
+		if derr := detachFromHost(ctx, app, rt, &profile); derr != nil {
+			return derr
+		}
+		if serr := irc.SaveProfile(rt.paths.Profile, profile); serr != nil {
+			return workspace.NewErrorBackend("save irc profile", serr)
+		}
+	}
+
+	stopped, err := stopDaemon(rt)
+	if err != nil {
+		return err
+	}
+
+	if purge {
+		for _, dir := range []string{rt.paths.DataDir, rt.paths.StateDir} {
+			if rerr := os.RemoveAll(dir); rerr != nil {
+				return workspace.NewErrorBackend(fmt.Sprintf("remove %s", dir), rerr)
+			}
+		}
+	}
+
+	payload := map[string]any{
+		"workspace": rt.ws.Name,
+		"id":        rt.ws.ID,
+		"stopped":   stopped,
+		"purged":    purge,
+	}
+	if opts.Quiet {
+		return nil
+	}
+	if isMachineFormat(opts) {
+		return output.Render(os.Stdout, machineFormat(opts), payload)
+	}
+	// §6.3: acknowledgements are non-data → stderr.
+	if stopped {
+		fmt.Fprintf(os.Stderr, "Stopped IRC daemon for %q\n", rt.ws.Name)
+	} else {
+		fmt.Fprintf(os.Stderr, "No IRC daemon running for %q\n", rt.ws.Name)
+	}
+	if purge {
+		fmt.Fprintf(os.Stderr, "Removed IRC data and state for %q\n", rt.ws.Name)
+	}
+	return nil
+}
+
+// newIRCStartCmd builds `wsm irc start`.
+func newIRCStartCmd(opts *globalOptions) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "start <workspace>",
+		Short: "Start a workspace's IRC daemon",
+		Long: `Start the IRC daemon for a workspace that is already enabled.
+
+In managed mode the recorded port triple is re-checked before the daemon
+is spawned: a port that something else has taken since enable is reported
+rather than silently reallocated, because a workspace that moves ports
+behind the operator's back breaks every client configured for it.
+
+Starting a workspace whose daemon is already up reports that daemon and
+starts nothing.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			return withApp(opts, func(ctx context.Context, app *appContext) error {
+				return runIRCStart(ctx, app, opts, args[0])
+			})
+		},
+	}
+	cli.SetSideEffect(cmd, cli.SideEffectWriteLocal)
+	cli.SetIdempotency(cmd, cli.IdempotencyConditional)
+	setExitCodes(cmd, ClassOK, ClassUsage, ClassNotFound, ClassConflict, ClassUnauthorized, ClassNotConfigured, ClassPrerequisite, ClassBackend)
+	return cmd
+}
+
+// runIRCStart starts the daemon for an enabled workspace.
+func runIRCStart(ctx context.Context, app *appContext, opts *globalOptions, ref string) error {
+	rt, err := resolveIRCRuntime(ctx, app, ref)
+	if err != nil {
+		return err
+	}
+	profile, err := rt.loadEnabledProfile()
+	if err != nil {
+		return err
+	}
+	if err := checkRecordedPorts(profile, rt.paths); err != nil {
+		return err
+	}
+	status, _, err := startDaemon(rt)
+	if err != nil {
+		return err
+	}
+	return renderIRCEnabled(rt, profile, status, opts)
+}
+
+// checkRecordedPorts re-verifies a managed workspace's allocated ports.
+//
+// Skipped while a daemon is running, because the ports are then held by
+// the very ergo this workspace owns: probing them would report the
+// workspace's own server as a conflict with itself.
+func checkRecordedPorts(profile irc.Profile, paths irc.Paths) error {
+	if profile.Mode != irc.ModeManaged || !profile.Ports.Valid() {
+		return nil
+	}
+	if _, running := daemonState(paths); running {
+		return nil
+	}
+	if !irc.PortsFree(profile.Ports) {
+		return workspace.NewErrorPrerequisiteTransient(fmt.Sprintf(
+			"ports %d-%d recorded for this workspace are in use: "+
+				"free them, or re-enable the workspace to allocate a new triple",
+			profile.Ports.Plain, profile.Ports.API,
+		))
+	}
+	return nil
+}
+
+// newIRCStopCmd builds `wsm irc stop`.
+func newIRCStopCmd(opts *globalOptions) *cobra.Command {
+	var force bool
+
+	cmd := &cobra.Command{
+		Use:   "stop <workspace>",
+		Short: "Stop a workspace's IRC daemon",
+		Long: `Stop the workspace's IRC daemon, leaving everything it owns in place.
+
+The daemon shuts the bot down, stops the managed server if it supervises
+one, and exits. Nothing is removed: start brings the workspace back with
+the same ports, accounts and history. Stopping a workspace whose daemon
+is already down succeeds and reports it.
+
+A workspace hosting guests is refused: stopping it takes the server out
+from under workspaces that are not this one. --force overrides that,
+leaving the guests to fail on their next reconnect.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			return withApp(opts, func(ctx context.Context, app *appContext) error {
+				return runIRCStop(ctx, app, opts, args[0], force)
+			})
+		},
+	}
+	cmd.Flags().BoolVar(&force, "force", false, "Stop even while guest workspaces are hosted here")
+	cli.SetSideEffect(cmd, cli.SideEffectWriteLocal)
+	cli.SetIdempotency(cmd, cli.IdempotencyYes)
+	setExitCodes(cmd, ClassOK, ClassUsage, ClassNotFound, ClassConflict, ClassUnauthorized, ClassNotConfigured, ClassPrerequisite, ClassBackend)
+	return cmd
+}
+
+// runIRCStop stops a workspace's daemon.
+func runIRCStop(
+	ctx context.Context,
+	app *appContext,
+	opts *globalOptions,
+	ref string,
+	force bool,
+) error {
+	rt, err := resolveIRCRuntime(ctx, app, ref)
+	if err != nil {
+		return err
+	}
+	profile, err := rt.loadEnabledProfile()
+	if err != nil {
+		return err
+	}
+	// Ahead of the shared-host guard, so the capability refusal is the
+	// one the caller sees. --force overrides that guard by design; a
+	// denied caller must be refused as forbidden (6) rather than as a
+	// guest conflict (4), whichever way the flag is set.
+	if err := rt.gate.Require(workspace.CapIRCStop); err != nil {
+		return err
+	}
+	if err := guardSharedHost(rt, profile, "stopping", force); err != nil {
+		return err
+	}
+	stopped, err := stopDaemon(rt)
+	if err != nil {
+		return err
+	}
+
+	if opts.Quiet {
+		return nil
+	}
+	if isMachineFormat(opts) {
+		return output.Render(os.Stdout, machineFormat(opts), map[string]any{
+			"workspace": rt.ws.Name,
+			"id":        rt.ws.ID,
+			"stopped":   stopped,
+		})
+	}
+	if stopped {
+		fmt.Fprintf(os.Stderr, "Stopped IRC daemon for %q\n", rt.ws.Name)
+	} else {
+		fmt.Fprintf(os.Stderr, "No IRC daemon running for %q\n", rt.ws.Name)
+	}
+	return nil
+}
+
+// newIRCRestartCmd builds `wsm irc restart`.
+func newIRCRestartCmd(opts *globalOptions) *cobra.Command {
+	var force bool
+
+	cmd := &cobra.Command{
+		Use:   "restart <workspace>",
+		Short: "Restart a workspace's IRC daemon",
+		Long: `Stop the workspace's IRC daemon if it is running, then start it again.
+
+Managed mode re-checks the recorded port triple between the two halves,
+after the old daemon has released it, so a port taken by something else
+in the meantime is reported rather than inherited. Restarting a stopped
+workspace simply starts it.
+
+A workspace hosting guests is refused: the stop half drops the server
+out from under workspaces that are not this one, and the restart that
+follows cannot promise they reconnect. --force overrides that.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			return withApp(opts, func(ctx context.Context, app *appContext) error {
+				return runIRCRestart(ctx, app, opts, args[0], force)
+			})
+		},
+	}
+	cmd.Flags().BoolVar(&force, "force", false, "Restart even while guest workspaces are hosted here")
+	cli.SetSideEffect(cmd, cli.SideEffectWriteLocal)
+	cli.SetIdempotency(cmd, cli.IdempotencyConditional)
+	setExitCodes(cmd, ClassOK, ClassUsage, ClassNotFound, ClassConflict, ClassUnauthorized, ClassNotConfigured, ClassPrerequisite, ClassBackend)
+	return cmd
+}
+
+// runIRCRestart stops then starts a workspace's daemon.
+func runIRCRestart(
+	ctx context.Context,
+	app *appContext,
+	opts *globalOptions,
+	ref string,
+	force bool,
+) error {
+	rt, err := resolveIRCRuntime(ctx, app, ref)
+	if err != nil {
+		return err
+	}
+	profile, err := rt.loadEnabledProfile()
+	if err != nil {
+		return err
+	}
+	// Both halves are asked for up front, and stop is named first: it
+	// is the half that can cut guests off a shared server, so it is the
+	// one a refusal should name. Checked ahead of the shared-host guard
+	// for the same reason as stop — --force must not turn a capability
+	// refusal into a conflict.
+	if err := rt.gate.RequireAll(workspace.CapIRCStop, workspace.CapIRCStart); err != nil {
+		return err
+	}
+	if err := guardSharedHost(rt, profile, "restarting", force); err != nil {
+		return err
+	}
+	if _, err := stopDaemon(rt); err != nil {
+		return err
+	}
+	// Checked after the stop: the ports are only observable once the
+	// daemon that held them has gone.
+	if err := checkRecordedPorts(profile, rt.paths); err != nil {
+		return err
+	}
+	status, _, err := startDaemon(rt)
+	if err != nil {
+		return err
+	}
+	return renderIRCEnabled(rt, profile, status, opts)
+}
+
+// newIRCSyncCmd builds `wsm irc sync`.
+func newIRCSyncCmd(opts *globalOptions) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "sync <workspace>",
+		Short: "Reconcile a workspace's IRC state now",
+		Long: `Ask the running daemon to reconcile immediately.
+
+Reconciliation creates missing accounts, registers missing channels and
+brings roles in line with the workspace's members. The daemon does this
+on start and whenever members.yaml changes; sync is for making it happen
+now without waiting.
+
+The request is a signal to the running daemon, so a workspace whose
+daemon is stopped is an error rather than a silent no-op: nothing would
+have reconciled.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			return withApp(opts, func(ctx context.Context, app *appContext) error {
+				return runIRCSync(ctx, app, opts, args[0])
+			})
+		},
+	}
+	cli.SetSideEffect(cmd, cli.SideEffectWriteShared)
+	cli.SetIdempotency(cmd, cli.IdempotencyYes)
+	setExitCodes(cmd, ClassOK, ClassUsage, ClassNotFound, ClassUnauthorized, ClassNotConfigured, ClassPrerequisite, ClassBackend)
+	return cmd
+}
+
+// runIRCSync signals the running daemon to reconcile.
+func runIRCSync(ctx context.Context, app *appContext, opts *globalOptions, ref string) error {
+	rt, err := resolveIRCRuntime(ctx, app, ref)
+	if err != nil {
+		return err
+	}
+	if _, err := rt.loadEnabledProfile(); err != nil {
+		return err
+	}
+	// Reconciling rewrites accounts, roles and channel registrations on
+	// the server, so it is a mutation asked of the daemon rather than a
+	// read of it.
+	if err := rt.gate.Require(workspace.CapIRCSync); err != nil {
+		return err
+	}
+
+	status, running := daemonState(rt.paths)
+	if !running {
+		return &output.Error{
+			Code:         output.CodeGeneric,
+			Message:      fmt.Sprintf("irc daemon not running for %q", rt.ws.Name),
+			SuggestedFix: fmt.Sprintf("run `wsm irc start %s`", rt.ws.Name),
+			ExitCode:     1,
+		}
+	}
+	if err := signalDaemon(status.PID, syscall.SIGHUP); err != nil {
+		return &output.Error{
+			Code:     output.CodeGeneric,
+			Message:  fmt.Sprintf("signal irc daemon %d: %v", status.PID, err),
+			ExitCode: 1,
+		}
+	}
+
+	if opts.Quiet {
+		return nil
+	}
+	if isMachineFormat(opts) {
+		return output.Render(os.Stdout, machineFormat(opts), map[string]any{
+			"workspace": rt.ws.Name,
+			"id":        rt.ws.ID,
+			"synced":    true,
+			"pid":       status.PID,
+		})
+	}
+	fmt.Fprintf(os.Stderr, "Requested reconcile for %q\n", rt.ws.Name)
+	return nil
+}
+
+// newIRCStatusCmd builds `wsm irc status`.
+func newIRCStatusCmd(opts *globalOptions) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "status <workspace>",
+		Short: "Show a workspace's IRC state",
+		Long: `Report what the workspace's IRC presence is doing.
+
+The daemon maintains the machine-readable half of this (state, pids,
+negotiated capabilities, the last reconcile); this command adds what only
+it can know — the workspace's name, its configuration warnings, and, when
+an ergo HTTP API is reachable, live channel occupancy.
+
+A workspace whose daemon is not running reports state "stopped" and exits
+0: "it is not running" is an answer, not a failure.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			return withApp(opts, func(ctx context.Context, app *appContext) error {
+				return runIRCStatus(ctx, app, opts, args[0])
+			})
+		},
+	}
+	cli.SetSideEffect(cmd, cli.SideEffectRead)
+	cli.SetIdempotency(cmd, cli.IdempotencyYes)
+	setExitCodes(cmd, ClassOK, ClassUsage, ClassNotFound, ClassNotConfigured, ClassPrerequisite, ClassBackend)
+	return cmd
+}
+
+// ircStatusDoc is the `wsm irc status --json` document.
+//
+// It is the daemon's status.json plus the three things the daemon
+// cannot supply: the workspace's human name, the warnings that need the
+// config to spot, and live channel occupancy from the server's API.
+type ircStatusDoc struct {
+	Workspace   string             `json:"workspace"`
+	ID          string             `json:"id"`
+	Mode        irc.Mode           `json:"mode"`
+	Provider    irc.ProviderName   `json:"provider"`
+	State       ircdaemon.State    `json:"state"`
+	PID         int                `json:"pid,omitempty"`
+	ErgoPID     int                `json:"ergo_pid,omitempty"`
+	Ports       *irc.Ports         `json:"ports,omitempty"`
+	Remote      bool               `json:"remote"`
+	Server      ircdaemon.Server   `json:"server"`
+	Caps        ircdaemon.Caps     `json:"caps"`
+	Since       *time.Time         `json:"since,omitempty"`
+	Reasons     []string           `json:"reasons,omitempty"`
+	Restarts    int                `json:"restarts,omitempty"`
+	Warnings    []string           `json:"warnings,omitempty"`
+	ErgoVersion string             `json:"ergo_version,omitempty"`
+	Channels    []ircStatusChannel `json:"channels,omitempty"`
+	SharedWith  []string           `json:"shared_with,omitempty"`
+	Host        string             `json:"host_workspace,omitempty"`
+
+	// Discovered lists the creator-namespace channels wsm has adopted.
+	Discovered []provision.DiscoveredChannel `json:"discovered,omitempty"`
+	// Peer lists channels founded by another wsm bot on this server.
+	Peer []provision.PeerChannel `json:"peer,omitempty"`
+	// Unmanaged lists registrations wsm does not own, per the configured
+	// unmanaged_channels policy.
+	Unmanaged []provision.UnmanagedChannel `json:"unmanaged,omitempty"`
+	// LastDiscover is the most recent discovery pass, embedded verbatim.
+	LastDiscover *provision.DiscoverReport `json:"last_discover,omitempty"`
+}
+
+// ircStatusChannel is one channel's live state.
+type ircStatusChannel struct {
+	Name       string `json:"name"`
+	Registered bool   `json:"registered"`
+	Members    int    `json:"members"`
+}
+
+// runIRCStatus reports a workspace's IRC state.
+func runIRCStatus(ctx context.Context, app *appContext, opts *globalOptions, ref string) error {
+	rt, err := resolveIRCRuntime(ctx, app, ref)
+	if err != nil {
+		return err
+	}
+	profile, err := rt.loadEnabledProfile()
+	if err != nil {
+		return err
+	}
+
+	status, running := daemonState(rt.paths)
+	doc := ircStatusDoc{
+		Workspace:   rt.ws.Name,
+		ID:          rt.ws.ID,
+		Mode:        profile.Mode,
+		Provider:    profile.Provider,
+		State:       status.State,
+		Remote:      profile.Remote,
+		Server:      status.Server,
+		Caps:        status.Caps,
+		Reasons:     status.Reasons,
+		Restarts:    status.Restarts,
+		ErgoVersion: status.ErgoVersion,
+		SharedWith:  profile.SharedWith,
+		Host:        profile.HostWorkspace,
+		Warnings:    ircStatusWarnings(rt.cfg, status),
+
+		// Discovery results come from the daemon's document rather than
+		// from a live pass, and are reported whether or not a daemon is
+		// running now: the last status.json still records what wsm
+		// adopted, and dropping it on a stopped workspace would report
+		// no adopted channels where there are several.
+		Discovered:   status.Discovered,
+		Peer:         status.Peer,
+		Unmanaged:    status.Unmanaged,
+		LastDiscover: status.LastDiscover,
+	}
+	if profile.Ports.Valid() {
+		ports := profile.Ports
+		doc.Ports = &ports
+	}
+	if running {
+		doc.PID = status.PID
+		doc.ErgoPID = status.ErgoPID
+		since := status.Since
+		doc.Since = &since
+		doc.Channels = liveChannels(ctx, rt, profile)
+	}
+
+	if opts.Quiet {
+		return nil
+	}
+	if isMachineFormat(opts) {
+		return output.Render(os.Stdout, machineFormat(opts), doc)
+	}
+	return renderIRCStatusTable(doc)
+}
+
+// ircStatusWarnings collects the non-fatal findings status reports.
+//
+// Two sources, because neither sees the whole picture: Config.Validate
+// judges the configuration alone, while the daemon's codes come from
+// the live runtime. The creator-namespace overlap warning on
+// provision.DesiredState is deliberately NOT covered here — it needs
+// the member list, which only the daemon reads, and surfacing a stale
+// copy of it would be worse than pointing at the reconcile report that
+// carries the current one.
+func ircStatusWarnings(cfg irc.Config, status ircdaemon.Status) []string {
+	seen := map[string]bool{}
+	var out []string
+	add := func(msg string) {
+		if msg != "" && !seen[msg] {
+			seen[msg] = true
+			out = append(out, msg)
+		}
+	}
+
+	warns, _ := cfg.Validate()
+	for _, w := range warns {
+		add(w.String())
+	}
+	for _, code := range status.Warnings {
+		add(code)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// liveChannels asks the server which channels exist and how many
+// people are in them.
+//
+// Best-effort by design: the API is optional in external mode and
+// unreachable whenever the server is down, and a status command that
+// failed because an enrichment failed would be useless exactly when it
+// is needed most. A failure yields no channel rows, and the state and
+// reasons above already explain why.
+func liveChannels(ctx context.Context, rt *ircRuntime, profile irc.Profile) []ircStatusChannel {
+	api := ircAPIConfig(rt, profile)
+	if api == nil {
+		return nil
+	}
+	infos, err := ergo.NewClient(api).List(ctx)
+	if err != nil {
+		return nil
+	}
+
+	prefix := rt.cfg.ChannelPrefix
+	rows := make([]ircStatusChannel, 0, len(infos))
+	for _, info := range infos {
+		if prefix != "" && !strings.Contains(info.Name, prefix) {
+			continue
+		}
+		rows = append(rows, ircStatusChannel{
+			Name:       info.Name,
+			Registered: info.Registered,
+			Members:    info.Users,
+		})
+	}
+	sort.Slice(rows, func(i, j int) bool { return rows[i].Name < rows[j].Name })
+	return rows
+}
+
+// ircAPIConfig addresses the ergo HTTP API for this workspace, or
+// reports nil when there is none to address.
+func ircAPIConfig(rt *ircRuntime, profile irc.Profile) *provider.APIConfig {
+	switch profile.Mode {
+	case irc.ModeManaged:
+		if !profile.Ports.Valid() {
+			return nil
+		}
+		token, err := irc.LoadAPIToken(rt.paths.APIToken)
+		if err != nil {
+			return nil
+		}
+		return &provider.APIConfig{
+			BaseURL: "http://" + irc.DefaultBind + ":" + strconv.Itoa(profile.Ports.API),
+			Token:   token,
+		}
+	case irc.ModeExternal:
+		if rt.cfg.Server.ErgoAPI == "" {
+			return nil
+		}
+		token, err := irc.ReadAPIToken(rt.cfg, rt.paths, nil)
+		if err != nil {
+			return nil
+		}
+		return &provider.APIConfig{
+			BaseURL: strings.TrimSuffix(rt.cfg.Server.ErgoAPI, "/"),
+			Token:   token,
+		}
+	default:
+		return nil
+	}
+}
+
+// ircStatusRow is the table projection of a status document.
+type ircStatusRow struct {
+	Field string `table:"FIELD,priority=9" json:"field"`
+	Value string `table:"VALUE,priority=9" json:"value"`
+}
+
+// renderIRCStatusTable renders the human-readable status.
+func renderIRCStatusTable(doc ircStatusDoc) error {
+	rows := []ircStatusRow{
+		{Field: "WORKSPACE", Value: doc.Workspace},
+		{Field: "STATE", Value: string(doc.State)},
+		{Field: "MODE", Value: string(doc.Mode)},
+		{Field: "PROVIDER", Value: string(doc.Provider)},
+	}
+	if doc.PID > 0 {
+		rows = append(rows, ircStatusRow{Field: "PID", Value: strconv.Itoa(doc.PID)})
+	}
+	if doc.ErgoPID > 0 {
+		rows = append(rows, ircStatusRow{Field: "ERGO PID", Value: strconv.Itoa(doc.ErgoPID)})
+	}
+	if doc.Ports != nil {
+		rows = append(rows, ircStatusRow{
+			Field: "PORTS",
+			Value: fmt.Sprintf("%d, %d, %d", doc.Ports.Plain, doc.Ports.Remote, doc.Ports.API),
+		})
+	}
+	if doc.Server.Host != "" {
+		rows = append(rows, ircStatusRow{
+			Field: "SERVER",
+			Value: fmt.Sprintf("%s:%d", doc.Server.Host, doc.Server.Port),
+		})
+	}
+	for _, ch := range doc.Channels {
+		rows = append(rows, ircStatusRow{
+			Field: "CHANNEL",
+			Value: fmt.Sprintf("%s (%d)", ch.Name, ch.Members),
+		})
+	}
+	// Adopted, peer and unmanaged channels are listed after the owned
+	// ones and kept distinct from them: they are the channels wsm
+	// captures but does not author, and folding them into CHANNEL would
+	// read as "wsm maintains these", which is exactly what it does not do.
+	for _, ch := range doc.Discovered {
+		value := fmt.Sprintf("%s (%s)", ch.Name, ch.Owner)
+		if !ch.Joined {
+			reason := ch.Reason
+			if reason == "" {
+				reason = "not joined"
+			}
+			value += " — " + reason
+		}
+		rows = append(rows, ircStatusRow{Field: "DISCOVERED", Value: value})
+	}
+	for _, ch := range doc.Peer {
+		rows = append(rows, ircStatusRow{
+			Field: "PEER",
+			Value: fmt.Sprintf("%s (%s)", ch.Name, ch.Founder),
+		})
+	}
+	for _, ch := range doc.Unmanaged {
+		value := ch.Name
+		if ch.Founder != "" {
+			value += fmt.Sprintf(" (%s)", ch.Founder)
+		}
+		if ch.Purged {
+			value += " — purged"
+		}
+		rows = append(rows, ircStatusRow{Field: "UNMANAGED", Value: value})
+	}
+	if err := output.Render(os.Stdout, output.Table, rows); err != nil {
+		return err
+	}
+
+	// §6.3: diagnostics are non-data → stderr, so `wsm irc status |
+	// column` still sees only the table.
+	for _, reason := range doc.Reasons {
+		fmt.Fprintf(os.Stderr, "degraded: %s\n", reason)
+	}
+	for _, warn := range doc.Warnings {
+		fmt.Fprintf(os.Stderr, "warning: %s\n", warn)
+	}
+	return nil
+}
+
+// renderIRCEnabled reports the outcome of a verb that leaves a daemon running.
+func renderIRCEnabled(
+	rt *ircRuntime,
+	profile irc.Profile,
+	status ircdaemon.Status,
+	opts *globalOptions,
+) error {
+	if opts.Quiet {
+		return nil
+	}
+	if isMachineFormat(opts) {
+		payload := map[string]any{
+			"workspace": rt.ws.Name,
+			"id":        rt.ws.ID,
+			"mode":      profile.Mode,
+			"provider":  profile.Provider,
+			"state":     status.State,
+			"pid":       status.PID,
+		}
+		if profile.Ports.Valid() {
+			payload["ports"] = profile.Ports
+		}
+		return output.Render(os.Stdout, machineFormat(opts), payload)
+	}
+	fmt.Fprintf(os.Stderr, "IRC %s for %q (daemon pid %d)\n",
+		status.State, rt.ws.Name, status.PID)
+	return nil
+}
+
+// isMachineFormat reports whether the caller asked for a structured
+// document, either explicitly or by piping the output somewhere.
+func isMachineFormat(opts *globalOptions) bool {
+	if opts.Format == output.JSON || opts.Format == output.YAML {
+		return true
+	}
+	return !stdoutIsTTY()
+}
+
+// machineFormat resolves which structured format to emit. A piped
+// invocation that named no format gets JSON, the lingua franca of the
+// tools on the other end of the pipe.
+func machineFormat(opts *globalOptions) string {
+	if opts.Format == output.JSON || opts.Format == output.YAML {
+		return opts.Format
+	}
+	return output.JSON
+}

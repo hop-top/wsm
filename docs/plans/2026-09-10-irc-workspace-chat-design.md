@@ -1,6 +1,9 @@
 # Workspace IRC — provider-agnostic chat per workspace, ergo native
 
-**Status**: design v3, awaiting review
+**Status**: superseded — see [01i-irc-implementation.md](01i-irc-implementation.md) for the
+implementation record and [../wsm/api-cli.md](../wsm/api-cli.md) for the user-facing command
+reference. Retained unchanged as the pre-implementation design record; shipped behaviour
+diverges from it in places.
 **Author**: $USER
 **Date**: 2026-09-10
 **Diagrams**: [components](2026-09-10-irc-workspace-chat-design/components-v2.mmd),
@@ -34,7 +37,7 @@ same CLI in both modes.
 | Capture | bot records channel messages → `interaction.message`; degrades per negotiated caps |
 | Backfill | `CHATHISTORY` when the server offers it; otherwise reported unsupported |
 | Export | none from ergo (verified); wsm is system of record |
-| Sharing | a managed server may host other workspaces: `--shared-with`, guests, halfop-capped delegation |
+| Sharing | a managed server may host other workspaces: `--shared-with`, guests, delegation capped at a configurable ceiling |
 | Bot channels | three access levels (fixed, owner-managed, self-service); discovery via `DirectoryProvider` |
 | Exit codes | story 015 (2 usage, 3 not found, 4 conflict, 5 backend, 6 forbidden) + new 7 prerequisite |
 
@@ -66,15 +69,23 @@ Verified against ergo v2.19.1 docs and source (MANUAL.md, API.md, default.yaml, 
   draft/chathistory labeled-response`; plain clients degrade
 - `CHATHISTORY AFTER <target> timestamp=<ts> <limit>`; cap `chathistory-maxmessages` (1000)
 - Default history in RAM (2048/channel), lost on restart; `restrictions.expire-time` 1w
-- `ergo initdb|mkcerts|gentoken|genpasswd|run --conf`; oper passwords bcrypt
+- `ergo initdb|mkcerts|gentoken|genpasswd|run --conf`; oper passwords bcrypt. `mkcerts` writes
+  `fullchain.pem` + `privkey.pem` relative to cwd; order is `mkcerts` → `initdb` → `run`, and
+  `languages.path` must be absolute in the rendered config
 - Go client lib: `github.com/ergochat/irc-go` (ircevent: SASL, labeled response, batches)
 
-Probe before coding (implementation plan carries these as first tasks): `api.listener`
-accepts `host:port` only vs unix socket; `mkcerts` output paths; `gentoken` format; oper class
-only via config; `saregister` response for existing account; `/v1/list` shape; `CS AMODE`
-listing and `CS INFO` line formats; `CHATHISTORY` paging at the limit; `NAMES` prefix output
-with `multi-prefix` for the plain provider; whether a halfop/chanop may set `CS AMODE` at or
-below its own level (delegation persistence).
+Probed against a live ergo 2.19.1; every item above has a verdict in
+[probes.md](2026-09-10-irc-workspace-chat-design/probes.md), with raw fixture lines under
+[probes/](2026-09-10-irc-workspace-chat-design/probes/). Four deviations were found and are
+corrected in this document: `mkcerts` writes `privkey.pem` (not `key.pem`); `/v1/list` names
+the owner field `owner` (not `founder`); `saregister` returns HTTP 200 with
+`errorCode: ACCOUNT_EXISTS` for a duplicate, so adapters must branch on the JSON body, never
+the status; and there is no `CS UNPURGE` — the surface is `CS PURGE ADD|DEL|LIST` with a
+confirmation round trip on `ADD`. Confirmed as assumed: `api.listener` is `host:port` only
+(but a bad value is a soft failure that leaves ergo running without the API), `gentoken` emits
+a bare base64url token, oper class is config-only, and a non-founder halfop may set persistent
+`CS AMODE +v` while a chanop may set `+o` — the hierarchy matches ordinary `/MODE`, so the
+delegation model below holds.
 
 ## Architecture
 
@@ -145,9 +156,12 @@ var ErrUnsupported = errors.New("irc: operation not supported by provider")
 Every method on a provider that lacks the capability returns `ErrUnsupported`; reconcile
 treats that as "skip and report", never as failure. Registry: `provider.Open(name, deps)` for
 `ergo` and `plain`; unknown name → config validation error. No autodetection. Mapping of
-the directory capabilities: ergo lists via `/v1/list` or `LIST`, founder via `CS INFO`,
-hidden join via `SAJOIN` (oper), purge via `CS PURGE`, relay identity from ergo's `relaymsg`
-nick form and tag; plain lists via `LIST` only and reports everything else unsupported.
+the directory capabilities: ergo lists via `/v1/list` (the registered-owner field is `owner`,
+not `founder`; `userCount` is live occupancy, not membership) or `LIST`, founder via `CS INFO`
+or `/v1/ns/info`, hidden join via `SAJOIN` (oper), purge via `CS PURGE ADD` (two-step: the
+first call returns a confirmation code that must be echoed back as the sole trailing argument)
+and `CS PURGE DEL` to undo, relay identity from ergo's `relaymsg` server-set tag; plain lists
+via `LIST` only and reports everything else unsupported.
 
 `AccountResolver` answers "which account does member X use on server S":
 
@@ -183,7 +197,7 @@ $DataDir/irc/<workspace-id>/        durable
   profile.yaml      mode, server id, root (workspace dir), ports, bot account, account map
   ergo.yaml         managed: rendered; regenerated on enable/sync (never hand-edited)
   ircd.db           managed: ergo buntdb
-  tls/              managed: fullchain.pem key.pem (mkcerts unless supplied)
+  tls/              managed: fullchain.pem privkey.pem (mkcerts unless supplied)
   api.token         managed: 0600, ergo API bearer token
   secrets.yaml      0600, {account: passphrase}; managed: all members; external: bot only
 $StateDir/irc/<workspace-id>/       volatile
@@ -228,8 +242,9 @@ irc:
     account: wsm            # both; external: must already exist on the server
     secret_ref: ""          # external: aps secret key holding bot password; else secrets.yaml
   channels:                 # template; {{ws}} = workspace name slug
-    # per channel, optional (see Sharing): guests: [{profile, role}],
-    # delegates: [{workspace, bot, max_role}]; guest side: borrowed: {host, channel, members}
+    # per channel, optional (see Sharing): guests: [{profile, role: voice|op}],
+    # delegates: [{workspace, bot, max_role: voice|halfop|op}];
+    # guest side: borrowed: {host, channel, members}
     - name: "#{{ws}}"
       members: all          # all | principals
       modes: "+ntRi"
@@ -317,7 +332,7 @@ nick is not present gets roles on next join (bot subscribes to `JOIN`).
 
 `wsm irc channel add|rm|list` edits the workspace-local `irc.channels` override then signals
 reconcile. `rm` clears roles and, where supported, sets `+i`; `--purge` drops registration
-(`CS PURGE` on ergo, no-op elsewhere).
+(`CS PURGE ADD` plus its confirmation round trip on ergo, no-op elsewhere).
 
 ## Capture and backfill
 
@@ -381,6 +396,28 @@ provisioned by A's operator (`wsm irc account create A --raw <name>`). A's archi
 refuse while `shared_with` is non-empty unless
 `--force`, and warn B via its status (`host_state`).
 
+**What the guest's config holds, and what it never holds.** The override written at attach
+carries `mode: external`, `provider: ergo`, A's loopback plaintext listener
+(`server.host`/`server.port`), A's loopback API (`server.ergo_api`), the guest's
+`channel_prefix`, and B's own `bot.account`. It carries **no token**. A's HTTP API token is
+read at runtime out of A's own `api.token` (`ReadAPIToken`'s host branch), never copied into
+B's config, secrets or profile. Same machine, same user, same `$DataDir` is what makes that
+read legitimate — B can already read A's data dir, so pointing at the file grants nothing new
+— and it is what makes A rotating the token take effect at once and purging A revoke every
+guest. Cross-machine sharing is therefore not this path at all: **A's token is never handed
+out**, and an off-machine B authenticates as an ordinary account A's operator provisioned for
+it.
+
+**Detach order is load-bearing.** `wsm irc disable B` runs, in this order: B's final reconcile
+with nothing desired on its borrowed channels (while B's bot still holds the privilege A
+delegated, which is the only time it can strip its own grants) → A's delegate entries naming B
+removed → B dropped from A's `shared_with` and saved (before the signal, or A's reconcile
+would read a profile still listing B and suspend nothing) → A signalled (its reconcile
+suspends B's bot and runs the revoke sweep) → B's `host_workspace` cleared last, since the
+first step needs it. A stopped A at that point leaves B recorded `pending_detach`, reported as
+exit 1 with the hint to rerun once A is up; an A purged with `--force` leaves B reporting
+`host_state: gone`, and B's own disable still clears its side.
+
 **Guests (host-owned allow list)**: on a host channel template entry,
 `guests: [{profile: <id>, role: voice|op}]`. Host reconcile resolves the profile to an
 account on its server (resolver chain) and applies a persistent role; `+v` bypasses `+i`.
@@ -394,9 +431,15 @@ match the desired state (so a lost map heals), and reports foreign roles without
 Required so host and guest bots do not fight.
 
 **Delegation (guest admin decides)**: host entry
-`delegates: [{workspace: B, bot: <B bot account>, max_role: voice|op}]`. Host applies a
-persistent `+h` (halfop) to B's bot for `max_role: voice`, or `+o` for `op`. IRC privilege
-rules cap what B's bot can hand out: a halfop may voice but not op. On the guest side the
+`delegates: [{workspace: B, bot: <B bot account>, max_role: voice|halfop|op}]`. The ceiling is
+the privilege itself: the host applies it to B's bot persistently (`+v`, `+h` or `+o`) and the
+server's own privilege rules then cap what B's bot can redistribute. Measured on ergo 2.19.1
+(`probes/delegation.txt`): a non-founder halfop sets a persistent `CS AMODE +v` but is refused
+`+o` ("Insufficient privileges"; live `MODE` answers 482), while a non-founder chanop sets
+`+o`. So `halfop` is the rung that lets a guest bot voice its members but never op them, and
+it holds even if B's wsm is modified — the cap is enforced by the server, not by trusting the
+guest. `voice` delegates a bot that may speak but grant nothing; `op` delegates full
+redistribution. On the guest side the
 channel is `borrowed: {host: A, channel: "#a-dev", members: all|principals}`: B's bot never
 registers it, applies roles to B's members up to its own privilege (persistent `CS AMODE`
 when ergo allows it at that level, else live `MODE` re-applied on join), and reports
@@ -434,7 +477,7 @@ in three levels, each stricter about who decides.
 |-------|-------------|-----------|----------------|
 | 1 Fixed membership | workspace config | template `members: all\|principals\|list`, `member_list`, or `guests:` on specific channels | yes: roles authored, capture on |
 | 2 Owner-managed via wsm | whoever may run `wsm irc channel` for the workspace | `channel add #c --owner <profile>`: wsm bot founder, owner `+o`, owner voices/invites agents | yes |
-| 3 Self-service on the server | the member flagged `channel_creator` | bot joins and registers `#<ws>-<label>-*` itself; wsm discovers, adopts, captures; roles inside are the bot's | discovery only |
+| 3 Self-service on the server | the member flagged `channel_creator` | bot joins and registers `#<prefix><ws>-<label>-*` itself; wsm discovers, adopts, captures; roles inside are the bot's | discovery only |
 
 **Level 2 access control**: creating a channel through the CLI needs the `irc.enable`
 capability on the manager and write access to the workspace's config. There is no per-member
@@ -453,6 +496,16 @@ matching no template, no namespace and no peer are unmanaged and handled per
 policy is how "permission to create" is enforced: ergo lets any account register, wsm decides
 which registrations survive. On external servers only channels under the workspace's
 `channel_prefix` are ever classified; a purge policy without a prefix is a config error.
+
+The creator glob carries both the prefix and the workspace slug
+(`#<prefix><ws>-<label>-*`) because the sweeper reads it to tell a creator's own
+channel from an unmanaged one. Dropping the slug would let two workspaces on one
+server each claim `#<label>-*` for a member of the same name, so one tenant's
+channel would match the other's namespace and become purge-eligible; dropping the
+prefix would contradict the `channel_prefix` requirement above. Founder matching
+narrows who may *adopt* a matched name, but it cannot stop a foreign name from
+matching, and a match with the wrong founder is exactly what falls through to
+unmanaged.
 `channel adopt` and `release` are requests the daemon executes, so only the daemon's bot ever
 joins or parts.
 
@@ -557,7 +610,7 @@ busy, TLS missing, external server unreachable, provider lacks capability).
   the bot class.
 - External: TLS on by default; `insecure_skip_verify` is a loud warning in `status`; wsm holds
   only the bot password unless it created member accounts itself.
-- `secrets.yaml`, `api.token`, `tls/key.pem` 0600; dirs 0700; passphrases never logged;
+- `secrets.yaml`, `api.token`, `tls/privkey.pem` 0600; dirs 0700; passphrases never logged;
   `creds --json` carries `"sensitive": true`.
 - `--purge` and workspace delete are the only data-removing paths; both confirmed.
 

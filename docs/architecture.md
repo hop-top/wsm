@@ -137,11 +137,15 @@ event, snapshot, device, space, workspace-space association.
 | Code | Meaning |
 |---|---|
 | `0` | success |
+| `1` | generic error |
 | `2` | usage error |
 | `3` | not found |
 | `4` | conflict |
-| `5` | backend error |
-| `6` | forbidden |
+| `5` | forbidden (also kit's `--confirm` refusal) |
+| `8` | backend error |
+| `9` | not configured |
+| `70` | prerequisite not satisfied |
+| `130` | interrupted |
 
 ### Output modes
 
