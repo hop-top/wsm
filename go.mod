@@ -13,7 +13,7 @@ require (
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/crypto v0.50.0
 	gopkg.in/yaml.v3 v3.0.1
-	hop.top/kit v0.5.0-alpha.6
+	hop.top/kit v0.5.0-alpha.7
 )
 
 require (
