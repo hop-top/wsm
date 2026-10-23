@@ -447,4 +447,4 @@ CLI/TUI command handling, and storage integrity and migration safety.
 
 ## License
 
-[MIT](LICENSE), copyright 2026 Jad Bitar and Idea Crafters LLC.
+[MIT](LICENSE), copyright 2026 Idea Crafters LLC and Jad Bitar.
