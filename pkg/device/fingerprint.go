@@ -20,6 +20,17 @@ const machineIDFile = "machine-id"
 //
 // The resolved ID is persisted for future stability.
 func MachineFingerprint(dataDir string) (string, error) {
+	return machineFingerprint(dataDir, true)
+}
+
+// PeekMachineFingerprint resolves the same identifier as
+// MachineFingerprint without persisting it: no directory or file is
+// created. Use it when the caller must not touch the filesystem.
+func PeekMachineFingerprint(dataDir string) (string, error) {
+	return machineFingerprint(dataDir, false)
+}
+
+func machineFingerprint(dataDir string, persist bool) (string, error) {
 	if dataDir == "" {
 		dataDir = defaultDataDir()
 	}
@@ -37,6 +48,10 @@ func MachineFingerprint(dataDir string) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("generate fallback uuid: %w", err)
 		}
+	}
+
+	if !persist {
+		return id, nil
 	}
 
 	// Persist for future calls.

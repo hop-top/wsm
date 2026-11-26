@@ -49,6 +49,25 @@ func Open(path string) (*Backend, error) {
 	return b, nil
 }
 
+// OpenMemory returns a backend held entirely in memory: nothing is
+// created on disk. The schema is not applied; call Migrate. Contents are
+// discarded on Close.
+func OpenMemory() (*Backend, error) {
+	db, err := sql.Open(sqliteDriver, ":memory:")
+	if err != nil {
+		return nil, fmt.Errorf("open in-memory sqlite: %w", err)
+	}
+	// Every pooled connection to ":memory:" is its own database; a
+	// single connection keeps the schema and rows visible to all calls.
+	db.SetMaxOpenConns(1)
+	b := &Backend{db: db}
+	if _, err := db.Exec("PRAGMA foreign_keys = ON;"); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("enable foreign keys: %w", err)
+	}
+	return b, nil
+}
+
 func (b *Backend) Close() error { return b.db.Close() }
 
 func (b *Backend) Migrate(ctx context.Context) error {

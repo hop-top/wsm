@@ -17,6 +17,7 @@ As a user, I want to list all workspaces so that I can find and manage my sessio
 4. **Given** workspaces exist, **When** I run `wsm list --sort=name`, **Then** workspaces are sorted by name.
 5. **Given** workspaces exist, **When** I run `wsm list --json`, **Then** a JSON array of workspaces is returned.
 6. **Given** workspaces exist, **When** I run `wsm list -q`, **Then** workspace IDs are printed one per line.
+7. **Given** the data directory and database do not exist, **When** I run `wsm workspace list --format json` (or any other read-only query), **Then** `[]` is printed, exit code is 0, and no data, config, state or cache directory and no database file is created. Commands that write still create the store on first use.
 
 ## Tests
 
@@ -28,3 +29,6 @@ As a user, I want to list all workspaces so that I can find and manage my sessio
 - `tests/e2e/workspace_test.go` -- `TestWorkspaceList`
 - `tests/e2e/workspace_test.go` -- `TestWorkspaceList_Empty`
 - `tests/e2e/workspace_test.go` -- `TestWorkspaceList_Filter`
+- `tests/e2e/readonly_no_store_test.go` -- `TestReadOnlyQuery_NoStore_CreatesNothing`
+- `tests/e2e/readonly_no_store_test.go` -- `TestWriteCommand_StillCreatesStore`
+- `tests/e2e/readonly_no_store_test.go` -- `TestReadOnlyQuery_LegacyStoreStillMigrated`
