@@ -275,6 +275,10 @@ wsm space add <workspace> <id> [--type ...] [--path ...] [--cap ...] \
 | `--startup-cmd` | ""          | Default command rux runs when connecting (empty = `$SHELL`)     |
 | `--auto`        | false       | Detect space attributes from `--path` and disclose them (reported, not applied) |
 
+Space IDs are global. Adding an ID that already exists, in any workspace
+including the same one, fails with exit code 4 (conflict); the existing space
+and its workspace associations are left unchanged.
+
 If the rux `projects.yaml` write fails, wsm warns to stderr and the wsm DB
 write still succeeds; recover with `wsm space sync`.
 

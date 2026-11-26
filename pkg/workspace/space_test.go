@@ -98,3 +98,46 @@ func TestManager_RecordEvent_OCSFDefaulting(t *testing.T) {
 		t.Error("expected default WriterID to be applied")
 	}
 }
+
+func TestManager_CreateSpace_ExistingIDConflicts(t *testing.T) {
+	m := newTestManagerForSpace(t)
+	ctx := context.Background()
+
+	if _, err := m.Create(ctx, "ws-a", CreateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.Create(ctx, "ws-b", CreateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	mk := func(boundary string) Space {
+		return Space{
+			ID: "shared-api", Type: SpaceAPI, Boundary: boundary,
+			Capabilities: []string{"oasf:cap:api:read"}, TrustLevel: TrustVerified,
+		}
+	}
+	if _, err := m.AddSpaceToWorkspace(ctx, "ws-a", mk("https://api.example/a")); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, ref := range []string{"ws-b", "ws-a"} {
+		_, err := m.AddSpaceToWorkspace(ctx, ref, mk("https://api.example/b"))
+		if !IsKind(err, ErrorKindConflict) {
+			t.Fatalf("add to %s: got %v, want conflict", ref, err)
+		}
+	}
+
+	got, err := m.GetSpace(ctx, "shared-api")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Boundary != "https://api.example/a" {
+		t.Fatalf("boundary overwritten: %q", got.Boundary)
+	}
+	wsB, err := m.ListWorkspaceSpaces(ctx, "ws-b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(wsB) != 0 {
+		t.Fatalf("failed add associated space with ws-b: %v", wsB)
+	}
+}

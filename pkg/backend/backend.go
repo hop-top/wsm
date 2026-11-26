@@ -2,6 +2,7 @@ package backend
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"hop.top/wsm/pkg/device"
@@ -36,6 +37,10 @@ type Backend interface {
 	ResolveDevice(ctx context.Context, ref string) (*device.Device, []device.Device, error)
 	ListDeviceSessions(ctx context.Context, deviceID string) ([]DeviceSession, error)
 
+	// CreateSpace inserts a new space. It returns ErrSpaceExists, leaving the
+	// stored row untouched, when a space with the same ID already exists.
+	CreateSpace(ctx context.Context, s model.Space) error
+	// SaveSpace upserts a space by ID.
 	SaveSpace(ctx context.Context, s model.Space) error
 	GetSpace(ctx context.Context, id string) (*model.Space, error)
 	ListSpaces(ctx context.Context, parentID string) ([]model.Space, error)
@@ -49,6 +54,9 @@ type Backend interface {
 	Migrate(ctx context.Context) error
 	Close() error
 }
+
+// ErrSpaceExists is returned by CreateSpace when the space ID is taken.
+var ErrSpaceExists = errors.New("space already exists")
 
 // ListOptions controls workspace listing behavior.
 type ListOptions struct {
