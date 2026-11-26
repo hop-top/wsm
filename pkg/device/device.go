@@ -29,10 +29,24 @@ func Current() Device {
 // CurrentWithDataDir returns a device identity using the given data directory
 // for fingerprint persistence. An empty dataDir uses the default location.
 func CurrentWithDataDir(dataDir string) Device {
+	return currentDevice(dataDir, true)
+}
+
+// CurrentReadOnly returns the same identity as Current without
+// persisting the machine fingerprint: the filesystem is left untouched.
+func CurrentReadOnly() Device {
+	return currentDevice("", false)
+}
+
+func currentDevice(dataDir string, persist bool) Device {
 	host, _ := os.Hostname()
 	now := time.Now().UTC()
 
-	id, err := MachineFingerprint(dataDir)
+	fingerprint := MachineFingerprint
+	if !persist {
+		fingerprint = PeekMachineFingerprint
+	}
+	id, err := fingerprint(dataDir)
 	if err != nil || id == "" {
 		// Fallback to legacy hostname-based hash if fingerprint fails.
 		id = legacyID(host)

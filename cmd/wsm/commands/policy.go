@@ -44,8 +44,16 @@ var (
 // The user file is only auto-seeded when absent or empty so adopter-
 // authored rules are never clobbered.
 func initPolicyEngine() (*policy.Engine, error) {
+	return initPolicyEngineFor(false)
+}
+
+// initPolicyEngineFor is initPolicyEngine with a read-only switch: when
+// readOnly is set the user policies file is never seeded, and the
+// bundled default is evaluated in memory when no user file exists. The
+// first call in a process decides; later calls return the cached engine.
+func initPolicyEngineFor(readOnly bool) (*policy.Engine, error) {
 	policyOnce.Do(func() {
-		cfg, err := loadPolicyConfig()
+		cfg, err := loadPolicyConfig(readOnly)
 		if err != nil {
 			policyErr = err
 			return
@@ -79,13 +87,17 @@ func wirePolicyToBus(b bus.Bus) (func(), error) {
 // parsed Config. An empty bundled fallback (no policies) is never
 // produced — when the user file is missing or empty we seed it with
 // the bundled default and load that.
-func loadPolicyConfig() (*policy.Config, error) {
+func loadPolicyConfig(readOnly bool) (*policy.Config, error) {
 	if path := os.Getenv("WSM_POLICY_FILE"); path != "" {
 		cfg, err := policy.LoadConfig(path)
 		if err != nil {
 			return nil, fmt.Errorf("policy: load %s: %w", path, err)
 		}
 		return cfg, nil
+	}
+
+	if readOnly {
+		return loadPolicyConfigReadOnly()
 	}
 
 	path, err := config.EnsureDefaultPoliciesFile()
@@ -103,6 +115,26 @@ func loadPolicyConfig() (*policy.Config, error) {
 	cfg, err := policy.LoadConfig(path)
 	if err != nil {
 		return nil, fmt.Errorf("policy: load %s: %w", path, err)
+	}
+	return cfg, nil
+}
+
+// loadPolicyConfigReadOnly resolves the policy source without writing:
+// a non-empty user file is loaded as-is, otherwise the bundled default
+// is parsed in memory and the user file is left absent.
+func loadPolicyConfigReadOnly() (*policy.Config, error) {
+	if path, err := config.PoliciesPath(); err == nil {
+		if st, serr := os.Stat(path); serr == nil && st.Size() > 0 {
+			cfg, lerr := policy.LoadConfig(path)
+			if lerr != nil {
+				return nil, fmt.Errorf("policy: load %s: %w", path, lerr)
+			}
+			return cfg, nil
+		}
+	}
+	cfg, err := policy.ParseConfig(config.DefaultPoliciesYAML())
+	if err != nil {
+		return nil, fmt.Errorf("policy: parse bundled default: %w", err)
 	}
 	return cfg, nil
 }

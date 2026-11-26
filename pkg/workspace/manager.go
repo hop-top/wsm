@@ -125,6 +125,14 @@ func WithCapabilities(caps *Capabilities) ManagerOption {
 	}
 }
 
+// WithDevice overrides the local device identity. Without it the manager
+// resolves device.Current(), which persists the machine fingerprint.
+func WithDevice(d device.Device) ManagerOption {
+	return func(m *Manager) {
+		m.device = d
+	}
+}
+
 // WithBus wires a kit bus instance for publishing workspace lifecycle
 // events (wsm.runtime.workspace.*, wsm.runtime.snapshot.*). When nil
 // (the default) lifecycle ops keep working but no events are emitted.
@@ -148,9 +156,12 @@ func (m *Manager) publish(ctx context.Context, topic bus.Topic, workspaceID stri
 
 // NewManager constructs a manager with current device identity.
 func NewManager(b backend.Backend, opts ...ManagerOption) (*Manager, error) {
-	m := &Manager{backend: b, device: device.Current(), caps: AllCapabilities()}
+	m := &Manager{backend: b, caps: AllCapabilities()}
 	for _, opt := range opts {
 		opt(m)
+	}
+	if m.device.ID == "" {
+		m.device = device.Current()
 	}
 	_ = m.backend.SaveDevice(context.Background(), m.device)
 	m.wsService = newWorkspaceService(b, m.bus)

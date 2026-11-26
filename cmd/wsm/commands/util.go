@@ -247,6 +247,7 @@ func registerWorkspaceCompletion(root *cobra.Command, _ *globalOptions) {
 		backendURL, _ := flags.GetString("backend-url")
 
 		app, err := newAppContext(globalOptions{
+			ReadOnly:   true,
 			DataDir:    dataDir,
 			Backend:    backendFlag,
 			BackendURL: backendURL,

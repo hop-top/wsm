@@ -23,6 +23,7 @@ import (
 	"hop.top/wsm/pkg/backend"
 	backendsqlite "hop.top/wsm/pkg/backend/sqlite"
 	"hop.top/wsm/pkg/config"
+	"hop.top/wsm/pkg/device"
 	"hop.top/wsm/pkg/irc"
 	"hop.top/wsm/pkg/workspace"
 )
@@ -180,6 +181,12 @@ type globalOptions struct {
 	Offline    bool   // §5: skip network (sync, upgrade check, plugin downloads)
 	Profile    string // §5: named credential / config profile
 	Instance   string // §5: backend instance discriminator
+
+	// ReadOnly marks the invoked command as a pure query (see
+	// isReadOnlyQuery). When the store does not exist yet, such a
+	// command reads an empty in-memory store and creates nothing on
+	// disk. Set per invocation, never by flag.
+	ReadOnly bool
 }
 
 type appContext struct {
@@ -236,15 +243,29 @@ func newAppContext(opts globalOptions) (*appContext, error) {
 		return nil, workspace.NewErrorBackend("migrate legacy data", err)
 	}
 
-	// Ensure XDG directories exist for first-run.
-	for _, dir := range []string{cfg.DataDir, cfg.CacheDir, cfg.StateDir} {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return nil, workspace.NewErrorBackend("create directory "+dir, err)
+	dbPath := filepath.Join(cfg.DataDir, "wsm.db")
+	// A read-only query against a store that does not exist yet has
+	// nothing to read: serve an empty in-memory store and leave the
+	// filesystem alone. Writes keep create-on-first-use below.
+	ephemeral := false
+	if opts.ReadOnly {
+		if _, statErr := os.Stat(dbPath); os.IsNotExist(statErr) {
+			ephemeral = true
 		}
 	}
 
-	dbPath := filepath.Join(cfg.DataDir, "wsm.db")
-	b, err := backendsqlite.Open(dbPath)
+	var b *backendsqlite.Backend
+	if ephemeral {
+		b, err = backendsqlite.OpenMemory()
+	} else {
+		// Ensure XDG directories exist for first-run.
+		for _, dir := range []string{cfg.DataDir, cfg.CacheDir, cfg.StateDir} {
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				return nil, workspace.NewErrorBackend("create directory "+dir, err)
+			}
+		}
+		b, err = backendsqlite.Open(dbPath)
+	}
 	if err != nil {
 		return nil, workspace.NewErrorBackend("open sqlite backend", err)
 	}
@@ -258,12 +279,17 @@ func newAppContext(opts globalOptions) (*appContext, error) {
 	eventBus := bus.New()
 
 	caps := resolveCapabilities()
-	mgr, err := workspace.NewManager(b,
+	mgrOpts := []workspace.ManagerOption{
 		workspace.WithSessionID(opts.SessionID),
 		workspace.WithAgentID(opts.AgentID),
 		workspace.WithBus(eventBus),
 		workspace.WithCapabilities(caps),
-	)
+	}
+	if ephemeral {
+		// Default identity resolution persists the machine fingerprint.
+		mgrOpts = append(mgrOpts, workspace.WithDevice(device.CurrentReadOnly()))
+	}
+	mgr, err := workspace.NewManager(b, mgrOpts...)
 	if err != nil {
 		_ = b.Close()
 		return nil, workspace.NewErrorBackend("create manager", err)
@@ -465,6 +491,7 @@ func NewRootCmd() *cobra.Command {
 		opts.AgentID, _ = cmd.Flags().GetString("agent-id")
 		// opts.Offline / opts.Profile / opts.Instance are bound directly via
 		// cli.Flag.{Bool,String}Var pointers, no manual lookup needed.
+		opts.ReadOnly = isReadOnlyQuery(cmd)
 		opts.Format = r.Viper.GetString("format")
 		opts.Quiet = r.Viper.GetBool("quiet")
 		opts.NoColor = r.Viper.GetBool("no-color")
@@ -483,7 +510,7 @@ func NewRootCmd() *cobra.Command {
 		// topic) at boot, before any subcommand RunE executes. The engine
 		// itself is constructed lazily here; appContext.bus wires the
 		// resulting engine via wirePolicyToBus on a per-command basis.
-		if _, err := initPolicyEngine(); err != nil {
+		if _, err := initPolicyEngineFor(opts.ReadOnly); err != nil {
 			return err
 		}
 		return nil
@@ -585,6 +612,22 @@ func Execute(ctx context.Context) error {
 		return NewRootCmd().Execute()
 	}
 	return kitRootInstance.Execute(ctx)
+}
+
+// isReadOnlyQuery reports whether cmd is a pure query over the store: it
+// declares kit's read side-effect class. The irc subtree is excluded; its
+// readers consult daemon runtime state beyond the store and keep the
+// default open path.
+func isReadOnlyQuery(cmd *cobra.Command) bool {
+	if se, ok := cli.GetSideEffect(cmd); !ok || se != cli.SideEffectRead {
+		return false
+	}
+	for c := cmd; c != nil; c = c.Parent() {
+		if c.Name() == "irc" {
+			return false
+		}
+	}
+	return true
 }
 
 func withApp(opts *globalOptions, fn func(ctx context.Context, app *appContext) error) error {
