@@ -259,6 +259,7 @@ func (r *e2eRunner) execTTY(ctx context.Context, opts runOptions) commandResult 
 	cmd.Stdin = tty
 	cmd.Stdout = tty
 	cmd.Stderr = tty
+	adoptControllingTTY(cmd)
 
 	if err := cmd.Start(); err != nil {
 		r.t.Fatalf("start tty command: %v", err)
