@@ -5,3 +5,5 @@ package e2e_test
 import "os/exec"
 
 func adoptControllingTTY(*exec.Cmd) {}
+
+func detachControllingTTY(*exec.Cmd) {}

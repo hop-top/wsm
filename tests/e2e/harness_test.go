@@ -207,6 +207,7 @@ func (r *e2eRunner) exec(opts runOptions) commandResult {
 	cmd := exec.CommandContext(ctx, r.binary, opts.Args...)
 	cmd.Dir = r.workDir
 	cmd.Env = r.baseEnv(opts.ExtraEnv)
+	detachControllingTTY(cmd)
 	if opts.Input != "" {
 		cmd.Stdin = strings.NewReader(opts.Input)
 	}
