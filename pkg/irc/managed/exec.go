@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os/exec"
 	"strings"
+	"time"
 
 	"hop.top/wsm/pkg/irc"
 )
@@ -73,6 +74,10 @@ func GenToken(ctx context.Context) (string, error) {
 // irc.Config.Binary so an absolute path or a non-PATH install works.
 var Binary string
 
+// cancelGrace is how long run waits for a cancelled subcommand's output pipes
+// to close before abandoning them.
+const cancelGrace = time.Second
+
 // binaryName resolves the binary the wrappers should invoke.
 func binaryName() string {
 	if Binary != "" {
@@ -92,6 +97,11 @@ func run(ctx context.Context, dir, conf string, args ...string) (string, error) 
 	bin := binaryName()
 
 	cmd := exec.CommandContext(ctx, bin, args...)
+	// Cancellation kills only the process ergo was started as. A wrapper
+	// script (or a shell that forks its last command) leaves a child holding
+	// the stdout/stderr pipes open, and Wait blocks on those pipes until the
+	// child exits. WaitDelay bounds that wait after the context is done.
+	cmd.WaitDelay = cancelGrace
 	if dir != "" {
 		cmd.Dir = dir
 	}
