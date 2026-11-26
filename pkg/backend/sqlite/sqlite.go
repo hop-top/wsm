@@ -848,6 +848,31 @@ func (b *Backend) ListDeviceSessions(ctx context.Context, deviceID string) ([]ba
 	return out, rows.Err()
 }
 
+// CreateSpace inserts a space, failing with backend.ErrSpaceExists when the
+// ID is already taken. The check is the INSERT itself, so it is atomic.
+func (b *Backend) CreateSpace(ctx context.Context, s model.Space) error {
+	var parent any
+	if s.Parent != "" {
+		parent = s.Parent
+	}
+	var observables any
+	if len(s.Observables) > 0 {
+		observables = marshal(s.Observables)
+	}
+	res, err := b.db.ExecContext(ctx, `
+		INSERT INTO spaces(id, writer_id, type, parent, boundary, observables, capabilities, trust_level, created_at)
+		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO NOTHING
+	`, s.ID, s.WriterID, string(s.Type), parent, s.Boundary, observables, marshal(s.Capabilities), string(s.TrustLevel), s.CreatedAt.UTC())
+	if err != nil {
+		return err
+	}
+	if n, err := res.RowsAffected(); err == nil && n == 0 {
+		return fmt.Errorf("create space %q: %w", s.ID, backend.ErrSpaceExists)
+	}
+	return nil
+}
+
 func (b *Backend) SaveSpace(ctx context.Context, s model.Space) error {
 	var parent any
 	if s.Parent != "" {

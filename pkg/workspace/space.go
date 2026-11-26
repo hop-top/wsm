@@ -2,11 +2,13 @@ package workspace
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/oklog/ulid/v2"
 
+	"hop.top/wsm/pkg/backend"
 	"hop.top/wsm/pkg/model"
 	"hop.top/wsm/pkg/owsf"
 )
@@ -55,7 +57,10 @@ func (m *Manager) CreateSpace(ctx context.Context, workspaceRef string, s Space)
 		}
 	}
 
-	if err := m.backend.SaveSpace(ctx, model.Space(s)); err != nil {
+	if err := m.backend.CreateSpace(ctx, model.Space(s)); err != nil {
+		if errors.Is(err, backend.ErrSpaceExists) {
+			return nil, conflictError(fmt.Sprintf("space %q already exists", s.ID))
+		}
 		return nil, mapBackendErr("create space", err)
 	}
 

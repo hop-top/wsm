@@ -3,6 +3,7 @@ package backend_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
@@ -275,5 +276,36 @@ func TestBackend_WorkspaceSpaceAssociation(t *testing.T) {
 	}
 	if len(spaces) != 0 {
 		t.Fatalf("expected 0 spaces after space delete cascade, got %d", len(spaces))
+	}
+}
+
+func TestBackend_CreateSpace_ExistingIDConflicts(t *testing.T) {
+	ctx := context.Background()
+	b := newBackendForConformance(t)
+
+	created := time.Now().UTC().Truncate(time.Second)
+	orig := model.Space{
+		ID: "sp-dup", Type: model.SpaceAPI, Boundary: "https://api.example/a",
+		Capabilities: []string{"oasf:cap:api:read"},
+		TrustLevel:   model.TrustVerified, CreatedAt: created,
+	}
+	if err := b.CreateSpace(ctx, orig); err != nil {
+		t.Fatalf("first create: %v", err)
+	}
+
+	dup := orig
+	dup.Boundary = "https://api.example/b"
+	dup.CreatedAt = created.Add(time.Hour)
+	err := b.CreateSpace(ctx, dup)
+	if !errors.Is(err, backend.ErrSpaceExists) {
+		t.Fatalf("second create: got %v, want ErrSpaceExists", err)
+	}
+
+	got, err := b.GetSpace(ctx, "sp-dup")
+	if err != nil || got == nil {
+		t.Fatalf("get: %v %v", got, err)
+	}
+	if got.Boundary != orig.Boundary || !got.CreatedAt.Equal(orig.CreatedAt) {
+		t.Fatalf("row changed: boundary=%q created=%v", got.Boundary, got.CreatedAt)
 	}
 }

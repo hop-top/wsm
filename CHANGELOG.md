@@ -29,6 +29,12 @@ The format is based on Keep a Changelog, and this project aims to follow Semanti
   `wsm.runtime.snapshot.deleted` now publish on snapshot Update/Delete
   operations (closes the alias gap noted in kit ADR-0008 §6).
 
+### Fixed
+- `wsm space add` no longer overwrites an existing space with the same ID.
+  Space IDs are global; a colliding add, in any workspace including the
+  same one, fails with exit code 4 (conflict) and leaves the existing space
+  and its associations unchanged.
+
 ### Note for operators
 - `wsm workspace archive <id>` and `wsm workspace delete <id>` without
   `--note` now exit 4 with a `policy "<name>" denied: ...` error.
